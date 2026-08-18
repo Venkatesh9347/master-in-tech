@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 const courses = [
   {
     title: 'Full Stack Development',
@@ -78,11 +79,19 @@ export default function Courses() {
                 {course.description}
               </p>
 
-              <button
-                type="button"
-                className="mt-6 w-fit font-semibold text-blue-600 transition hover:text-blue-800"
-              >
-                View program details →
+              <button>
+               {course.title === 'Full Stack Development' ? (
+  <Link
+    to="/courses/full-stack-development"
+    className="mt-6 w-fit font-semibold text-blue-600 transition hover:text-blue-800"
+  >
+    View program details →
+  </Link>
+) : (
+  <span className="mt-6 w-fit font-semibold text-slate-400">
+    Details coming soon
+  </span>
+)}
               </button>
             </article>
           ))}
