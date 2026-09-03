@@ -96,8 +96,8 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
-            'throttle' => 60,
+            'expire' => (int) env('AUTH_PASSWORD_RESET_EXPIRE', 60),
+            'throttle' => (int) env('AUTH_PASSWORD_RESET_THROTTLE', 60),
         ],
     ],
 
@@ -113,5 +113,14 @@ return [
     */
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
+
+    /*
+    |--------------------------------------------------------------------------
+    | MasterInTech Student Login OTP Configuration
+    |--------------------------------------------------------------------------
+    */
+    'otp_expiry_seconds' => (int) env('OTP_EXPIRY_SECONDS', 30),
+    'otp_max_attempts' => (int) env('OTP_MAX_ATTEMPTS', 3),
+    'otp_resend_cooldown_seconds' => (int) env('OTP_RESEND_COOLDOWN_SECONDS', 30),
 
 ];

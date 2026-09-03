@@ -1,0 +1,565 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
+use App\Models\Batch;
+use App\Models\BatchStudent;
+use App\Models\BatchTransfer;
+use App\Models\Course;
+use App\Models\CourseEnrollment;
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class AdminBatchController extends Controller
+{
+    /**
+     * Get overview statistics for Batch Management.
+     */
+    public function stats()
+    {
+        $totalBatches = Batch::count();
+        $activeBatches = Batch::where('status', 'ongoing')->count();
+        $upcomingBatches = Batch::where('status', 'upcoming')->count();
+        $completedBatches = Batch::where('status', 'completed')->count();
+        $totalStudents = BatchStudent::where('status', 'active')->distinct('user_id')->count('user_id');
+
+        return response()->json([
+            'total_batches' => $totalBatches,
+            'active_batches' => $activeBatches,
+            'upcoming_batches' => $upcomingBatches,
+            'completed_batches' => $completedBatches,
+            'total_batch_students' => $totalStudents,
+        ]);
+    }
+
+    /**
+     * List all batches with search (including 6-digit date DDMMYY), course, tutor, and status filters.
+     */
+    public function index(Request $request)
+    {
+        $query = Batch::with([
+            'course:id,title,slug,code,category,thumbnail',
+            'tutor:id,name,email,avatar',
+        ])->withCount(['activeBatchStudents', 'batchStudents']);
+
+        if ($request->filled('search')) {
+            $query->search($request->search);
+        }
+
+        if ($request->filled('course_id') && $request->course_id !== 'all') {
+            $query->forCourse((int) $request->course_id);
+        }
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->forStatus($request->status);
+        }
+
+        if ($request->filled('tutor_id') && $request->tutor_id !== 'all') {
+            $query->forTutor((int) $request->tutor_id);
+        }
+
+        $batches = $query->orderBy('start_date', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        return response()->json($batches);
+    }
+
+    /**
+     * Create a new batch with automatic RIT(COURSE_CODE)BCDDMMYY generation.
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'nullable|string|max:255',
+            'course_id' => 'required|exists:courses,id',
+            'tutor_id' => 'nullable|exists:users,id',
+            'start_date' => 'required|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'status' => 'nullable|string|in:upcoming,ongoing,completed,cancelled',
+            'schedule_type' => 'nullable|string|in:weekdays,weekends,daily,custom',
+            'schedule_time' => 'nullable|string|max:255',
+            'max_students' => 'nullable|integer|min:1',
+            'meeting_link' => 'nullable|string|max:500',
+            'description' => 'nullable|string|max:2000',
+            'code' => 'nullable|string|max:100|unique:batches,code',
+        ]);
+
+        $course = Course::findOrFail($validated['course_id']);
+
+        // If custom code is explicitly enabled and provided, use it; otherwise automatically generate from course & start_date
+        $isCustom = $request->boolean('is_custom_code');
+        if ($isCustom && ! empty($validated['code'])) {
+            $code = strtoupper(trim($validated['code']));
+        } else {
+            $code = Batch::generateBatchCode($course, $validated['start_date']);
+        }
+
+        // Determine default status if omitted
+        $status = $validated['status'] ?? null;
+        if (! $status) {
+            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
+            $today = Carbon::today();
+            $status = $startDate->isFuture() ? 'upcoming' : 'ongoing';
+        }
+
+        $name = ! empty($validated['name']) ? trim($validated['name']) : $code;
+
+        $batch = Batch::create([
+            'name' => $name,
+            'code' => $code,
+            'course_id' => $validated['course_id'],
+            'tutor_id' => $validated['tutor_id'] ?? null,
+            'start_date' => $validated['start_date'],
+            'end_date' => $validated['end_date'] ?? null,
+            'status' => $status,
+            'schedule_type' => $validated['schedule_type'] ?? 'weekdays',
+            'schedule_time' => $validated['schedule_time'] ?? null,
+            'max_students' => $validated['max_students'] ?? null,
+            'meeting_link' => $validated['meeting_link'] ?? null,
+            'description' => $validated['description'] ?? null,
+        ]);
+
+        $batch->load([
+            'course:id,title,slug,code,category,thumbnail',
+            'tutor:id,name,email,avatar',
+        ])->loadCount(['activeBatchStudents', 'batchStudents']);
+
+        AuditLog::log('created_batch', $batch, null, $batch->toArray());
+
+        return response()->json([
+            'message' => "Batch {$batch->code} created successfully.",
+            'batch' => $batch,
+        ], 201);
+    }
+
+    /**
+     * Show a batch with student roster and transfer history.
+     */
+    public function show(Batch $batch)
+    {
+        $batch->load([
+            'course:id,title,slug,code,category,thumbnail,instructor',
+            'tutor:id,name,email,avatar,phone',
+            'batchStudents.user:id,name,email,student_id,status,avatar,phone',
+            'transfersFrom.student:id,name,email,student_id',
+            'transfersFrom.toBatch:id,name,code',
+            'transfersFrom.performer:id,name,email',
+            'transfersTo.student:id,name,email,student_id',
+            'transfersTo.fromBatch:id,name,code',
+            'transfersTo.performer:id,name,email',
+        ])->loadCount(['activeBatchStudents', 'batchStudents']);
+
+        return response()->json($batch);
+    }
+
+    /**
+     * Update a batch.
+     */
+    public function update(Request $request, Batch $batch)
+    {
+        $old = $batch->toArray();
+
+        $validated = $request->validate([
+            'name' => 'nullable|string|max:255',
+            'course_id' => 'sometimes|required|exists:courses,id',
+            'tutor_id' => 'nullable|exists:users,id',
+            'start_date' => 'sometimes|required|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'status' => 'sometimes|required|string|in:upcoming,ongoing,completed,cancelled',
+            'schedule_type' => 'nullable|string|in:weekdays,weekends,daily,custom',
+            'schedule_time' => 'nullable|string|max:255',
+            'max_students' => 'nullable|integer|min:1',
+            'meeting_link' => 'nullable|string|max:500',
+            'description' => 'nullable|string|max:2000',
+            'code' => "sometimes|required|string|max:100|unique:batches,code,{$batch->id}",
+        ]);
+
+        $batch->update($validated);
+
+        $batch->load([
+            'course:id,title,slug,code,category,thumbnail',
+            'tutor:id,name,email,avatar',
+        ])->loadCount(['activeBatchStudents', 'batchStudents']);
+
+        AuditLog::log('updated_batch', $batch, $old, $batch->toArray());
+
+        return response()->json([
+            'message' => 'Batch updated successfully.',
+            'batch' => $batch,
+        ]);
+    }
+
+    /**
+     * Delete a batch.
+     */
+    public function destroy(Batch $batch)
+    {
+        $code = $batch->code;
+        $old = $batch->toArray();
+        $batch->delete();
+
+        AuditLog::log('deleted_batch', null, $old, null);
+
+        return response()->json([
+            'message' => "Batch {$code} deleted successfully.",
+        ]);
+    }
+
+    /**
+     * Add / enroll a student into a batch.
+     */
+    public function addStudent(Request $request, Batch $batch)
+    {
+        $validated = $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        $userId = (int) $validated['user_id'];
+
+        // Check if student is already actively in this batch
+        $existing = BatchStudent::where('batch_id', $batch->id)
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'message' => 'Student is already actively enrolled in this batch.',
+            ], 422);
+        }
+
+        // Check capacity if set
+        if ($batch->max_students) {
+            $activeCount = BatchStudent::where('batch_id', $batch->id)
+                ->where('status', 'active')
+                ->count();
+            if ($activeCount >= $batch->max_students) {
+                return response()->json([
+                    'message' => "Batch is at full capacity ({$batch->max_students} students).",
+                ], 422);
+            }
+        }
+
+        // 1. Ensure student is enrolled in the parent course for LMS access
+        CourseEnrollment::firstOrCreate(
+            [
+                'user_id' => $userId,
+                'course_id' => $batch->course_id,
+            ],
+            [
+                'enrolled_at' => now(),
+                'status' => 'active',
+                'progress_percentage' => 0.00,
+            ]
+        );
+
+        // 2. Create batch membership
+        $membership = BatchStudent::create([
+            'batch_id' => $batch->id,
+            'user_id' => $userId,
+            'status' => 'active',
+            'joined_at' => now(),
+            'notes' => $validated['notes'] ?? null,
+        ]);
+
+        // 3. Log batch transfer/membership event
+        BatchTransfer::create([
+            'user_id' => $userId,
+            'from_batch_id' => null,
+            'to_batch_id' => $batch->id,
+            'action_type' => 'enrolled',
+            'reason' => $validated['notes'] ?? 'Enrolled into cohort',
+            'performed_by' => auth()->id(),
+        ]);
+
+        $membership->load('user:id,name,email,student_id,status,avatar');
+
+        AuditLog::log('assigned_batch_student', $batch, null, ['batch_id' => $batch->id, 'batch_code' => $batch->code, 'user_id' => $userId]);
+
+        return response()->json([
+            'message' => 'Student enrolled into batch successfully.',
+            'membership' => $membership,
+        ], 201);
+    }
+
+    /**
+     * Transfer a student from current batch to another batch.
+     * Preserves complete historical membership in source batch.
+     */
+    public function transferStudent(Request $request, Batch $batch, User $user)
+    {
+        $validated = $request->validate([
+            'to_batch_id' => "required|exists:batches,id|different:{$batch->id}",
+            'reason' => 'required|string|max:1000',
+        ]);
+
+        $toBatch = Batch::findOrFail($validated['to_batch_id']);
+
+        // Check if user is actively in current batch
+        $currentMembership = BatchStudent::where('batch_id', $batch->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $currentMembership) {
+            return response()->json([
+                'message' => 'Student is not actively enrolled in this batch.',
+            ], 422);
+        }
+
+        // Check if user already actively in destination batch
+        $destMembership = BatchStudent::where('batch_id', $toBatch->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->first();
+
+        if ($destMembership) {
+            return response()->json([
+                'message' => 'Student is already actively enrolled in destination batch.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($batch, $toBatch, $user, $currentMembership, $validated) {
+            // 1. Mark source batch membership as 'transferred' with left_at timestamp
+            $currentMembership->update([
+                'status' => 'transferred',
+                'left_at' => now(),
+                'notes' => 'Transferred to ' . $toBatch->code . '. Reason: ' . $validated['reason'],
+            ]);
+
+            // 2. Create active membership in destination batch
+            BatchStudent::create([
+                'batch_id' => $toBatch->id,
+                'user_id' => $user->id,
+                'status' => 'active',
+                'joined_at' => now(),
+                'notes' => 'Transferred from ' . $batch->code . '. Reason: ' . $validated['reason'],
+            ]);
+
+            // 3. Ensure student is enrolled in target course if courses differ
+            CourseEnrollment::firstOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'course_id' => $toBatch->course_id,
+                ],
+                [
+                    'enrolled_at' => now(),
+                    'status' => 'active',
+                    'progress_percentage' => 0.00,
+                ]
+            );
+
+            // 4. Log complete transfer record
+            BatchTransfer::create([
+                'user_id' => $user->id,
+                'from_batch_id' => $batch->id,
+                'to_batch_id' => $toBatch->id,
+                'action_type' => 'transferred',
+                'reason' => $validated['reason'],
+                'performed_by' => auth()->id(),
+            ]);
+        });
+
+        AuditLog::log('transferred_batch_student', $batch, ['from_batch' => $batch->code, 'student' => $user->name], ['to_batch' => $toBatch->code, 'reason' => $validated['reason']]);
+
+        return response()->json([
+            'message' => "Student {$user->name} transferred from {$batch->code} to {$toBatch->code} successfully.",
+        ]);
+    }
+
+    /**
+     * Mark a student as discontinued from a batch.
+     */
+    public function discontinueStudent(Request $request, Batch $batch, User $user)
+    {
+        $validated = $request->validate([
+            'reason' => 'required|string|max:1000',
+        ]);
+
+        $membership = BatchStudent::where('batch_id', $batch->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $membership) {
+            return response()->json([
+                'message' => 'Student is not actively enrolled in this batch.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($batch, $user, $membership, $validated) {
+            // Mark membership as discontinued
+            $membership->update([
+                'status' => 'discontinued',
+                'left_at' => now(),
+                'discontinued_at' => now(),
+                'discontinuation_reason' => $validated['reason'],
+            ]);
+
+            // Log discontinuation
+            BatchTransfer::create([
+                'user_id' => $user->id,
+                'from_batch_id' => $batch->id,
+                'to_batch_id' => null,
+                'action_type' => 'discontinued',
+                'reason' => $validated['reason'],
+                'performed_by' => auth()->id(),
+            ]);
+        });
+
+        AuditLog::log('discontinued_batch_student', $batch, ['batch' => $batch->code, 'student' => $user->name], ['reason' => $validated['reason']]);
+
+        return response()->json([
+            'message' => "Student {$user->name} marked as discontinued from {$batch->code}.",
+        ]);
+    }
+
+    /**
+     * Rejoin a student into this batch or another batch.
+     */
+    public function rejoinStudent(Request $request, Batch $batch, User $user)
+    {
+        $validated = $request->validate([
+            'target_batch_id' => 'nullable|exists:batches,id',
+            'reason' => 'nullable|string|max:1000',
+        ]);
+
+        $targetBatchId = $validated['target_batch_id'] ?? $batch->id;
+        $targetBatch = Batch::findOrFail($targetBatchId);
+
+        // Check if student already active in target batch
+        $activeInTarget = BatchStudent::where('batch_id', $targetBatch->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->first();
+
+        if ($activeInTarget) {
+            return response()->json([
+                'message' => 'Student is already actively enrolled in the target batch.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($batch, $targetBatch, $user, $validated) {
+            if ($targetBatch->id === $batch->id) {
+                // Rejoining the same batch: reactivate membership
+                $membership = BatchStudent::where('batch_id', $batch->id)
+                    ->where('user_id', $user->id)
+                    ->where('status', 'discontinued')
+                    ->latest()
+                    ->first();
+
+                if ($membership) {
+                    $membership->update([
+                        'status' => 'active',
+                        'left_at' => null,
+                        'discontinued_at' => null,
+                        'notes' => 'Rejoined on ' . now()->toDateString() . '. Note: ' . ($validated['reason'] ?? 'None'),
+                    ]);
+                } else {
+                    BatchStudent::create([
+                        'batch_id' => $batch->id,
+                        'user_id' => $user->id,
+                        'status' => 'active',
+                        'joined_at' => now(),
+                        'notes' => 'Rejoined: ' . ($validated['reason'] ?? ''),
+                    ]);
+                }
+            } else {
+                // Rejoining into a new batch: keep old discontinued record and create new active membership
+                BatchStudent::create([
+                    'batch_id' => $targetBatch->id,
+                    'user_id' => $user->id,
+                    'status' => 'active',
+                    'joined_at' => now(),
+                    'notes' => 'Rejoined into new cohort from ' . $batch->code . '. Note: ' . ($validated['reason'] ?? ''),
+                ]);
+            }
+
+            // Ensure course enrollment
+            CourseEnrollment::firstOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'course_id' => $targetBatch->course_id,
+                ],
+                [
+                    'enrolled_at' => now(),
+                    'status' => 'active',
+                    'progress_percentage' => 0.00,
+                ]
+            );
+
+            // Log rejoin event
+            BatchTransfer::create([
+                'user_id' => $user->id,
+                'from_batch_id' => $batch->id,
+                'to_batch_id' => $targetBatch->id,
+                'action_type' => 'rejoined',
+                'reason' => $validated['reason'] ?? 'Rejoined cohort',
+                'performed_by' => auth()->id(),
+            ]);
+        });
+
+        AuditLog::log('rejoined_batch_student', $targetBatch, null, ['batch' => $targetBatch->code, 'student' => $user->name, 'reason' => $validated['reason'] ?? 'Rejoined']);
+
+        return response()->json([
+            'message' => "Student {$user->name} successfully rejoined into batch {$targetBatch->code}.",
+        ]);
+    }
+
+    /**
+     * Remove a student from a batch.
+     */
+    public function removeStudent(Batch $batch, User $user)
+    {
+        BatchStudent::where('batch_id', $batch->id)
+            ->where('user_id', $user->id)
+            ->delete();
+
+        AuditLog::log('removed_batch_student', $batch, ['batch_id' => $batch->id, 'batch_code' => $batch->code, 'user_id' => $user->id, 'student' => $user->name], null);
+
+        return response()->json([
+            'message' => "Student {$user->name} removed from batch {$batch->code}.",
+        ]);
+    }
+
+    /**
+     * Get platform-wide or batch-specific transfer & lifecycle audit trail.
+     */
+    public function history(Request $request)
+    {
+        $query = BatchTransfer::with([
+            'student:id,name,email,student_id,avatar',
+            'fromBatch:id,name,code',
+            'toBatch:id,name,code',
+            'performer:id,name,email',
+        ]);
+
+        if ($request->filled('batch_id')) {
+            $batchId = (int) $request->batch_id;
+            $query->where(function ($q) use ($batchId) {
+                $q->where('from_batch_id', $batchId)
+                    ->orWhere('to_batch_id', $batchId);
+            });
+        }
+
+        if ($request->filled('user_id')) {
+            $query->where('user_id', (int) $request->user_id);
+        }
+
+        if ($request->filled('action_type') && $request->action_type !== 'all') {
+            $query->where('action_type', $request->action_type);
+        }
+
+        $history = $query->orderBy('created_at', 'desc')
+            ->limit(100)
+            ->get();
+
+        return response()->json($history);
+    }
+}

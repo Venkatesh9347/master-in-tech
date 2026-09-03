@@ -1,0 +1,199 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Course;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class AdminAuthorizationTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_student_cannot_access_admin_event_list(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->getJson('/api/admin/events');
+
+        $response->assertForbidden();
+    }
+
+    public function test_student_cannot_create_course(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->postJson('/api/courses', [
+                'title' => 'Hacked Course',
+                'description' => 'Should not be allowed',
+                'instructor' => 'Hacker',
+                'price' => 0,
+                'duration' => '1 week',
+                'difficulty' => 'Beginner',
+            ]);
+
+        $response->assertForbidden();
+    }
+
+    public function test_student_cannot_update_course(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $course = Course::create([
+            'title' => 'Original Course',
+            'slug' => 'original-course',
+            'description' => 'Original description',
+            'instructor' => 'Instructor',
+            'price' => 100,
+            'duration' => '2 weeks',
+            'difficulty' => 'Beginner',
+        ]);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->putJson("/api/courses/{$course->id}", [
+                'title' => 'Modified Course',
+                'description' => 'Modified description',
+                'instructor' => 'Instructor',
+                'price' => 200,
+                'duration' => '3 weeks',
+                'difficulty' => 'Advanced',
+            ]);
+
+        $response->assertForbidden();
+    }
+
+    public function test_student_cannot_delete_course(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $course = Course::create([
+            'title' => 'Delete Me',
+            'slug' => 'delete-me',
+            'description' => 'Will be protected',
+            'instructor' => 'Instructor',
+            'price' => 100,
+            'duration' => '1 week',
+            'difficulty' => 'Beginner',
+        ]);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->deleteJson("/api/courses/{$course->id}");
+
+        $response->assertForbidden();
+
+        $this->assertDatabaseHas('courses', ['id' => $course->id]);
+    }
+
+    public function test_student_cannot_create_admin_event(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->postJson('/api/admin/events', [
+                'title' => 'Student Created Event',
+                'description' => 'Should be blocked',
+                'speaker_name' => 'Student',
+                'speaker_designation' => 'Student',
+                'event_date' => '2026-12-01 10:00',
+                'start_time' => '10:00',
+                'end_time' => '11:00',
+                'duration' => 60,
+                'mode' => 'online',
+                'price' => 0,
+                'status' => 'published',
+            ]);
+
+        $response->assertForbidden();
+    }
+
+    public function test_admin_can_access_admin_event_list(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->getJson('/api/admin/events');
+
+        $response->assertOk();
+        $response->assertJson([]);
+    }
+
+    public function test_admin_can_create_course(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $response = $this->actingAs($admin, 'sanctum')
+            ->postJson('/api/courses', [
+                'title' => 'Admin Course',
+                'description' => 'Admin-created course',
+                'instructor' => 'Admin',
+                'price' => 999,
+                'duration' => '4 weeks',
+                'difficulty' => 'Intermediate',
+            ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('title', 'Admin Course');
+    }
+
+    public function test_admin_can_login_with_credentials_and_get_admin_role(): void
+    {
+        User::create([
+            'name' => 'Test Admin',
+            'email' => 'test@example.com',
+            'password' => 'password',
+            'role' => 'admin',
+        ]);
+
+        $response = $this->postJson('/api/login', [
+            'email' => 'test@example.com',
+            'password' => 'password',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('user.role', 'admin')
+            ->assertJsonPath('user.email', 'test@example.com')
+            ->assertJsonStructure(['access_token', 'token_type', 'user']);
+
+        $token = $response->json('access_token');
+        $this->assertNotEmpty($token);
+
+        // Verify that the token grants access to admin routes
+        $adminAccessResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/admin/users');
+        $adminAccessResponse->assertOk();
+    }
+
+    public function test_admin_login_fails_with_invalid_password(): void
+    {
+        User::create([
+            'name' => 'Test Admin',
+            'email' => 'test@example.com',
+            'password' => 'password',
+            'role' => 'admin',
+        ]);
+
+        $response = $this->postJson('/api/login', [
+            'email' => 'test@example.com',
+            'password' => 'wrongpassword',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['email']);
+    }
+
+    public function test_public_can_view_events(): void
+    {
+        $response = $this->getJson('/api/events');
+
+        $response->assertOk();
+    }
+
+    public function test_public_can_view_courses(): void
+    {
+        $response = $this->getJson('/api/courses');
+
+        // GET /courses is now public for the public website.
+        $response->assertOk();
+    }
+}
