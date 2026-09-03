@@ -1,0 +1,20 @@
+{
+  "name": "Master In Tech",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "user": "ubuntu",
+  "install": "./scripts/cloud-agent-install.sh",
+  "terminals": [
+    {
+      "name": "laravel-api",
+      "command": "cd backend && php artisan serve --host=127.0.0.1 --port=8000"
+    },
+    {
+      "name": "vite-frontend",
+      "command": "cd frontend && npm run dev -- --host 127.0.0.1 --port 5173"
+    }
+  ],
+  "ports": [8000, 5173]
+}
