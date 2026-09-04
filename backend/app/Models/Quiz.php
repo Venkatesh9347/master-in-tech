@@ -44,4 +44,14 @@ class Quiz extends Model
     {
         return $this->hasMany(QuizAttempt::class);
     }
+
+    /**
+     * Whether any student attempt exists for this quiz. Authoring mutations that
+     * could invalidate grading (question/option/correct-answer changes, deletion,
+     * or attempt-affecting settings) must be guarded when this is true.
+     */
+    public function hasAttempts(): bool
+    {
+        return $this->attempts()->exists();
+    }
 }

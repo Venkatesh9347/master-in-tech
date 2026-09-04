@@ -397,4 +397,35 @@ class Goal6ClassSessionManagementTest extends TestCase
         $adminEndpointRes = $this->actingAs($this->tutor1, 'sanctum')->getJson('/api/admin/class-sessions');
         $adminEndpointRes->assertStatus(403);
     }
+
+    public function test_admin_cannot_assign_non_tutor_as_class_session_tutor(): void
+    {
+        $payloadBase = [
+            'course_id' => $this->course1->id,
+            'title' => 'Live Session Harden',
+            'scheduled_date' => now()->addDays(4)->toDateString(),
+            'start_time' => '10:00',
+            'end_time' => '11:00',
+            'status' => 'scheduled',
+        ];
+
+        // A student (non-tutor) cannot be assigned as the session tutor.
+        $rejected = $this->actingAs($this->admin, 'sanctum')
+            ->postJson('/api/admin/class-sessions', array_merge($payloadBase, [
+                'tutor_id' => $this->studentNotEnrolled->id,
+            ]));
+
+        $rejected->assertStatus(422)
+            ->assertJsonValidationErrors(['tutor_id']);
+        $this->assertDatabaseMissing('class_sessions', ['title' => 'Live Session Harden']);
+
+        // A genuine tutor is accepted.
+        $accepted = $this->actingAs($this->admin, 'sanctum')
+            ->postJson('/api/admin/class-sessions', array_merge($payloadBase, [
+                'tutor_id' => $this->tutor1->id,
+            ]));
+
+        $accepted->assertStatus(201)
+            ->assertJsonPath('session.tutor_id', $this->tutor1->id);
+    }
 }

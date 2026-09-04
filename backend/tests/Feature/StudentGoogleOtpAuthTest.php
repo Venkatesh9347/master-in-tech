@@ -23,7 +23,7 @@ class StudentGoogleOtpAuthTest extends TestCase
     public function test_google_login_generates_30_second_hashed_otp_without_returning_plaintext_or_sanctum_token(): void
     {
         // Pre-create approved student account (Goal 3A requirement)
-        $student = User::create([
+        $student = User::factory()->create([
             'name' => 'Alex Sharma',
             'email' => 'student.alex@example.com',
             'student_id' => 'STU-1001',
@@ -95,7 +95,7 @@ class StudentGoogleOtpAuthTest extends TestCase
 
     public function test_successful_otp_verification_issues_sanctum_token_and_immediately_destroys_otp(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Verify Student',
             'email' => 'verify.student@example.com',
             'role' => 'student',
@@ -149,9 +149,9 @@ class StudentGoogleOtpAuthTest extends TestCase
         $reVerifyRes->assertStatus(422);
     }
 
-    public function test_mobile_otp_login_for_approved_student_and_unregistered_rejection(): void
+    public function test_mobile_otp_login_returns_equivalent_generic_response_for_known_and_unregistered_phones(): void
     {
-        $student = User::create([
+        $student = User::factory()->create([
             'name' => 'Mobile Student',
             'email' => 'mobile.student@example.com',
             'student_id' => 'STU-1002',
@@ -165,14 +165,16 @@ class StudentGoogleOtpAuthTest extends TestCase
             'phone' => '+91 98765 00000',
         ]);
 
+        // HIGH-5: the response must not expose raw phone information.
         $res->assertStatus(200)
+            ->assertJsonMissing(['phone'])
             ->assertJsonStructure([
                 'message',
                 'requires_otp',
                 'temp_token',
-                'phone',
                 'masked_phone',
                 'expires_in',
+                'resend_cooldown',
             ])
             ->assertJson([
                 'requires_otp' => true,
@@ -203,12 +205,31 @@ class StudentGoogleOtpAuthTest extends TestCase
                 ],
             ]);
 
-        // 3. Unregistered mobile number is rejected
+        // 3. An unregistered mobile number receives an equivalent generic
+        //    response so the endpoint cannot be used to enumerate accounts.
+        $unknownPhone = '+919999999999';
         $unregRes = $this->postJson('/api/auth/mobile/send-otp', [
-            'phone' => '+919999999999',
+            'phone' => $unknownPhone,
         ]);
-        $unregRes->assertStatus(422)
-            ->assertJsonValidationErrors(['phone']);
+
+        $unregRes->assertStatus(200)
+            ->assertJsonMissing(['phone'])
+            ->assertJson([
+                'requires_otp' => true,
+                'expires_in' => 30,
+                'masked_phone' => '+91 ******9999',
+            ]);
+
+        // The unknown-response temp token is generic and cannot be verified,
+        // because no account/OTP record was ever created for it.
+        $unknownToken = $unregRes->json('temp_token');
+        $this->assertNotEquals($tempToken, $unknownToken);
+
+        $unverifiedRes = $this->postJson('/api/auth/mobile/verify-otp', [
+            'temp_token' => $unknownToken,
+            'otp' => '123456',
+        ]);
+        $unverifiedRes->assertStatus(422);
     }
 
     public function test_public_registration_endpoint_is_disabled(): void
@@ -231,7 +252,7 @@ class StudentGoogleOtpAuthTest extends TestCase
 
     public function test_otp_verification_fails_after_30_seconds_expiry(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Expired Student',
             'email' => 'expired.student@example.com',
             'role' => 'student',
@@ -268,7 +289,7 @@ class StudentGoogleOtpAuthTest extends TestCase
 
     public function test_incorrect_otp_increments_attempts_and_locks_after_max_attempts(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Attempts Student',
             'email' => 'attempts.student@example.com',
             'role' => 'student',
@@ -317,7 +338,7 @@ class StudentGoogleOtpAuthTest extends TestCase
 
     public function test_resend_otp_enforces_30_second_cooldown(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Cooldown Student',
             'email' => 'cooldown.student@example.com',
             'role' => 'student',
@@ -365,7 +386,7 @@ class StudentGoogleOtpAuthTest extends TestCase
 
     public function test_google_login_accepts_code_parameter_and_issues_otp(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Code Student',
             'email' => 'code.student@example.com',
             'role' => 'student',
@@ -396,7 +417,7 @@ class StudentGoogleOtpAuthTest extends TestCase
 
     public function test_client_cannot_override_email_identity_during_google_auth(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Genuine Student',
             'email' => 'genuine.student@example.com',
             'role' => 'student',
@@ -423,7 +444,7 @@ class StudentGoogleOtpAuthTest extends TestCase
 
     public function test_otp_hash_is_secure_and_raw_otp_is_never_stored_in_plaintext(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Secure Student',
             'email' => 'secure.student@example.com',
             'role' => 'student',
@@ -442,5 +463,25 @@ class StudentGoogleOtpAuthTest extends TestCase
         $this->assertStringStartsWith('$2y$', $otpRecord->otp_hash);
         // temp_token in DB must be sha256 hash, not raw temp_token
         $this->assertNotEquals($tempToken, $otpRecord->temp_token_hash);
+    }
+
+    public function test_otp_verification_is_rate_limited_per_source_ip(): void
+    {
+        // HIGH-5: verification attempts must be capped per source IP so an
+        // attacker cannot rotate fresh OTP sessions to bypass the guess limit.
+        // (In the testing environment the limiter allows a burst of 60/min.)
+        $attempts = 61;
+        $lastStatus = null;
+
+        for ($i = 0; $i < $attempts; $i++) {
+            $res = $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9'])
+                ->postJson('/api/auth/otp/verify', [
+                    'temp_token' => 'invalid_token_' . $i,
+                    'otp' => '000000',
+                ]);
+            $lastStatus = $res->getStatusCode();
+        }
+
+        $this->assertEquals(429, $lastStatus, 'OTP verification must be throttled after exceeding the per-IP limit.');
     }
 }

@@ -69,10 +69,14 @@ class AdminEnrollmentController extends Controller
         }
 
         $enrollments = $query->orderBy('enrolled_at', 'desc')
-            ->orderBy('id', 'desc')
-            ->get();
+            ->orderBy('id', 'desc');
 
-        return response()->json($enrollments);
+        $limit = $this->limitCap($request);
+        if ($limit !== null) {
+            $enrollments->limit($limit);
+        }
+
+        return response()->json($enrollments->get());
     }
 
     /**
@@ -147,10 +151,14 @@ class AdminEnrollmentController extends Controller
                 [
                     'name' => $validated['name'] ?? explode('@', $validated['email'])[0],
                     'password' => \App\Models\User::generateUnusablePassword(),
-                    'role' => 'student',
                     'status' => 'active',
                 ]
             );
+
+            // HIGH-7: role is not mass-assignable; set explicitly for new users.
+            if ($user->wasRecentlyCreated) {
+                $user->forceFill(['role' => 'student'])->save();
+            }
 
             if ($user->role === 'student' && empty($user->student_id)) {
                 $user->student_id = 'STU-' . (1000 + $user->id);

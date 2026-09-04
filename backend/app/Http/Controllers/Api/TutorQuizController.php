@@ -207,6 +207,20 @@ class TutorQuizController extends Controller
             'questions.*.options.*.is_correct' => 'required_with:questions|boolean',
         ]);
 
+        // M9: once a quiz has student attempts, destructive authoring changes are
+        // blocked so existing attempts and their grading are not invalidated.
+        // Structural rebuild (questions/options/correct answers) and attempt-affecting
+        // settings (passing_score, max_attempts) are rejected; harmless metadata
+        // (title, description, is_published, time_limit) remains editable.
+        if ($quiz->hasAttempts()) {
+            $blocked = $this->rejectedPostAttemptMutations($validated);
+            if ($blocked) {
+                return response()->json([
+                    'message' => $blocked.'. This quiz already has student attempts, so its structure and grading settings cannot be changed. You may still edit the title, description, publish status or time limit.',
+                ], 422);
+            }
+        }
+
         return DB::transaction(function () use ($quiz, $validated) {
             $oldValues = $quiz->toArray();
 
@@ -272,6 +286,14 @@ class TutorQuizController extends Controller
             return response()->json([
                 'message' => 'Unauthorized. This quiz belongs to an unassigned course.',
             ], 403);
+        }
+
+        // M9: do not delete a quiz that has student attempts (this would cascade-
+        // delete attempts and answers, destroying grading evidence).
+        if ($quiz->hasAttempts()) {
+            return response()->json([
+                'message' => 'This quiz has student attempts and cannot be deleted.',
+            ], 422);
         }
 
         // Audit Log
@@ -349,5 +371,26 @@ class TutorQuizController extends Controller
             'quiz' => $quiz,
             'attempts' => $attempts,
         ]);
+    }
+
+    /**
+     * Determine which post-attempt authoring mutation the given payload attempts,
+     * returning a human-readable reason or null when no destructive change is made.
+     */
+    private function rejectedPostAttemptMutations(array $validated): ?string
+    {
+        if (isset($validated['questions'])) {
+            return 'Quiz questions and options cannot be changed after attempts exist';
+        }
+
+        if (array_key_exists('passing_score', $validated)) {
+            return 'passing_score cannot be changed after attempts exist';
+        }
+
+        if (array_key_exists('max_attempts', $validated)) {
+            return 'max_attempts cannot be changed after attempts exist';
+        }
+
+        return null;
     }
 }

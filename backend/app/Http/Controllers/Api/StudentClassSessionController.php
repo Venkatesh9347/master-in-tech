@@ -43,7 +43,7 @@ class StudentClassSessionController extends Controller
             ->with([
                 'course:id,title,category,thumbnail,slug',
                 'tutor:id,name,email,avatar,headline',
-                'materials:id,class_session_id,course_id,title,file_path,file_name,file_type,file_size',
+                'materials:id,class_session_id,course_id,title,file_name,file_type,file_size',
                 'quiz:id,title,description,time_limit,passing_score',
                 'quiz.questions:id,quiz_id',
                 'attendances' => fn ($aq) => $aq->where('user_id', $user->id)->select(['id', 'class_session_id', 'user_id', 'status', 'joined_at']),
@@ -71,7 +71,7 @@ class StudentClassSessionController extends Controller
         ClassSession::syncRealtimeStatuses();
 
         $user = $request->user();
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -89,7 +89,7 @@ class StudentClassSessionController extends Controller
             ->with([
                 'course:id,title,category,thumbnail,slug',
                 'tutor:id,name,email,avatar,headline',
-                'materials:id,class_session_id,course_id,title,file_path,file_name,file_type,file_size',
+                'materials:id,class_session_id,course_id,title,file_name,file_type,file_size',
                 'quiz:id,title,description,time_limit,passing_score',
                 'quiz.questions:id,quiz_id',
                 'attendances' => fn ($aq) => $aq->where('user_id', $user->id)->select(['id', 'class_session_id', 'user_id', 'status', 'joined_at']),
@@ -117,7 +117,7 @@ class StudentClassSessionController extends Controller
         ClassSession::syncRealtimeStatuses();
 
         $user = $request->user();
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -140,7 +140,7 @@ class StudentClassSessionController extends Controller
             ->with([
                 'course:id,title,category,thumbnail,slug',
                 'tutor:id,name,email,avatar,headline',
-                'materials:id,class_session_id,course_id,title,file_path,file_name,file_type,file_size',
+                'materials:id,class_session_id,course_id,title,file_name,file_type,file_size',
                 'quiz:id,title,description,time_limit,passing_score',
                 'quiz.questions:id,quiz_id',
                 'attendances' => fn ($aq) => $aq->where('user_id', $user->id)->select(['id', 'class_session_id', 'user_id', 'status', 'joined_at']),
@@ -168,7 +168,7 @@ class StudentClassSessionController extends Controller
         ClassSession::syncRealtimeStatuses();
 
         $user = $request->user();
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -195,7 +195,7 @@ class StudentClassSessionController extends Controller
             ->with([
                 'course:id,title,category,thumbnail,slug',
                 'tutor:id,name,email,avatar,headline',
-                'materials:id,class_session_id,course_id,title,file_path,file_name,file_type,file_size',
+                'materials:id,class_session_id,course_id,title,file_name,file_type,file_size',
                 'quiz:id,title,description,time_limit,passing_score',
                 'quiz.questions:id,quiz_id',
                 'attendances' => fn ($aq) => $aq->where('user_id', $user->id)->select(['id', 'class_session_id', 'user_id', 'status', 'joined_at']),
@@ -230,6 +230,7 @@ class StudentClassSessionController extends Controller
 
         $isEnrolled = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $session->course_id)
+            ->where('status', '!=', 'dropped')
             ->exists();
 
         if (! $isEnrolled && $user->role !== 'admin') {
@@ -254,6 +255,7 @@ class StudentClassSessionController extends Controller
 
         $isEnrolled = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $session->course_id)
+            ->where('status', '!=', 'dropped')
             ->exists();
 
         if (! $isEnrolled && $user->role !== 'admin') {
@@ -362,7 +364,16 @@ class StudentClassSessionController extends Controller
             $attendanceStatus = $att ? ucfirst($att->status) : 'Not Recorded';
 
             // Materials
-            $materials = $session->materials ?? collect([]);
+            $materials = ($session->materials ?? collect([]))->map(fn ($m) => [
+                'id' => $m->id,
+                'class_session_id' => $m->class_session_id,
+                'course_id' => $m->course_id,
+                'title' => $m->title,
+                'file_name' => $m->file_name,
+                'file_type' => $m->file_type,
+                'file_size' => $m->file_size,
+                'download_url' => '/api/materials/'.$m->id.'/download',
+            ])->values();
             $materialsCount = $materials->count();
             $materialsText = $materialsCount > 0 ? "{$materialsCount} shared" : 'None shared';
 

@@ -1,7 +1,14 @@
 import axios from "axios";
 
+// Backend API base URL.
+//   - Local development: VITE_API_URL is set in the (gitignored) frontend/.env.
+//   - Production:     VITE_API_URL MUST point at the HTTPS API origin and is
+//                     injected at build time (see frontend/.env.example).
+// The inline dev fallback below is used only when no value was injected at
+// build time; it must never be relied upon for a production bundle.
+// The Laravel backend runs on :8001; OpenViking owns :8000.
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api",
+  baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:8001/api",
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",

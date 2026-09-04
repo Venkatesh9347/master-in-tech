@@ -46,6 +46,8 @@ use App\Http\Controllers\Api\TutorController;
 use App\Http\Controllers\Api\TutorMaterialController;
 use App\Http\Controllers\Api\TutorQuizController;
 use App\Http\Controllers\Api\VideoPlaybackController;
+use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\PaymentWebhookController;
 use App\Models\LessonProgress;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -67,12 +69,23 @@ Route::post('/auth/otp/verify', [AuthController::class, 'verifyOtp'])->middlewar
 Route::post('/auth/otp/resend', [AuthController::class, 'resendOtp'])->middleware('throttle:auth-otp-resend');
 Route::post('/enquiries', [EnquiryController::class, 'store'])->middleware('throttle:public-submission');
 
-Route::get('/health', function () {
+Route::get('/health', function (App\Services\Infrastructure\RedisHealthService $redis) {
     return response()->json([
         'status' => 'ok',
         'service' => 'master-in-tech-api',
+        'redis' => $redis->status(),
     ]);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Payment Webhook (public, signature verified, throttled)
+|--------------------------------------------------------------------------
+| The endpoint is intentionally unauthenticated: the gateway cannot present an
+| API token. Integrity is guaranteed by HMAC webhook-signature verification.
+|*/
+Route::post('/payments/razorpay/webhook', [PaymentWebhookController::class, 'handle'])
+    ->middleware('throttle:webhook');
 
 /*
 |--------------------------------------------------------------------------
@@ -207,6 +220,9 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
+
+    // Payments (at-most-once order creation via idempotency key)
+    Route::post('/payments/order', [PaymentController::class, 'createOrder'])->middleware('throttle:payment-order');
 
     // AI Assistant Endpoints
     Route::prefix('ai')->middleware('throttle:ai-chat')->group(function () {

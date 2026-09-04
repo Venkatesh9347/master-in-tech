@@ -103,7 +103,7 @@ class LocalHlsAes128Driver implements VideoDriverInterface
             return null;
         }
 
-        $disk = Storage::disk(config('video.storage_disk', 'local'));
+        $disk = Storage::disk($this->storageDisk());
         $keyPath = "videos/{$asset->asset_id}/enc.key";
 
         if ($disk->exists($keyPath)) {
@@ -177,5 +177,64 @@ class LocalHlsAes128Driver implements VideoDriverInterface
         $lines[] = '#EXT-X-ENDLIST';
 
         return implode("\n", $lines) . "\n";
+    }
+
+    /**
+     * The storage disk that backs this HLS asset (key + segment objects).
+     *
+     * LocalHls reads from the disk configured in `video.storage_disk`; the
+     * S3-compatible driver overrides this to always target the S3 disk.
+     */
+    protected function storageDisk(): string
+    {
+        return (string) config('video.storage_disk', 'local');
+    }
+
+    /**
+     * Resolve the FFmpeg binary path for transcode/remux jobs.
+     *
+     * Environment-driven via FFMPEG_BINARY (see config/video.php). When unset it
+     * falls back to a bare `ffmpeg`, letting the OS (Linux /usr/bin/ffmpeg on
+     * AWS Lightsail, or Windows binaries on PATH) resolve it. No hardcoded
+     * platform-specific paths are used, so local Windows dev keeps working.
+     */
+    public function ffmpegPath(): string
+    {
+        $configured = (string) config('video.ffmpeg_binary', '');
+        return $configured !== '' ? $configured : 'ffmpeg';
+    }
+
+    /**
+     * Resolve the FFprobe binary path for probe/media-inspection jobs.
+     *
+     * Environment-driven via FFPROBE_BINARY; falls back to a bare `ffprobe`.
+     */
+    public function ffprobePath(): string
+    {
+        $configured = (string) config('video.ffprobe_binary', '');
+        return $configured !== '' ? $configured : 'ffprobe';
+    }
+
+    /**
+     * Return the raw media segment bytes, or a deterministic dev buffer.
+     *
+     * On the local driver no real .ts uploads exist, so we emit a fixed-size
+     * synthetic encrypted chunk (same content-type as a real MPEG-TS segment)
+     * to keep the development stream playable end-to-end.
+     */
+    public function readSegment(VideoAsset $asset, string $segment, string $token): ?string
+    {
+        if (! $this->verifyPlaybackToken($asset, $token)) {
+            return null;
+        }
+
+        $disk = Storage::disk($this->storageDisk());
+        $path = "videos/{$asset->asset_id}/{$segment}";
+
+        if ($disk->exists($path)) {
+            return $disk->get($path);
+        }
+
+        return str_pad("ENC_TS_CHUNK_{$asset->asset_id}_{$segment}_" . hash('sha256', $segment), 188 * 10, "\0");
     }
 }

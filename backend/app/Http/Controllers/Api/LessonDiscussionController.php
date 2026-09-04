@@ -18,6 +18,10 @@ class LessonDiscussionController extends Controller
     public function index(Request $request, $courseId, $lessonId)
     {
         $course = Course::findOrFail($courseId);
+
+        // L1: the lesson must belong to the specified course (no cross-course IDs)
+        $this->assertLessonBelongsToCourse($courseId, $lessonId);
+
         $this->authorizeCourseAccess($request->user(), $course);
 
         $discussions = LessonDiscussion::where('course_id', $courseId)
@@ -37,6 +41,10 @@ class LessonDiscussionController extends Controller
         $user = $request->user();
 
         $course = Course::findOrFail($courseId);
+
+        // L1: the lesson must belong to the specified course (no cross-course IDs)
+        $this->assertLessonBelongsToCourse($courseId, $lessonId);
+
         $this->authorizeCourseAccess($user, $course);
 
         $validated = $request->validate([
@@ -82,6 +90,20 @@ class LessonDiscussionController extends Controller
             $reply->load('user:id,name,role'),
             201
         );
+    }
+
+    /**
+     * Ensure the given lesson actually belongs to the specified course.
+     */
+    private function assertLessonBelongsToCourse($courseId, $lessonId): void
+    {
+        $exists = Lesson::where('id', $lessonId)
+            ->where('course_id', $courseId)
+            ->exists();
+
+        if (! $exists) {
+            abort(404, 'Lesson not found for this course.');
+        }
     }
 
     /**

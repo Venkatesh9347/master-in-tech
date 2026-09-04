@@ -23,6 +23,13 @@ class AppServiceProvider extends ServiceProvider
                 default => new \App\Services\Ai\Providers\StubLlmProvider(),
             };
         });
+
+        $this->app->bind(\App\Services\Payment\PaymentProviderInterface::class, function () {
+            return match (config('payment.default_provider', 'stub')) {
+                'razorpay' => new \App\Services\Payment\Providers\RazorpayProvider(),
+                default => new \App\Services\Payment\Providers\StubPaymentProvider(),
+            };
+        });
     }
 
     /**
@@ -63,8 +70,10 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('auth-otp-verify', function (Request $request) use ($testingBurst) {
-            return Limit::perMinute($testingBurst ?? 10)
-                ->by((string) $request->input('temp_token').'|'.$request->ip());
+            // Keyed by source IP alone (NOT per temp_token) so an attacker cannot
+            // rotate fresh OTP sessions to bypass the per-source guess cap.
+            return Limit::perMinute($testingBurst ?? 5)
+                ->by('auth-otp-verify|'.$request->ip());
         });
 
         RateLimiter::for('auth-otp-resend', function (Request $request) use ($testingBurst) {
@@ -85,6 +94,18 @@ class AppServiceProvider extends ServiceProvider
             $userId = $request->user()?->id ?? 'guest';
 
             return Limit::perMinute($testingBurst ?? 20)->by('ai-chat|'.$userId.'|'.$request->ip());
+        });
+
+        // Payment provider webhooks (public, signature-verified; bound by IP)
+        RateLimiter::for('webhook', function (Request $request) use ($testingBurst) {
+            return Limit::perMinute($testingBurst ?? 60)->by('webhook|'.$request->ip());
+        });
+
+        // Authenticated payment order creation (per user)
+        RateLimiter::for('payment-order', function (Request $request) use ($testingBurst) {
+            $userId = $request->user()?->id ?? 'guest';
+
+            return Limit::perMinute($testingBurst ?? 20)->by('payment-order|'.$userId);
         });
     }
 }

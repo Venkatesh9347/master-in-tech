@@ -41,27 +41,31 @@ class AuthController extends Controller
                 ->orWhere('phone', 'like', "%{$digitsOnly}");
         })->first();
 
-        if (! $user) {
-            throw ValidationException::withMessages([
-                'phone' => ['Your mobile number is not registered for student access. Please contact MasterInTech.'],
-            ]);
-        }
+        // HIGH-5: respond identically for known, unknown, and deactivated phones
+        // so the endpoint cannot be used to enumerate registered numbers. The
+        // generic response never returns raw phone (or email) information.
+        $disabled = $user && in_array($user->status, ['disabled', 'inactive', 'suspended'], true);
 
-        if (isset($user->status) && in_array($user->status, ['disabled', 'inactive', 'suspended'], true)) {
-            throw ValidationException::withMessages([
-                'phone' => ['Your student account has been deactivated. Please contact MasterInTech support.'],
+        if (! $user || $disabled) {
+            // Generic pre-auth token that is not tied to any registered account,
+            // so it cannot be verified. Indistinguishable from a real dispatch.
+            return response()->json([
+                'message' => 'A 30-second verification code has been sent to your registered mobile number.',
+                'requires_otp' => true,
+                'temp_token' => $otpService->generateTempToken(),
+                'masked_phone' => $otpService->maskPhone($rawPhone),
+                'expires_in' => (int) config('auth.otp_expiry_seconds', 30),
+                'resend_cooldown' => (int) config('auth.otp_resend_cooldown_seconds', 30),
             ]);
         }
 
         $otpPayload = $otpService->createOtpForUserViaMobile($user);
 
         return response()->json([
-            'message' => 'Mobile authentication verified. A 30-second verification code has been sent to your registered mobile.',
+            'message' => 'A 30-second verification code has been sent to your registered mobile number.',
             'requires_otp' => true,
             'temp_token' => $otpPayload['temp_token'],
-            'phone' => $otpPayload['phone'],
-            'masked_phone' => $otpPayload['masked_phone'],
-            'masked_email' => $otpPayload['masked_email'],
+            'masked_phone' => $otpService->maskPhone($rawPhone),
             'expires_in' => $otpPayload['expires_in'],
             'resend_cooldown' => $otpPayload['resend_cooldown'],
         ]);

@@ -547,4 +547,242 @@ class AdminBatchManagementTest extends TestCase
                 'code' => 'SESSION_REVOKED',
             ]);
     }
+
+    public function test_rejoin_after_transfer_does_not_create_duplicate_active_membership(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $student = User::factory()->create(['role' => 'student', 'name' => 'Diana Prince']);
+        $course = $this->createCourse(['title' => 'AWS Certified Solutions', 'code' => 'AWS']);
+
+        $batchA = Batch::create([
+            'name' => 'AWS Morning Batch A',
+            'code' => 'RIT(AWS)BC010826',
+            'course_id' => $course->id,
+            'start_date' => '2026-08-01',
+            'status' => 'ongoing',
+        ]);
+
+        $batchB = Batch::create([
+            'name' => 'AWS Evening Batch B',
+            'code' => 'RIT(AWS)BC011026',
+            'course_id' => $course->id,
+            'start_date' => '2026-10-01',
+            'status' => 'upcoming',
+        ]);
+
+        // Student starts active in Batch A
+        BatchStudent::create([
+            'batch_id' => $batchA->id,
+            'user_id' => $student->id,
+            'status' => 'active',
+            'joined_at' => now()->subDays(5),
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        // 1. Transfer A -> B (A becomes transferred, B becomes active)
+        $this->postJson("/api/admin/batches/{$batchA->id}/students/{$student->id}/transfer", [
+            'to_batch_id' => $batchB->id,
+            'reason' => 'Shift to evening batch',
+        ])->assertStatus(200);
+
+        // 2. Discontinue from B so the B membership becomes non-active
+        $this->postJson("/api/admin/batches/{$batchB->id}/students/{$student->id}/discontinue", [
+            'reason' => 'Temporary pause',
+        ])->assertStatus(200);
+
+        // 3. Rejoin from A targeting B (cross-batch rejoin) - must reuse the
+        //    existing B membership and NOT create a duplicate active record.
+        $this->postJson("/api/admin/batches/{$batchA->id}/students/{$student->id}/rejoin", [
+            'target_batch_id' => $batchB->id,
+            'reason' => 'Resuming studies',
+        ])->assertStatus(200);
+
+        $activeInB = BatchStudent::where('batch_id', $batchB->id)
+            ->where('user_id', $student->id)
+            ->where('status', 'active')
+            ->count();
+
+        $totalInB = BatchStudent::where('batch_id', $batchB->id)
+            ->where('user_id', $student->id)
+            ->count();
+
+        $this->assertEquals(1, $activeInB, 'There must be exactly one active membership in the target batch.');
+        $this->assertEquals(1, $totalInB, 'Rejoin must reuse the existing membership rather than insert a duplicate.');
+    }
+
+    public function test_transfer_and_rejoin_reject_over_capacity_batch(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $studentA = User::factory()->create(['role' => 'student', 'name' => 'Bruce Wayne']);
+        $studentB = User::factory()->create(['role' => 'student', 'name' => 'Clark Kent']);
+        $course = $this->createCourse(['title' => 'Terraform Automation', 'code' => 'TF']);
+
+        $batchA = Batch::create([
+            'name' => 'TF Morning Batch',
+            'code' => 'RIT(TF)BC010826',
+            'course_id' => $course->id,
+            'start_date' => '2026-08-01',
+            'status' => 'ongoing',
+        ]);
+
+        // Batch B has capacity for exactly 1 student and is already full
+        $batchB = Batch::create([
+            'name' => 'TF Evening Batch',
+            'code' => 'RIT(TF)BC011026',
+            'course_id' => $course->id,
+            'start_date' => '2026-10-01',
+            'status' => 'upcoming',
+            'max_students' => 1,
+        ]);
+
+        BatchStudent::create([
+            'batch_id' => $batchA->id,
+            'user_id' => $studentA->id,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        // Fill Batch B to capacity
+        BatchStudent::create([
+            'batch_id' => $batchB->id,
+            'user_id' => $studentB->id,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        // Transfer into a full destination batch is rejected
+        $this->postJson("/api/admin/batches/{$batchA->id}/students/{$studentA->id}/transfer", [
+            'to_batch_id' => $batchB->id,
+            'reason' => 'Move to evening batch',
+        ])->assertStatus(422);
+
+        // Rejoin into a full target batch is rejected
+        $this->postJson("/api/admin/batches/{$batchA->id}/students/{$studentA->id}/rejoin", [
+            'target_batch_id' => $batchB->id,
+            'reason' => 'Resume in evening batch',
+        ])->assertStatus(422);
+
+        // No duplicate / unintended active membership was created in Batch B
+        $activeInB = BatchStudent::where('batch_id', $batchB->id)
+            ->where('status', 'active')
+            ->count();
+        $this->assertEquals(1, $activeInB);
+    }
+
+    public function test_transfer_and_rejoin_reject_completed_or_cancelled_batch(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $student = User::factory()->create(['role' => 'student', 'name' => 'Tony Stark']);
+        $course = $this->createCourse(['title' => 'Cybersecurity Essentials', 'code' => 'CSE']);
+
+        $batchA = Batch::create([
+            'name' => 'CSE Active Batch',
+            'code' => 'RIT(CSE)BC010826',
+            'course_id' => $course->id,
+            'start_date' => '2026-08-01',
+            'status' => 'ongoing',
+        ]);
+
+        $completedBatch = Batch::create([
+            'name' => 'CSE Completed Cohort',
+            'code' => 'RIT(CSE)BC101026',
+            'course_id' => $course->id,
+            'start_date' => '2026-10-10',
+            'status' => 'completed',
+        ]);
+
+        $cancelledBatch = Batch::create([
+            'name' => 'CSE Cancelled Cohort',
+            'code' => 'RIT(CSE)BC201026',
+            'course_id' => $course->id,
+            'start_date' => '2026-10-20',
+            'status' => 'cancelled',
+        ]);
+
+        BatchStudent::create([
+            'batch_id' => $batchA->id,
+            'user_id' => $student->id,
+            'status' => 'active',
+            'joined_at' => now(),
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        // Transfer into a completed destination batch is rejected
+        $this->postJson("/api/admin/batches/{$batchA->id}/students/{$student->id}/transfer", [
+            'to_batch_id' => $completedBatch->id,
+            'reason' => 'Wrong move',
+        ])->assertStatus(422);
+
+        // Rejoin into a cancelled target batch is rejected
+        $this->postJson("/api/admin/batches/{$batchA->id}/students/{$student->id}/rejoin", [
+            'target_batch_id' => $cancelledBatch->id,
+            'reason' => 'Wrong resume',
+        ])->assertStatus(422);
+
+        // Transfer into a cancelled target batch is also rejected
+        $this->postJson("/api/admin/batches/{$batchA->id}/students/{$student->id}/transfer", [
+            'to_batch_id' => $cancelledBatch->id,
+            'reason' => 'Wrong move to cancelled',
+        ])->assertStatus(422);
+
+        // Student remains active only in the original batch
+        $this->assertDatabaseHas('batch_students', [
+            'batch_id' => $batchA->id,
+            'user_id' => $student->id,
+            'status' => 'active',
+        ]);
+    }
+
+    public function test_remove_student_only_deactivates_active_membership_preserves_history(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $student = User::factory()->create(['role' => 'student', 'name' => 'Natasha Romanoff']);
+        $course = $this->createCourse(['title' => 'Node.js Backend', 'code' => 'NODE']);
+
+        $batch = Batch::create([
+            'name' => 'Node Aug Batch',
+            'code' => 'RIT(NODE)BC230826',
+            'course_id' => $course->id,
+            'start_date' => '2026-08-23',
+            'status' => 'ongoing',
+        ]);
+
+        // Historical membership (must be preserved)
+        $historical = BatchStudent::create([
+            'batch_id' => $batch->id,
+            'user_id' => $student->id,
+            'status' => 'transferred',
+            'joined_at' => now()->subDays(20),
+            'left_at' => now()->subDays(10),
+        ]);
+
+        // Current active membership (should be deactivated only)
+        $active = BatchStudent::create([
+            'batch_id' => $batch->id,
+            'user_id' => $student->id,
+            'status' => 'active',
+            'joined_at' => now()->subDays(5),
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $res = $this->deleteJson("/api/admin/batches/{$batch->id}/students/{$student->id}");
+        $res->assertStatus(200);
+
+        // Historical record is preserved / untouched
+        $this->assertEquals('transferred', $historical->fresh()->status);
+
+        // Active membership is deactivated (not hard-deleted)
+        $this->assertEquals('removed', $active->fresh()->status);
+        $this->assertNotNull($active->fresh()->left_at);
+
+        // Both membership rows still exist (nothing was hard-deleted)
+        $this->assertEquals(2, BatchStudent::where('batch_id', $batch->id)
+            ->where('user_id', $student->id)
+            ->count());
+    }
 }

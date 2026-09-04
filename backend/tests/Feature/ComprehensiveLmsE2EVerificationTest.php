@@ -60,7 +60,7 @@ class ComprehensiveLmsE2EVerificationTest extends TestCase
         $registerRes->assertForbidden();
 
         // Student account created by admin
-        $student = User::create([
+        $student = User::factory()->create([
             'name' => 'Alex Rivera',
             'email' => 'alex.rivera@example.com',
             'password' => bcrypt('SecurePass123!'),

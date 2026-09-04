@@ -155,10 +155,18 @@ class VideoPlaybackController extends Controller
             return response('Unauthorized segment request.', 403);
         }
 
-        // Generate synthetic AES-128 encrypted TS buffer for development stream if raw chunk file not on disk
-        $dummyPayload = str_pad("ENC_TS_CHUNK_{$assetId}_{$segment}_" . hash('sha256', $segment), 188 * 10, "\0");
+        if (! $driver instanceof LocalHlsAes128Driver) {
+            return response('Invalid driver.', 400);
+        }
 
-        return response($dummyPayload, 200, [
+        // Pull the encrypted MPEG-TS bytes from the driver (local disk or
+        // S3-compatible object store). Null means the object is unavailable.
+        $payload = $driver->readSegment($asset, $segment, $token);
+        if ($payload === null) {
+            return response('Segment unavailable or unauthorized.', 404);
+        }
+
+        return response($payload, 200, [
             'Content-Type' => 'video/MP2T',
             'Cache-Control' => 'no-cache, no-store, must-revalidate',
             ...$this->corsHeaders($request),

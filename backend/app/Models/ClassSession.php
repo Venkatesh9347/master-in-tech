@@ -92,14 +92,15 @@ class ClassSession extends Model
     }
 
     /**
-     * Synchronize real-time class statuses strictly based on IST datetime:
+     * Synchronize real-time class statuses strictly based on the configured
+     * business timezone (config('app.business_timezone')):
      * - LIVE: scheduled_date = today AND start_time <= now < end_time
      * - SCHEDULED: scheduled_date > today OR (scheduled_date = today AND now < start_time)
      * - EXPIRED: scheduled_date < today OR (scheduled_date = today AND now >= end_time)
      */
     public static function syncRealtimeStatuses(): int
     {
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
         $updatedCount = 0;
@@ -156,7 +157,8 @@ class ClassSession extends Model
     }
 
     /**
-     * Compute real-time status in IST without relying on stale DB values.
+     * Compute real-time status in the configured business timezone without
+     * relying on stale DB values.
      */
     public function calculateStatus(?Carbon $at = null): string
     {
@@ -164,7 +166,7 @@ class ClassSession extends Model
             return $this->status;
         }
 
-        $at = $at ?: Carbon::now('Asia/Kolkata');
+        $at = $at ?: Carbon::now(config('app.business_timezone'));
         $date = $at->toDateString();
         $time = $at->format('H:i');
 
@@ -291,7 +293,7 @@ class ClassSession extends Model
      */
     public function scopeActiveOrScheduled(Builder $query): Builder
     {
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -313,7 +315,7 @@ class ClassSession extends Model
      */
     public function scopeHistory(Builder $query): Builder
     {
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -334,7 +336,7 @@ class ClassSession extends Model
      */
     public function scopeUpcoming(Builder $query): Builder
     {
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -357,7 +359,7 @@ class ClassSession extends Model
      */
     public function scopeToday(Builder $query): Builder
     {
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -373,7 +375,7 @@ class ClassSession extends Model
      */
     public function scopePrevious(Builder $query): Builder
     {
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 

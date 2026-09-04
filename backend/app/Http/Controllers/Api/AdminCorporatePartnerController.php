@@ -68,17 +68,21 @@ class AdminCorporatePartnerController extends Controller
                 'email' => $company->email,
                 'phone' => $company->phone,
                 'password' => Hash::make($defaultPassword),
-                'role' => 'company',
                 'company_id' => $company->id,
                 'status' => 'active',
             ]);
+
+            // HIGH-7: role is not mass-assignable; set explicitly.
+            $user->forceFill(['role' => 'company'])->save();
         } else {
             $user->update([
-                'role' => 'company',
                 'company_id' => $company->id,
                 'status' => 'active',
                 'password' => Hash::make($defaultPassword),
             ]);
+
+            // HIGH-7: role is not mass-assignable; set explicitly.
+            $user->forceFill(['role' => 'company'])->save();
         }
 
         // 2. Update company status

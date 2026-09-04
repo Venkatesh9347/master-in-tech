@@ -61,11 +61,31 @@ return [
     |
     | Here you may specify the default timezone for your application, which
     | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | is set to "UTC" by default to keep database timestamps UTC-safe.
+    |
+    | MasterInTech stores timestamps in UTC and treats the local business
+    | timezone separately (see 'business_timezone' below). This keeps
+    | timestamp storage stable and lets operators choose the display/scheduling
+    | timezone without rewriting existing database timestamps.
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Business Timezone
+    |--------------------------------------------------------------------------
+    |
+    | The timezone used for business-date interpretation: "today", scheduling
+    | comparisons and deadline interpretation at the application boundary. It is
+    | kept separate from the UTC serialization timezone above so changing it does
+    | not reinterpret existing UTC timestamps. It defaults to Asia/Kolkata, the
+    | MasterInTech local business timezone.
+    |
+    */
+
+    'business_timezone' => env('APP_BUSINESS_TIMEZONE', 'Asia/Kolkata'),
 
     /*
     |--------------------------------------------------------------------------

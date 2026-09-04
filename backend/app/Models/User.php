@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Laravel\Sanctum\NewAccessToken;
 
-#[Fillable(['name', 'email', 'student_id', 'password', 'role', 'company_id', 'status', 'phone', 'headline', 'expertise', 'bio', 'google_id', 'avatar', 'current_session_id', 'current_session_created_at'])]
+#[Fillable(['name', 'email', 'student_id', 'password', 'company_id', 'status', 'phone', 'headline', 'expertise', 'bio', 'google_id', 'avatar'])]
 #[Hidden(['password', 'remember_token', 'current_session_id', 'current_session_created_at', 'google_id'])]
 class User extends Authenticatable
 {

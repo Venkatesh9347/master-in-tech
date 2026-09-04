@@ -12,7 +12,6 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class AdminClassSessionController extends Controller
@@ -75,10 +74,16 @@ class AdminClassSessionController extends Controller
             });
         }
 
-        $sessions = $query->orderByRaw("CASE WHEN status = 'live' THEN 0 ELSE 1 END ASC")
+        $sessionsQuery = $query->orderByRaw("CASE WHEN status = 'live' THEN 0 ELSE 1 END ASC")
             ->orderBy('scheduled_date', 'asc')
-            ->orderBy('start_time', 'asc')
-            ->get();
+            ->orderBy('start_time', 'asc');
+
+        $limit = $this->limitCap($request);
+        if ($limit !== null) {
+            $sessionsQuery->limit($limit);
+        }
+
+        $sessions = $sessionsQuery->get();
 
         // Enrich with authoritative batch codes in a single batch lookup
         $courseIds = $sessions->pluck('course_id')->unique()->filter()->values();
@@ -204,9 +209,15 @@ class AdminClassSessionController extends Controller
             });
         }
 
-        $sessions = $query->orderBy('scheduled_date', 'desc')
-            ->orderBy('start_time', 'desc')
-            ->get();
+        $historyQuery = $query->orderBy('scheduled_date', 'desc')
+            ->orderBy('start_time', 'desc');
+
+        $limit = $this->limitCap($request);
+        if ($limit !== null) {
+            $historyQuery->limit($limit);
+        }
+
+        $sessions = $historyQuery->get();
 
         // Enrich with authoritative batch codes
         $courseIds = $sessions->pluck('course_id')->unique()->filter()->values();
@@ -234,11 +245,11 @@ class AdminClassSessionController extends Controller
             // Formatted Expiration / Completion Time
             $expiredAtStr = null;
             if ($session->expired_at) {
-                $expiredAtStr = $session->expired_at->format('d-m-Y h:i A') . ' IST';
+                $expiredAtStr = $session->expired_at->format('d-m-Y h:i A') . ' ' . Carbon::now(config('app.business_timezone'))->format('T');
             } elseif ($session->ended_at) {
-                $expiredAtStr = $session->ended_at->format('d-m-Y h:i A') . ' IST';
+                $expiredAtStr = $session->ended_at->format('d-m-Y h:i A') . ' ' . Carbon::now(config('app.business_timezone'))->format('T');
             } elseif ($session->status === 'expired') {
-                $expiredAtStr = $session->end_time . ' IST';
+                $expiredAtStr = $session->end_time . ' ' . Carbon::now(config('app.business_timezone'))->format('T');
             }
 
             $arr = $session->toArray();
@@ -379,6 +390,14 @@ class AdminClassSessionController extends Controller
             $validated['status'] ?? 'scheduled'
         );
 
+        // L4: the tutor_id must reference a user whose role is tutor.
+        $tutor = User::where('id', $validated['tutor_id'])->first();
+        if (! $tutor || $tutor->role !== 'tutor') {
+            throw ValidationException::withMessages([
+                'tutor_id' => ['The selected tutor must be a user with the tutor role.'],
+            ]);
+        }
+
         $platform = 'livekit';
         if (! empty($validated['platform']) && $validated['platform'] !== 'livekit') {
             $platform = strtolower(str_replace(' ', '', $validated['platform']));
@@ -434,7 +453,12 @@ class AdminClassSessionController extends Controller
             'attendances.user:id,name,email',
         ])->findOrFail($id);
 
-        return response()->json($session);
+        $arr = $session->toArray();
+        $arr['masked_password'] = ! empty($session->meeting_password)
+            ? str_repeat('•', min(8, strlen($session->meeting_password)))
+            : null;
+
+        return response()->json($arr);
     }
 
     /**
@@ -542,7 +566,7 @@ class AdminClassSessionController extends Controller
         $fileName = $file->getClientOriginalName();
         $fileSize = $file->getSize();
         $fileType = $file->getClientOriginalExtension();
-        $path = $file->store('materials', 'public');
+        $path = $file->store('materials', 'materials');
 
         $material = ClassMaterial::create([
             'course_id' => $session->course_id,
@@ -550,7 +574,7 @@ class AdminClassSessionController extends Controller
             'uploaded_by' => $request->user()->id,
             'title' => $request->input('title'),
             'description' => $request->input('description'),
-            'file_path' => Storage::url($path),
+            'file_path' => $path,
             'file_name' => $fileName,
             'file_type' => $fileType,
             'file_size' => $fileSize,
@@ -593,7 +617,7 @@ class AdminClassSessionController extends Controller
         }
 
         // Do not allow a completed class to have a future date
-        $today = Carbon::now('Asia/Kolkata')->toDateString();
+        $today = Carbon::now(config('app.business_timezone'))->toDateString();
         if ($status === 'completed' && $date > $today) {
             throw ValidationException::withMessages([
                 'status' => ['A completed class cannot have a future date.'],

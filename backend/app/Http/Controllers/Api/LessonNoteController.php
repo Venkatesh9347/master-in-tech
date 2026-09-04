@@ -18,8 +18,16 @@ class LessonNoteController extends Controller
     {
         $user = $request->user();
 
+        $lesson = Lesson::where('id', $lessonId)->where('course_id', $courseId)->first();
+
+        if (! $lesson) {
+            return response()->json(['message' => 'Lesson not found in this course.'], 404);
+        }
+
+        $this->authorizeCourseAccess($user, $courseId);
+
         $note = LessonNote::where('user_id', $user->id)
-            ->where('lesson_id', $lessonId)
+            ->where('lesson_id', $lesson->id)
             ->first();
 
         return response()->json([
@@ -35,14 +43,22 @@ class LessonNoteController extends Controller
     {
         $user = $request->user();
 
+        $lesson = Lesson::where('id', $lessonId)->where('course_id', $courseId)->first();
+
+        if (! $lesson) {
+            return response()->json(['message' => 'Lesson not found in this course.'], 404);
+        }
+
+        $this->authorizeCourseAccess($user, $courseId);
+
         $validated = $request->validate([
             'note' => 'nullable|string',
         ]);
 
         $note = LessonNote::updateOrCreate(
-            ['user_id' => $user->id, 'lesson_id' => $lessonId],
+            ['user_id' => $user->id, 'lesson_id' => $lesson->id],
             [
-                'course_id' => $courseId,
+                'course_id' => $lesson->course_id,
                 'note_text' => $validated['note'] ?? '',
             ]
         );
@@ -52,5 +68,24 @@ class LessonNoteController extends Controller
             'note' => $note->note_text,
             'updated_at' => $note->updated_at->toIso8601String(),
         ]);
+    }
+
+    /**
+     * Ensure the authenticated user has access to the given course.
+     */
+    private function authorizeCourseAccess($user, $courseId): void
+    {
+        if (in_array($user->role, ['admin', 'tutor'], true)) {
+            return;
+        }
+
+        $isEnrolled = CourseEnrollment::where('user_id', $user->id)
+            ->where('course_id', $courseId)
+            ->where('status', '!=', 'dropped')
+            ->exists();
+
+        if (! $isEnrolled) {
+            abort(403, 'Course Access Required. You must have an active enrollment in this course to access lesson notes.');
+        }
     }
 }

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\VideoAsset;
 use App\Services\Video\Drivers\LocalHlsAes128Driver;
 use App\Services\Video\Drivers\MuxDriver;
+use App\Services\Video\Drivers\S3HlsDriver;
 use App\Services\Video\Drivers\VideoDriverInterface;
 use Illuminate\Support\Str;
 
@@ -21,6 +22,7 @@ class VideoSecurityManager
 
         return match ($driver) {
             'mux' => new MuxDriver(),
+            's3', 's3_compatible' => new S3HlsDriver(),
             default => new LocalHlsAes128Driver(),
         };
     }

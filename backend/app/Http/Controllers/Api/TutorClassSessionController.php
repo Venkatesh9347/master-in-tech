@@ -10,7 +10,6 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class TutorClassSessionController extends Controller
 {
@@ -53,7 +52,7 @@ class TutorClassSessionController extends Controller
         ClassSession::syncRealtimeStatuses();
 
         $user = $request->user();
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -86,7 +85,7 @@ class TutorClassSessionController extends Controller
         ClassSession::syncRealtimeStatuses();
 
         $user = $request->user();
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -124,7 +123,7 @@ class TutorClassSessionController extends Controller
         ClassSession::syncRealtimeStatuses();
 
         $user = $request->user();
-        $now = Carbon::now('Asia/Kolkata');
+        $now = Carbon::now(config('app.business_timezone'));
         $today = $now->toDateString();
         $currentTime = $now->format('H:i');
 
@@ -298,7 +297,7 @@ class TutorClassSessionController extends Controller
         $fileName = $file->getClientOriginalName();
         $fileSize = $file->getSize();
         $fileType = $file->getClientOriginalExtension();
-        $path = $file->store('materials', 'public');
+        $path = $file->store('materials', 'materials');
 
         $material = ClassMaterial::create([
             'course_id' => $session->course_id,
@@ -306,7 +305,7 @@ class TutorClassSessionController extends Controller
             'uploaded_by' => $user->id,
             'title' => $request->input('title'),
             'description' => $request->input('description'),
-            'file_path' => Storage::url($path),
+            'file_path' => $path,
             'file_name' => $fileName,
             'file_type' => $fileType,
             'file_size' => $fileSize,

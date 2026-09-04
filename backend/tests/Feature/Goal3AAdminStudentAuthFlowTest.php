@@ -49,12 +49,30 @@ class Goal3AAdminStudentAuthFlowTest extends TestCase
         $this->assertDatabaseMissing('users', ['email' => 'unregistered.lead@gmail.com']);
 
         // 2. Unregistered Mobile Sign-In
+        // HIGH-5: unknown phones receive an equivalent generic response so the
+        // endpoint cannot be used to enumerate registered numbers, and no raw
+        // phone is exposed. The returned temp token is not verifiable.
         $mobileRes = $this->postJson('/api/auth/mobile/send-otp', [
             'phone' => '+91 99999 88888',
         ]);
 
-        $mobileRes->assertStatus(422)
-            ->assertJsonValidationErrors(['phone']);
+        $mobileRes->assertStatus(200)
+            ->assertJsonMissing(['phone'])
+            ->assertJson([
+                'requires_otp' => true,
+                'expires_in' => 30,
+            ]);
+
+        $unknownToken = $mobileRes->json('temp_token');
+        $this->assertNotEmpty($unknownToken);
+
+        $verifyUnknown = $this->postJson('/api/auth/mobile/verify-otp', [
+            'temp_token' => $unknownToken,
+            'otp' => '123456',
+        ]);
+        $verifyUnknown->assertStatus(422);
+
+        $this->assertDatabaseMissing('users', ['phone' => '+919999988888']);
     }
 
     public function test_admin_can_provision_student_account(): void
@@ -115,7 +133,7 @@ class Goal3AAdminStudentAuthFlowTest extends TestCase
     public function test_dual_authentication_resolves_to_same_student_identity_without_duplication(): void
     {
         // 1. Seed approved student
-        $student = User::create([
+        $student = User::factory()->create([
             'name' => 'Vikram Patel',
             'email' => 'vikram.patel@gmail.com',
             'phone' => '+919876500001',

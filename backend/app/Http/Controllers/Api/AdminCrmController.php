@@ -619,9 +619,11 @@ class AdminCrmController extends Controller
                     'email' => $studentEmail,
                     'phone' => $studentPhone,
                     'password' => User::generateUnusablePassword(),
-                    'role' => 'student',
                     'status' => 'active',
                 ]);
+
+                // HIGH-7: role is not mass-assignable; set explicitly.
+                $user->forceFill(['role' => 'student'])->save();
             } else {
                 // Ensure existing account has student role if not admin/tutor
                 if ($user->role !== 'admin' && $user->role !== 'super_admin' && $user->role !== 'tutor') {

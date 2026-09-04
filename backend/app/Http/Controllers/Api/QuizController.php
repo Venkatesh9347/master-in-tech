@@ -25,12 +25,21 @@ class QuizController extends Controller
         // Check enrollment
         $enrollment = \App\Models\CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $quiz->lesson->course_id)
+            ->whereNotIn('status', ['dropped', 'expired'])
             ->first();
 
         if (! $enrollment) {
             return response()->json([
                 'message' => 'You must enroll in the course to access this quiz.',
                 'enrollment_required' => true,
+            ], 403);
+        }
+
+        // HIGH-2: only published quizzes are accessible to students.
+        if (! $quiz->is_published) {
+            return response()->json([
+                'message' => 'This quiz is currently unpublished and unavailable.',
+                'unpublished' => true,
             ], 403);
         }
 
@@ -95,6 +104,7 @@ class QuizController extends Controller
         // Check enrollment
         $enrollment = \App\Models\CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $quiz->lesson->course_id)
+            ->whereNotIn('status', ['dropped', 'expired'])
             ->first();
 
         if (! $enrollment) {
@@ -104,41 +114,65 @@ class QuizController extends Controller
             ], 403);
         }
 
-        // Check max attempts
-        $attemptCount = QuizAttempt::where('user_id', $user->id)
-            ->where('quiz_id', $quiz->id)
-            ->where('status', 'completed')
-            ->count();
-
-        if ($quiz->max_attempts && $attemptCount >= $quiz->max_attempts) {
+        // HIGH-2: only published quizzes can be started.
+        if (! $quiz->is_published) {
             return response()->json([
-                'message' => 'Maximum attempts reached for this quiz.',
+                'message' => 'This quiz is currently unpublished and unavailable.',
+                'unpublished' => true,
             ], 403);
         }
 
-        $nextAttempt = $attemptCount + 1;
+        // CRITICAL-4: make the attempt-limit and in-progress guards atomic and
+        // race-safe. lockForUpdate() is portable (relational row-lock on
+        // MySQL/Postgres; a read-consistency no-op on SQLite).
+        return DB::transaction(function () use ($quiz, $user) {
+            $attempts = QuizAttempt::where('user_id', $user->id)
+                ->where('quiz_id', $quiz->id)
+                ->lockForUpdate()
+                ->get();
 
-        $attempt = QuizAttempt::create([
-            'user_id' => $user->id,
-            'quiz_id' => $quiz->id,
-            'lesson_id' => $quiz->lesson_id,
-            'course_id' => $quiz->lesson->course_id,
-            'section_id' => $quiz->lesson->section_id,
-            'started_at' => now(),
-            'score' => 0,
-            'total_marks' => $this->calculateTotalMarks($quiz),
-            'passing_score' => $quiz->passing_score,
-            'passed' => false,
-            'status' => 'started',
-            'attempt_number' => $nextAttempt,
-        ]);
+            // Block concurrent/duplicate in-progress attempts.
+            $inProgress = $attempts->firstWhere('status', 'started');
+            if ($inProgress) {
+                return response()->json([
+                    'message' => 'You already have an in-progress attempt. Submit it before starting a new one.',
+                    'attempt_id' => $inProgress->id,
+                ], 409);
+            }
 
-        return response()->json([
-            'attempt' => $attempt,
-            'attempt_id' => $attempt->id,
-            'time_limit' => $quiz->time_limit,
-            'questions' => $this->formatQuestions($quiz),
-        ], 201);
+            // Check max attempts against completed attempts only.
+            $attemptCount = $attempts->where('status', 'completed')->count();
+
+            if ($quiz->max_attempts && $attemptCount >= $quiz->max_attempts) {
+                return response()->json([
+                    'message' => 'Maximum attempts reached for this quiz.',
+                ], 403);
+            }
+
+            $nextAttempt = $attemptCount + 1;
+
+            $attempt = QuizAttempt::create([
+                'user_id' => $user->id,
+                'quiz_id' => $quiz->id,
+                'lesson_id' => $quiz->lesson_id,
+                'course_id' => $quiz->lesson->course_id,
+                'section_id' => $quiz->lesson->section_id,
+                'started_at' => now(),
+                'score' => 0,
+                'total_marks' => $this->calculateTotalMarks($quiz),
+                'passing_score' => $quiz->passing_score,
+                'passed' => false,
+                'status' => 'started',
+                'attempt_number' => $nextAttempt,
+            ]);
+
+            return response()->json([
+                'attempt' => $attempt,
+                'attempt_id' => $attempt->id,
+                'time_limit' => $quiz->time_limit,
+                'questions' => $this->formatQuestions($quiz),
+            ], 201);
+        });
     }
 
     /**
@@ -162,6 +196,16 @@ class QuizController extends Controller
             return response()->json(['message' => 'This attempt has already been submitted.'], 409);
         }
 
+        // CRITICAL-2: enforce the server-side time limit for timed quizzes
+        if ($quiz->time_limit && $attempt->started_at) {
+            $deadline = $attempt->started_at->copy()->addMinutes($quiz->time_limit);
+            if (now()->greaterThan($deadline)) {
+                return response()->json([
+                    'message' => 'Time limit exceeded for this quiz attempt.',
+                ], 409);
+            }
+        }
+
         $validated = $request->validate([
             'answers' => 'required|array',
             'answers.*.question_id' => 'required|exists:quiz_questions,id',
@@ -174,14 +218,26 @@ class QuizController extends Controller
             $totalMarks = 0;
 
             foreach ($validated['answers'] as $answer) {
-                $question = QuizQuestion::find($answer['question_id']);
+                // CRITICAL-1: only grade questions that actually belong to this quiz
+                $question = QuizQuestion::where('id', $answer['question_id'])
+                    ->where('quiz_id', $attempt->quiz_id)
+                    ->first();
+
+                if (! $question) {
+                    continue;
+                }
+
                 $totalMarks += $question->marks;
 
                 $isCorrect = false;
                 $marksAwarded = 0;
 
                 if (isset($answer['option_id'])) {
-                    $option = \App\Models\QuizOption::find($answer['option_id']);
+                    // CRITICAL-1: the option must belong to the submitted question
+                    $option = \App\Models\QuizOption::where('id', $answer['option_id'])
+                        ->where('question_id', $question->id)
+                        ->first();
+
                     if ($option && $option->is_correct) {
                         $isCorrect = true;
                         $marksAwarded = $question->marks;
@@ -191,7 +247,7 @@ class QuizController extends Controller
 
                 QuizAnswer::create([
                     'quiz_attempt_id' => $attempt->id,
-                    'question_id' => $answer['question_id'],
+                    'question_id' => $question->id,
                     'option_id' => $answer['option_id'] ?? null,
                     'answer_text' => $answer['answer_text'] ?? null,
                     'is_correct' => $isCorrect,

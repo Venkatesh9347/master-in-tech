@@ -32,6 +32,7 @@
         <env name="LIVEKIT_URL" value="wss://livekit.example.com"/>
         <env name="LIVEKIT_API_KEY" value="devkey"/>
         <env name="LIVEKIT_API_SECRET" value="secret"/>
+        <env name="PAYMENT_PROVIDER" value="stub"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

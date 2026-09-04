@@ -33,6 +33,7 @@ class Goal8TutorPermissionsTest extends TestCase
     {
         parent::setUp();
         Storage::fake('public');
+        Storage::fake('materials');
 
         $this->admin = User::factory()->create([
             'name' => 'Admin User',
@@ -370,21 +371,26 @@ class Goal8TutorPermissionsTest extends TestCase
 
     public function test_14_student_can_access_authorized_material(): void
     {
-        $material = ClassMaterial::create([
+        // Upload a real material so the private-storage download path is exercised.
+        $file = UploadedFile::fake()->create('roadmap.pdf', 1024, 'application/pdf');
+        $upload = $this->actingAs($this->tutorRakesh, 'sanctum')->postJson('/api/tutor/materials', [
             'course_id' => $this->courseRakesh->id,
-            'uploaded_by' => $this->tutorRakesh->id,
             'title' => 'Fullstack RoadMap PDF',
-            'file_path' => '/storage/materials/roadmap.pdf',
-            'file_name' => 'roadmap.pdf',
-            'file_type' => 'pdf',
-            'file_size' => 1024,
+            'material_type' => 'pdf',
+            'file' => $file,
         ]);
+        $upload->assertStatus(201);
+        $materialId = $upload->json('material.id');
 
-        // Alice is enrolled in Course Rakesh
-        $res = $this->actingAs($this->studentAlice, 'sanctum')->getJson("/api/materials/{$material->id}/download");
-        $res->assertStatus(200)
-            ->assertJsonPath('file_name', 'roadmap.pdf')
-            ->assertJsonPath('file_path', '/storage/materials/roadmap.pdf');
+        // Stored file_path must be a private relative storage path, NOT a public URL.
+        $stored = \App\Models\ClassMaterial::findOrFail($materialId);
+        $this->assertStringStartsWith('materials/', $stored->file_path);
+        $this->assertStringNotContainsString('/storage/', $stored->file_path);
+
+        // Alice is enrolled in Course Rakesh and can download the actual bytes.
+        $res = $this->actingAs($this->studentAlice, 'sanctum')->get("/api/materials/{$materialId}/download");
+        $res->assertStatus(200);
+        $res->assertDownload('roadmap.pdf');
     }
 
     public function test_15_student_cannot_access_unrelated_material(): void

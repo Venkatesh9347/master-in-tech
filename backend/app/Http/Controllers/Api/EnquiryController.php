@@ -192,9 +192,14 @@ class EnquiryController extends Controller
             });
         }
 
-        $enquiries = $query->orderBy('created_at', 'desc')->get();
+        $enquiries = $query->orderBy('created_at', 'desc');
 
-        return response()->json($enquiries);
+        $limit = $this->limitCap($request);
+        if ($limit !== null) {
+            $enquiries->limit($limit);
+        }
+
+        return response()->json($enquiries->get());
     }
 
     /**
@@ -346,7 +351,6 @@ class EnquiryController extends Controller
             [
                 'name' => $studentName,
                 'password' => $studentPassword,
-                'role' => 'student',
                 'status' => 'active',
                 'phone' => $enquiry->phone,
             ]

@@ -138,7 +138,7 @@ class AdminAuthorizationTest extends TestCase
 
     public function test_admin_can_login_with_credentials_and_get_admin_role(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Test Admin',
             'email' => 'test@example.com',
             'password' => 'password',
@@ -166,7 +166,7 @@ class AdminAuthorizationTest extends TestCase
 
     public function test_admin_login_fails_with_invalid_password(): void
     {
-        User::create([
+        User::factory()->create([
             'name' => 'Test Admin',
             'email' => 'test@example.com',
             'password' => 'password',
@@ -195,5 +195,48 @@ class AdminAuthorizationTest extends TestCase
 
         // GET /courses is now public for the public website.
         $response->assertOk();
+    }
+
+    public function test_role_cannot_be_mass_assigned_via_generic_update_but_update_role_works(): void
+    {
+        $admin = User::factory()->create([
+            'name' => 'Role Admin',
+            'email' => 'role.admin@example.com',
+            'password' => 'password',
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+
+        $target = User::factory()->create([
+            'name' => 'Target User',
+            'email' => 'target.user@example.com',
+            'role' => 'student',
+            'status' => 'active',
+        ]);
+
+        // Attempting to escalate the role through the generic update endpoint
+        // must be ignored: 'role' is deliberately not mass-assignable.
+        $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/admin/users/{$target->id}", [
+                'name' => 'Target User Renamed',
+                'role' => 'admin',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $target->id,
+            'role' => 'student',
+            'name' => 'Target User Renamed',
+        ]);
+
+        // The dedicated policy-controlled endpoint CAN change the role.
+        $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/admin/users/{$target->id}/role", ['role' => 'admin'])
+            ->assertOk();
+
+        $this->assertDatabaseHas('users', [
+            'id' => $target->id,
+            'role' => 'admin',
+        ]);
     }
 }

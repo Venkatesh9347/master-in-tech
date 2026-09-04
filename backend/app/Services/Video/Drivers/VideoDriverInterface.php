@@ -26,4 +26,32 @@ interface VideoDriverInterface
      * Get the binary AES-128 decryption key for authorized segment playback.
      */
     public function getDecryptionKey(VideoAsset $asset, string $token): ?string;
+
+    /**
+     * Generate the master adaptive HLS playlist (.m3u8) as a string.
+     */
+    public function generateMasterPlaylist(VideoAsset $asset, string $token): string;
+
+    /**
+     * Generate a single-quality variant HLS playlist (.m3u8) with the AES-128 key tag.
+     */
+    public function generateVariantPlaylist(VideoAsset $asset, string $quality, string $token): string;
+
+    /**
+     * Return the raw binary bytes of an HLS media segment (.ts) for an
+     * authorized token, or null when unavailable/unauthorized.
+     */
+    public function readSegment(VideoAsset $asset, string $segment, string $token): ?string;
+
+    /**
+     * Resolve the FFmpeg binary path for transcode/remux jobs. Environment
+     * driven via FFMPEG_BINARY; falls back to "ffmpeg" on PATH.
+     */
+    public function ffmpegPath(): string;
+
+    /**
+     * Resolve the FFprobe binary path for probe/media-inspection jobs.
+     * Environment driven via FFPROBE_BINARY; falls back to "ffprobe" on PATH.
+     */
+    public function ffprobePath(): string;
 }

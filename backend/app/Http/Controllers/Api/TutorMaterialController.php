@@ -92,8 +92,7 @@ class TutorMaterialController extends Controller
         $fileName = $file->getClientOriginalName();
         $fileSize = $file->getSize();
         $fileExtension = strtolower($file->getClientOriginalExtension());
-        $path = $file->store('materials', 'public');
-        $url = Storage::url($path);
+        $path = $file->store('materials', 'materials');
 
         $material = ClassMaterial::create([
             'course_id' => $course->id,
@@ -101,7 +100,7 @@ class TutorMaterialController extends Controller
             'uploaded_by' => $user->id,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
-            'file_path' => $url,
+            'file_path' => $path,
             'file_name' => $fileName,
             'file_type' => $validated['material_type'] ?? $fileExtension,
             'file_size' => $fileSize,
@@ -225,6 +224,9 @@ class TutorMaterialController extends Controller
 
     /**
      * Secure authorized material download / access endpoint.
+     *
+     * Serves the stored file bytes ONLY after server-side authorization,
+     * never exposing the raw storage path or a publicly reachable URL.
      */
     public function download(Request $request, int $id)
     {
@@ -232,17 +234,7 @@ class TutorMaterialController extends Controller
         $material = ClassMaterial::with('course')->findOrFail($id);
         $courseId = $material->course_id;
 
-        $isAuthorized = false;
-
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
-            $isAuthorized = true;
-        } elseif ($user->role === 'tutor') {
-            $isAuthorized = ($material->course?->instructor_id === $user->id || $material->uploaded_by === $user->id);
-        } elseif ($user->role === 'student') {
-            $isAuthorized = CourseEnrollment::where('user_id', $user->id)
-                ->where('course_id', $courseId)
-                ->exists();
-        }
+        $isAuthorized = $this->canDownload($user, $material, $courseId);
 
         if (! $isAuthorized) {
             return response()->json([
@@ -250,12 +242,94 @@ class TutorMaterialController extends Controller
             ], 403);
         }
 
-        return response()->json([
-            'file_name' => $material->file_name,
-            'file_path' => $material->file_path,
-            'file_type' => $material->file_type,
-            'file_size' => $material->file_size,
-            'title' => $material->title,
-        ]);
+        $path = $this->resolveMaterialPath($material->file_path);
+
+        if (! $path) {
+            return response()->json([
+                'message' => 'Material file record is missing a valid storage reference.',
+            ], 422);
+        }
+
+        $disk = Storage::disk('materials');
+        if (! $disk->exists($path)) {
+            // Legacy records may carry a public-URL file_path whose physical file
+            // lives on the (previous) public disk. Serve it read-only through this
+            // authorized endpoint so it remains protected.
+            $legacyPath = $this->legacyPublicRelativePath($material->file_path);
+            if ($legacyPath && Storage::disk('public')->exists($legacyPath)) {
+                $disk = Storage::disk('public');
+                $path = $legacyPath;
+            } else {
+                return response()->json(['message' => 'Material file not found.'], 404);
+            }
+        }
+
+        $type = $disk->mimeType($path);
+        $headers = ['Content-Type' => $type];
+
+        return $disk->download($path, $material->file_name, $headers);
+    }
+
+    /**
+     * Determine whether the authenticated user may download the given material.
+     */
+    private function canDownload($user, ClassMaterial $material, int $courseId): bool
+    {
+        if ($user->role === 'admin' || $user->role === 'super_admin') {
+            return true;
+        }
+
+        if ($user->role === 'tutor') {
+            return $material->course?->instructor_id === $user->id || $material->uploaded_by === $user->id;
+        }
+
+        if ($user->role === 'student') {
+            return CourseEnrollment::where('user_id', $user->id)
+                ->where('course_id', $courseId)
+                ->where('status', '!=', 'dropped')
+                ->exists();
+        }
+
+        return false;
+    }
+
+    /**
+     * Turn a stored file_path value into a relative path on the materials disk.
+     *
+     * New uploads store a bare relative path (e.g. "materials/abc.pdf").
+     * Legacy records may hold a public URL ("/storage/materials/abc.pdf" or
+     * "http://host/storage/materials/abc.pdf") — those are normalized here.
+     */
+    private function resolveMaterialPath(?string $filePath): ?string
+    {
+        if (! $filePath) {
+            return null;
+        }
+
+        if (! preg_match('#^https?://#i', $filePath) && ! str_starts_with($filePath, '/')) {
+            return $filePath;
+        }
+
+        return $this->legacyPublicRelativePath($filePath);
+    }
+
+    /**
+     * Normalize a legacy public-style path to its relative form under the
+     * storage root (e.g. "/storage/materials/abc.pdf" -> "materials/abc.pdf").
+     */
+    private function legacyPublicRelativePath(?string $filePath): ?string
+    {
+        if (! $filePath) {
+            return null;
+        }
+
+        $path = preg_replace('#^https?://[^/]+#i', '', $filePath);
+        $path = ltrim((string) $path, '/');
+
+        if (str_starts_with($path, 'storage/')) {
+            $path = substr($path, strlen('storage/'));
+        }
+
+        return $path !== '' ? $path : null;
     }
 }

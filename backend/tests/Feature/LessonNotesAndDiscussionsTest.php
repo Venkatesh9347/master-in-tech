@@ -156,4 +156,121 @@ class LessonNotesAndDiscussionsTest extends TestCase
 
         $qResponse->assertStatus(403);
     }
+
+    public function test_unenrolled_student_cannot_save_or_read_lesson_notes(): void
+    {
+        $intruder = User::factory()->create(['role' => 'student', 'name' => 'Intruder']);
+
+        // Writing a note requires course access -> 403
+        $writeRes = $this->actingAs($intruder, 'sanctum')
+            ->postJson("/api/courses/{$this->course->id}/lessons/{$this->lesson->id}/note", [
+                'note' => 'Should not be able to save.',
+            ]);
+        $writeRes->assertStatus(403);
+
+        // Reading a note also requires course access -> 403
+        $readRes = $this->actingAs($intruder, 'sanctum')
+            ->getJson("/api/courses/{$this->course->id}/lessons/{$this->lesson->id}/note");
+        $readRes->assertStatus(403);
+
+        $this->assertDatabaseMissing('lesson_notes', [
+            'user_id' => $intruder->id,
+            'course_id' => $this->course->id,
+        ]);
+    }
+
+    public function test_note_rejects_lesson_not_belonging_to_course(): void
+    {
+        $otherCourse = Course::create([
+            'title' => 'Different Course',
+            'slug' => 'different-course',
+            'description' => 'Unrelated course',
+            'instructor' => 'Someone Else',
+            'is_published' => true,
+            'price' => 99,
+            'duration' => '6 Weeks',
+            'difficulty' => 'Beginner',
+            'category' => 'GENERAL',
+        ]);
+
+        $otherSection = Section::create([
+            'course_id' => $otherCourse->id,
+            'title' => 'Other Module',
+            'is_published' => true,
+            'sort_order' => 1,
+        ]);
+
+        $otherLesson = Lesson::create([
+            'course_id' => $otherCourse->id,
+            'section_id' => $otherSection->id,
+            'title' => 'Other Lesson',
+            'type' => 'video',
+            'is_published' => true,
+            'sort_order' => 1,
+        ]);
+
+        // Attempting to save a note for a lesson that does not belong to the
+        // given course must be rejected to keep course/lesson integrity.
+        $res = $this->actingAs($this->studentA, 'sanctum')
+            ->postJson("/api/courses/{$this->course->id}/lessons/{$otherLesson->id}/note", [
+                'note' => 'Cross-course note attempt.',
+            ]);
+        $res->assertStatus(404);
+
+        $this->assertDatabaseMissing('lesson_notes', [
+            'user_id' => $this->studentA->id,
+            'course_id' => $this->course->id,
+            'lesson_id' => $otherLesson->id,
+        ]);
+    }
+
+    public function test_discussion_rejects_lesson_not_belonging_to_course(): void
+    {
+        $otherCourse = Course::create([
+            'title' => 'Discussion Other Course',
+            'slug' => 'discussion-other-course',
+            'description' => 'Unrelated course for discussion',
+            'instructor' => 'Someone Else',
+            'is_published' => true,
+            'price' => 99,
+            'duration' => '6 Weeks',
+            'difficulty' => 'Beginner',
+            'category' => 'GENERAL',
+        ]);
+
+        $otherSection = Section::create([
+            'course_id' => $otherCourse->id,
+            'title' => 'Other Discussion Module',
+            'is_published' => true,
+            'sort_order' => 1,
+        ]);
+
+        $otherLesson = Lesson::create([
+            'course_id' => $otherCourse->id,
+            'section_id' => $otherSection->id,
+            'title' => 'Other Discussion Lesson',
+            'type' => 'video',
+            'is_published' => true,
+            'sort_order' => 1,
+        ]);
+
+        // Listing discussions for a lesson that does not belong to the given
+        // course must be rejected to preserve course/lesson integrity.
+        $this->actingAs($this->studentA, 'sanctum')
+            ->getJson("/api/courses/{$this->course->id}/lessons/{$otherLesson->id}/discussions")
+            ->assertStatus(404);
+
+        // Posting to a cross-course lesson must also be rejected.
+        $this->actingAs($this->studentA, 'sanctum')
+            ->postJson("/api/courses/{$this->course->id}/lessons/{$otherLesson->id}/discussions", [
+                'question' => 'Cross-course discussion attempt.',
+            ])
+            ->assertStatus(404);
+
+        $this->assertDatabaseMissing('lesson_discussions', [
+            'user_id' => $this->studentA->id,
+            'course_id' => $this->course->id,
+            'lesson_id' => $otherLesson->id,
+        ]);
+    }
 }

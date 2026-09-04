@@ -22,12 +22,21 @@ class AssignmentController extends Controller
         // Check enrollment
         $enrollment = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $assignment->course_id)
+            ->whereNotIn('status', ['dropped', 'expired'])
             ->first();
 
         if (! $enrollment) {
             return response()->json([
                 'message' => 'You must enroll in the course to access this assignment.',
                 'enrollment_required' => true,
+            ], 403);
+        }
+
+        // HIGH-2: only published assignments are accessible to students.
+        if (! $assignment->is_published) {
+            return response()->json([
+                'message' => 'This assignment is currently unpublished and unavailable.',
+                'unpublished' => true,
             ], 403);
         }
 
@@ -61,6 +70,7 @@ class AssignmentController extends Controller
         // Check enrollment
         $enrollment = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $assignment->course_id)
+            ->whereNotIn('status', ['dropped', 'expired'])
             ->first();
 
         if (! $enrollment) {
@@ -70,15 +80,37 @@ class AssignmentController extends Controller
             ], 403);
         }
 
+        // HIGH-2: only published assignments can be submitted.
+        if (! $assignment->is_published) {
+            return response()->json([
+                'message' => 'This assignment is currently unpublished and unavailable.',
+                'unpublished' => true,
+            ], 403);
+        }
+
         $validated = $request->validate([
             'submission_text' => 'nullable|string',
             'file_url' => 'nullable|string|url',
         ]);
 
+        // submitted_at is always set server-side (now()) and is never accepted from
+        // the client, so a client-provided timestamp cannot bypass due-date logic
+        // or misrepresent when the work was submitted.
+
         // Check if a submission already exists
         $existing = AssignmentSubmission::where('user_id', $user->id)
             ->where('assignment_id', $assignment->id)
             ->first();
+
+        // M11: an already-graded submission must not be silently overwritten by a
+        // student resubmission (which would un-grade and replace their work). The
+        // grader must first return the submission so revision is explicit and
+        // grading evidence is preserved.
+        if ($existing && $existing->status === 'graded') {
+            return response()->json([
+                'message' => 'This submission has already been graded and cannot be resubmitted. Ask your tutor or admin to return it if revision is required.',
+            ], 409);
+        }
 
         if ($existing) {
             // Update existing submission

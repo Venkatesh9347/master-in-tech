@@ -434,6 +434,16 @@ class TutorController extends Controller
             'questions.*.options.*.is_correct' => 'required|boolean',
         ]);
 
+        // M9: if a quiz already exists for this lesson and students have attempted
+        // it, the delete-and-rebuild of questions/options would invalidate grading.
+        // Block structural and attempt-affecting changes; allow metadata only.
+        $existingQuiz = Quiz::where('lesson_id', $lesson->id)->first();
+        if ($existingQuiz && $existingQuiz->hasAttempts()) {
+            return response()->json([
+                'message' => 'This quiz already has student attempts, so its questions, options and grading settings cannot be changed. You may still edit the title, description or time limit.',
+            ], 422);
+        }
+
         return DB::transaction(function () use ($course, $lesson, $validated) {
             $quiz = Quiz::updateOrCreate(
                 ['lesson_id' => $lesson->id],

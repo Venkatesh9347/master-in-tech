@@ -325,6 +325,25 @@ class AdminBatchController extends Controller
             ], 422);
         }
 
+        // HIGH-3: reject transfer into completed/cancelled destination batches
+        if (in_array($toBatch->status, ['completed', 'cancelled'], true)) {
+            return response()->json([
+                'message' => "Cannot transfer a student into a {$toBatch->status} batch.",
+            ], 422);
+        }
+
+        // HIGH-3: reject transfer when the destination batch is at full capacity
+        if ($toBatch->max_students) {
+            $destActiveCount = BatchStudent::where('batch_id', $toBatch->id)
+                ->where('status', 'active')
+                ->count();
+            if ($destActiveCount >= $toBatch->max_students) {
+                return response()->json([
+                    'message' => "Destination batch is at full capacity ({$toBatch->max_students} students).",
+                ], 422);
+            }
+        }
+
         DB::transaction(function () use ($batch, $toBatch, $user, $currentMembership, $validated) {
             // 1. Mark source batch membership as 'transferred' with left_at timestamp
             $currentMembership->update([
@@ -433,6 +452,25 @@ class AdminBatchController extends Controller
         $targetBatchId = $validated['target_batch_id'] ?? $batch->id;
         $targetBatch = Batch::findOrFail($targetBatchId);
 
+        // HIGH-3: reject rejoin into completed/cancelled batches
+        if (in_array($targetBatch->status, ['completed', 'cancelled'], true)) {
+            return response()->json([
+                'message' => "Cannot rejoin a student into a {$targetBatch->status} batch.",
+            ], 422);
+        }
+
+        // HIGH-3: reject rejoin when the target batch is at full capacity
+        if ($targetBatch->max_students && $targetBatch->id !== $batch->id) {
+            $targetActiveCount = BatchStudent::where('batch_id', $targetBatch->id)
+                ->where('status', 'active')
+                ->count();
+            if ($targetActiveCount >= $targetBatch->max_students) {
+                return response()->json([
+                    'message' => "Target batch is at full capacity ({$targetBatch->max_students} students).",
+                ], 422);
+            }
+        }
+
         // Check if student already active in target batch
         $activeInTarget = BatchStudent::where('batch_id', $targetBatch->id)
             ->where('user_id', $user->id)
@@ -471,14 +509,31 @@ class AdminBatchController extends Controller
                     ]);
                 }
             } else {
-                // Rejoining into a new batch: keep old discontinued record and create new active membership
-                BatchStudent::create([
-                    'batch_id' => $targetBatch->id,
-                    'user_id' => $user->id,
-                    'status' => 'active',
-                    'joined_at' => now(),
-                    'notes' => 'Rejoined into new cohort from ' . $batch->code . '. Note: ' . ($validated['reason'] ?? ''),
-                ]);
+                // CRITICAL-3: reuse an existing target membership (any status) if
+                // present, so a prior transfer/rejoin exchange cannot create
+                // duplicate active memberships for the same (user, batch).
+                $existingTarget = BatchStudent::where('batch_id', $targetBatch->id)
+                    ->where('user_id', $user->id)
+                    ->latest()
+                    ->first();
+
+                if ($existingTarget) {
+                    $existingTarget->update([
+                        'status' => 'active',
+                        'joined_at' => now(),
+                        'left_at' => null,
+                        'discontinued_at' => null,
+                        'notes' => 'Rejoined into new cohort from ' . $batch->code . '. Note: ' . ($validated['reason'] ?? ''),
+                    ]);
+                } else {
+                    BatchStudent::create([
+                        'batch_id' => $targetBatch->id,
+                        'user_id' => $user->id,
+                        'status' => 'active',
+                        'joined_at' => now(),
+                        'notes' => 'Rejoined into new cohort from ' . $batch->code . '. Note: ' . ($validated['reason'] ?? ''),
+                    ]);
+                }
             }
 
             // Ensure course enrollment
@@ -514,12 +569,27 @@ class AdminBatchController extends Controller
 
     /**
      * Remove a student from a batch.
+     *
+     * Only the active membership is deactivated; historical membership records
+     * (transferred / discontinued / completed) are preserved for the audit trail.
      */
     public function removeStudent(Batch $batch, User $user)
     {
-        BatchStudent::where('batch_id', $batch->id)
-            ->where('user_id', $user->id)
-            ->delete();
+        DB::transaction(function () use ($batch, $user) {
+            $active = BatchStudent::where('batch_id', $batch->id)
+                ->where('user_id', $user->id)
+                ->where('status', 'active')
+                ->latest()
+                ->first();
+
+            if ($active) {
+                $active->update([
+                    'status' => 'removed',
+                    'left_at' => now(),
+                    'notes' => ($active->notes ? trim($active->notes) . ' ' : '') . 'Removed from batch on ' . now()->toDateTimeString(),
+                ]);
+            }
+        });
 
         AuditLog::log('removed_batch_student', $batch, ['batch_id' => $batch->id, 'batch_code' => $batch->code, 'user_id' => $user->id, 'student' => $user->name], null);
 

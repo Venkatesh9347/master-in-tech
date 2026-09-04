@@ -48,4 +48,13 @@ return [
         'token_ttl' => (int) env('LIVEKIT_TOKEN_TTL', 7200),
     ],
 
+    'razorpay' => [
+        'key_id' => env('RAZORPAY_KEY_ID'),
+        'key_secret' => env('RAZORPAY_KEY_SECRET'),
+        'webhook_secret' => env('RAZORPAY_WEBHOOK_SECRET'),
+        'webhook_url' => env('RAZORPAY_WEBHOOK_URL'),
+        'currency' => env('RAZORPAY_CURRENCY', 'INR'),
+        'theme' => env('RAZORPAY_THEME_COLOR', '#2563eb'),
+    ],
+
 ];

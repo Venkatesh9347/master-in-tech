@@ -65,9 +65,14 @@ class AdminUserController extends Controller
             });
         }
 
-        $users = $query->orderBy('created_at', 'desc')->get();
+        $users = $query->orderBy('created_at', 'desc');
 
-        return response()->json($users);
+        $limit = $this->limitCap($request);
+        if ($limit !== null) {
+            $users->limit($limit);
+        }
+
+        return response()->json($users->get());
     }
 
     /**
@@ -112,7 +117,6 @@ class AdminUserController extends Controller
             'name' => $validated['name'],
             'email' => strtolower(trim($validated['email'])),
             'password' => $password,
-            'role' => $validated['role'],
             'status' => $validated['status'] ?? 'active',
             'student_id' => $validated['student_id'] ?? null,
             'phone' => $validated['phone'] ?? null,
@@ -120,6 +124,10 @@ class AdminUserController extends Controller
             'expertise' => $validated['expertise'] ?? null,
             'bio' => $validated['bio'] ?? null,
         ]);
+
+        // HIGH-7: role is deliberately NOT mass-assignable; set it explicitly
+        // via this policy-controlled admin path.
+        $user->forceFill(['role' => $validated['role']])->save();
 
         // Auto-assign student ID if role is student and student_id is empty
         if ($user->role === 'student' && empty($user->student_id)) {
@@ -184,6 +192,10 @@ class AdminUserController extends Controller
             $validated['email'] = strtolower(trim($validated['email']));
         }
 
+        // HIGH-7: role is not editable via the generic update path; it is only
+        // managed through the dedicated updateRole policy-controlled endpoint.
+        unset($validated['role']);
+
         $user->update($validated);
 
         return response()->json([
@@ -201,9 +213,8 @@ class AdminUserController extends Controller
             'role' => 'required|in:student,tutor,admin',
         ]);
 
-        $user->update([
-            'role' => $validated['role'],
-        ]);
+        // HIGH-7: explicit policy-controlled role update bypasses mass assignment.
+        $user->forceFill(['role' => $validated['role']])->save();
 
         return response()->json([
             'message' => "User role successfully updated to {$validated['role']}.",
