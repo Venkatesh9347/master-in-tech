@@ -5,14 +5,10 @@ import API from '../services/api';
 interface CertificateData {
   certificate_code: string;
   issued_at: string;
-  user?: {
-    name: string;
-    email: string;
-  };
-  course?: {
-    title: string;
-    instructor: string;
-  };
+  recipient_name?: string;
+  course_title?: string;
+  instructor?: string;
+  has_pdf?: boolean;
 }
 
 export default function CertificateView() {
@@ -20,6 +16,7 @@ export default function CertificateView() {
   const [cert, setCert] = useState<CertificateData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (!code) return;
@@ -28,6 +25,26 @@ export default function CertificateView() {
       .catch(() => setError('Unable to find this certificate.'))
       .finally(() => setLoading(false));
   }, [code]);
+
+  const handleDownload = async () => {
+    if (!code) return;
+    setDownloading(true);
+    try {
+      const res = await API.get(`/student/certificates/${code}/download`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${cert?.certificate_code || code}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('Certificate PDF is not available for download right now.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -62,14 +79,27 @@ export default function CertificateView() {
           <span>Back to Dashboard</span>
         </Link>
 
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="px-6 py-2.5 rounded-xl font-bold text-xs text-slate-900 bg-amber-400 hover:bg-amber-300 transition shadow-lg shadow-amber-400/20 flex items-center gap-2"
-        >
-          <span>🖨️</span>
-          <span>Print / Save PDF</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {cert.has_pdf && (
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloading}
+              className="px-6 py-2.5 rounded-xl font-bold text-xs text-slate-900 bg-emerald-400 hover:bg-emerald-300 transition shadow-lg shadow-emerald-400/20 flex items-center gap-2 disabled:opacity-50"
+            >
+              <span>⬇️</span>
+              <span>{downloading ? 'Downloading…' : 'Download PDF'}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="px-6 py-2.5 rounded-xl font-bold text-xs text-slate-900 bg-amber-400 hover:bg-amber-300 transition shadow-lg shadow-amber-400/20 flex items-center gap-2"
+          >
+            <span>🖨️</span>
+            <span>Print / Save PDF</span>
+          </button>
+        </div>
       </div>
 
       {/* Certificate Frame */}
@@ -98,7 +128,7 @@ export default function CertificateView() {
           {/* Student Name */}
           <div className="my-8 py-2 border-b-2 border-slate-300 inline-block px-12 min-w-[320px]">
             <h2 className="text-3xl sm:text-4xl font-serif font-bold text-blue-900">
-              {cert.user?.name || 'Student'}
+              {cert.recipient_name || 'Student'}
             </h2>
           </div>
 
@@ -108,7 +138,7 @@ export default function CertificateView() {
 
           {/* Course Title */}
           <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-10 font-sans">
-            {cert.course?.title}
+            {cert.course_title}
           </h3>
 
           {/* Footer details: Instructor + Date + Verification Code */}
@@ -116,7 +146,7 @@ export default function CertificateView() {
             <div>
               <p className="text-xs uppercase font-bold text-slate-400">Instructor</p>
               <p className="text-base font-bold text-slate-900 mt-1 font-serif">
-                {cert.course?.instructor}
+                {cert.instructor}
               </p>
               <p className="text-xs text-slate-400">Master In Tech Faculty</p>
             </div>

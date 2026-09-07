@@ -14,6 +14,11 @@ class PaymentWebhookController extends Controller
      *
      * The raw request body is required for correct HMAC signature verification,
      * so we read it directly rather than relying on parsed JSON.
+     *
+     * After signature verification, unknown events are acknowledged with 200
+     * 'ignored'. For payment events the service performs order/amount/currency
+     * verification before any paid transition — the payment id alone is never
+     * trusted to mark a transaction as paid.
      */
     public function handle(Request $request, PaymentService $payments): JsonResponse
     {
@@ -25,14 +30,18 @@ class PaymentWebhookController extends Controller
         }
 
         $event = json_decode($payload, true);
+
         if (! is_array($event)) {
             return response()->json(['error' => 'Malformed payload.'], 400);
         }
 
         $entity = $event['payload']['payment']['entity'] ?? $event['payload']['order']['entity'] ?? null;
-        $paymentId = (string) ($entity['id'] ?? $event['id'] ?? '');
 
-        // Map provider event name -> canonical status. Idempotent in the service.
+        if ($entity === null || ! is_array($entity)) {
+            return response()->json(['status' => 'ignored']);
+        }
+
+        // Map provider event name -> canonical status.
         $status = match ($event['event'] ?? '') {
             'payment.captured', 'order.paid' => 'paid',
             'payment.failed', 'order.failed' => 'failed',
@@ -40,18 +49,20 @@ class PaymentWebhookController extends Controller
             default => 'unknown',
         };
 
+        // Unknown events are silently acknowledged (no retry storm).
+        if ($status === 'unknown') {
+            return response()->json(['status' => 'ignored']);
+        }
+
+        $paymentId = (string) ($entity['id'] ?? '');
+
         if ($paymentId === '') {
             return response()->json(['error' => 'No payment id in event.'], 422);
         }
 
-        $transaction = $payments->applyPaymentEvent($paymentId, $status, [
-            'event' => $event['event'] ?? null,
-            'webhook_received_at' => now()->toISOString(),
-        ]);
+        $transaction = $payments->processWebhookPayment($payments->providerName(), $entity, $status);
 
         if ($transaction === null) {
-            // Not yet locally created (e.g. out-of-order webhook). Acknowledge
-            // so the provider stops retrying; reconciliation can backfill later.
             return response()->json(['status' => 'ignored']);
         }
 

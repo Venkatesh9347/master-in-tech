@@ -1,17 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
-import API from "../services/api";
-import { AuthContext } from "./auth-context";
+import API, { classifyApiError } from "../services/api";
+import { AuthContext, isDashboardRoute } from "./auth-context";
 import type { User, GoogleAuthPendingSession, GoogleAuthPayload } from "./auth-context";
-
-const isDashboardRoute = (pathname: string): boolean => {
-  return (
-    pathname.startsWith("/admin") ||
-    pathname.startsWith("/tutor") ||
-    pathname.startsWith("/student")
-  );
-};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -55,9 +47,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     API.get<User>("/user")
       .then((response) => setUser(response.data))
-      .catch(() => {
-        localStorage.removeItem("access_token");
-        setUser(null);
+      .catch((err: unknown) => {
+        // R5: a network blip or transient 5xx must NOT clear a valid token.
+        // Only a confirmed auth failure (401) invalidates the local session.
+        if (classifyApiError(err).isAuthFailure) {
+          localStorage.removeItem("access_token");
+          setUser(null);
+        }
       })
       .finally(() => setLoading(false));
   }, []);

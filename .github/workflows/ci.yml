@@ -100,6 +100,9 @@ jobs:
       - name: Type-check
         run: npx tsc -b
 
+      - name: Unit tests
+        run: npm run test
+
       - name: Vite production build
         run: npm run build
         env:

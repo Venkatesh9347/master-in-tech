@@ -42,3 +42,16 @@ export interface AuthContextValue {
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+/**
+ * True when the current pathname belongs to a dashboard area whose session is
+ * kept alive (and checked) by the AuthProvider heartbeat timer.
+ */
+export const isDashboardRoute = (pathname: string): boolean => {
+  return (
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/tutor") ||
+    pathname.startsWith("/student") ||
+    pathname.startsWith("/company")
+  );
+};

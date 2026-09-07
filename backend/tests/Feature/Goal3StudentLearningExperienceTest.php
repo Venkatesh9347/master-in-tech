@@ -267,14 +267,24 @@ class Goal3StudentLearningExperienceTest extends TestCase
             ->assertJsonStructure([
                 'message',
                 'certificate' => [
-                    'id',
                     'certificate_code',
-                    'user_id',
-                    'course_id',
+                    'issued_at',
+                    'recipient_name',
+                    'course_title',
+                    'instructor',
+                    'has_pdf',
                 ],
             ]);
 
-        $code = $certRes->json('certificate.certificate_code');
+        // R2: the certificate payload is public-safe — internal ids and the
+        // issuing user's email must never be exposed.
+        $certData = $certRes->json('certificate');
+        $this->assertArrayNotHasKey('id', $certData);
+        $this->assertArrayNotHasKey('user_id', $certData);
+        $this->assertArrayNotHasKey('course_id', $certData);
+        $this->assertArrayNotHasKey('email', $certData);
+
+        $code = $certData['certificate_code'];
         $this->assertStringStartsWith('MIT-', $code);
 
         // 5. Verify certificate publicly

@@ -436,6 +436,13 @@ export default function StudentDashboard() {
                 <span>🎙️</span> Mock Interview Gateway
               </Link>
 
+              <Link
+                to="/student/checkout"
+                className="px-5 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-md shadow-amber-900/30"
+              >
+                <span>💳</span> Checkout
+              </Link>
+
               {placementDashboardEnabled && (
                 <Link
                   to="/placements"

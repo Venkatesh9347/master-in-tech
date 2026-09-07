@@ -8,8 +8,11 @@ use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\Lesson;
 use App\Models\LessonProgress;
+use App\Services\CertificatePdfService;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class CertificateController extends Controller
@@ -29,13 +32,12 @@ class CertificateController extends Controller
         // Check if certificate already generated
         $existing = Certificate::where('user_id', $user->id)
             ->where('course_id', $course->id)
-            ->with(['course', 'user:id,name,email'])
             ->first();
 
         if ($existing) {
             return response()->json([
                 'message' => 'Certificate already issued.',
-                'certificate' => $existing,
+                'certificate' => $this->payload($existing),
             ]);
         }
 
@@ -59,7 +61,7 @@ class CertificateController extends Controller
             if ($existing) {
                 return response()->json([
                     'message' => 'Certificate already issued.',
-                    'certificate' => $existing->load(['course', 'user:id,name,email']),
+                    'certificate' => $this->payload($existing),
                 ]);
             }
 
@@ -104,9 +106,13 @@ class CertificateController extends Controller
                 'progress_percentage' => 100,
             ]);
 
+            // Best-effort PDF artifact generation. Failures are non-fatal; the
+            // download endpoint re-attempts on demand (CertificatePdfService).
+            (new CertificatePdfService())->attempt($certificate);
+
             return response()->json([
                 'message' => 'Congratulations! Certificate generated successfully.',
-                'certificate' => $certificate->load(['course', 'user:id,name,email']),
+                'certificate' => $this->payload($certificate),
             ], 201);
         });
     }
@@ -125,18 +131,22 @@ class CertificateController extends Controller
 
     /**
      * Get certificate details by code (authenticated user or public).
+     *
+     * The payload is flattened to public-safe fields only — the issuing user's
+     * email is never exposed (GA blocker R2). Owners download the PDF through
+     * the authenticated, ownership-checked download endpoint instead.
      */
     public function show($code)
     {
-        $certificate = Certificate::where('certificate_code', $code)
-            ->with(['course', 'user:id,name,email'])
+        $certificate = Certificate::with(['course', 'user:id,name'])
+            ->where('certificate_code', $code)
             ->first();
 
         if (! $certificate) {
             return response()->json(['message' => 'Certificate not found'], 404);
         }
 
-        return response()->json($certificate);
+        return response()->json($this->payload($certificate));
     }
 
     /**
@@ -163,5 +173,62 @@ class CertificateController extends Controller
             'instructor' => $certificate->course?->instructor,
             'issued_at' => $certificate->issued_at,
         ]);
+    }
+
+    /**
+     * Download the certificate PDF (owner or admin only).
+     *
+     * The artifact lives on the private 'local' disk and is only ever served
+     * through this authenticated, ownership-checked endpoint.
+     */
+    public function download(Request $request, $code)
+    {
+        $certificate = Certificate::where('certificate_code', $code)->first();
+
+        if (! $certificate) {
+            return response()->json(['message' => 'Certificate not found'], 404);
+        }
+
+        $user = $request->user();
+
+        $isOwner = (int) $certificate->user_id === (int) $user->id;
+        $isAdmin = $user->role === 'admin';
+
+        if (! $isOwner && ! $isAdmin) {
+            return response()->json(['message' => 'You do not have access to this certificate.'], 403);
+        }
+
+        $pdfService = new CertificatePdfService();
+        $path = $pdfService->ensureFor($certificate);
+
+        return (new Response(
+            Storage::disk($pdfService->disk())->get($path),
+            200,
+            [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="' . $certificate->certificate_code . '.pdf"',
+                'Cache-Control' => 'private, no-store',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        ));
+    }
+
+    /**
+     * Public-safe certificate payload (never includes user email).
+     */
+    private function payload(Certificate $certificate): array
+    {
+        $certificate->loadMissing(['course', 'user:id,name']);
+        $path = $certificate->pdf_path ?? '';
+        $disk = Storage::disk((new CertificatePdfService())->disk());
+
+        return [
+            'certificate_code' => $certificate->certificate_code,
+            'issued_at' => $certificate->issued_at?->toISOString(),
+            'recipient_name' => $certificate->user?->name,
+            'course_title' => $certificate->course?->title,
+            'instructor' => $certificate->course?->instructor,
+            'has_pdf' => $path !== '' && $disk->exists($path),
+        ];
     }
 }

@@ -48,6 +48,7 @@ const StudentLessons = lazy(() => import("./pages/StudentLessons"));
 const StudentEvents = lazy(() => import("./pages/StudentEvents"));
 const StudentProfile = lazy(() => import("./pages/StudentProfile"));
 const StudentMockInterview = lazy(() => import("./pages/StudentMockInterview"));
+const StudentCheckout = lazy(() => import("./pages/student/Checkout"));
 const LiveClassroom = lazy(() => import("./pages/LiveClassroom"));
 const InternalClassroom = lazy(() => import("./pages/InternalClassroom"));
 
@@ -164,6 +165,8 @@ function App() {
               <Route path="/student/classroom/:sessionId" element={<InternalClassroom />} />
               <Route path="/student/events" element={<StudentEvents />} />
               <Route path="/student/certificates/:code" element={<CertificateView />} />
+              <Route path="/student/checkout" element={<StudentCheckout />} />
+              <Route path="/student/checkout/:orderId" element={<StudentCheckout />} />
               <Route path="/student/profile" element={<StudentProfile />} />
               <Route path="/ai-assistant" element={<AiAssistant />} />
             </Route>

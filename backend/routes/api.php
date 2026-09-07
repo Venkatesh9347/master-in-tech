@@ -256,6 +256,9 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     // Payments (at-most-once order creation via idempotency key)
     Route::post('/payments/order', [PaymentController::class, 'createOrder'])->middleware('throttle:payment-order');
 
+    // Payments — authoritative confirm (server-verified before marking paid)
+    Route::post('/payments/confirm', [PaymentController::class, 'confirm'])->middleware('throttle:payment-order');
+
     // AI Assistant Endpoints
     Route::prefix('ai')->middleware('throttle:ai-chat')->group(function () {
         Route::post('/chat', [AiChatController::class, 'chat']);
@@ -325,6 +328,7 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     // Reviews & Certificates
     Route::post('/courses/{course}/reviews', [CourseReviewController::class, 'store']);
     Route::post('/courses/{course}/certificate', [CertificateController::class, 'generate']);
+    Route::get('/student/certificates/{code}/download', [CertificateController::class, 'download']);
 
     // Real-Time Live Classroom (Enrolled Students)
     Route::get('/my-live-classes', [LiveClassController::class, 'myLiveClasses']);

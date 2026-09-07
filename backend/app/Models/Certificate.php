@@ -12,6 +12,7 @@ class Certificate extends Model
         'course_id',
         'certificate_code',
         'issued_at',
+        'pdf_path',
     ];
 
     protected function casts(): array
