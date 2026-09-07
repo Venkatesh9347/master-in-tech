@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Assignment;
 use App\Models\AssignmentSubmission;
 use App\Models\CourseEnrollment;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class AssignmentController extends Controller
@@ -86,6 +87,22 @@ class AssignmentController extends Controller
                 'message' => 'This assignment is currently unpublished and unavailable.',
                 'unpublished' => true,
             ], 403);
+        }
+
+        // M18 (PD-01): hard-block submissions after the due date. Deadlines are
+        // compared in the business timezone so a course scheduled in IST (etc.)
+        // does not drift because of the server/session UTC timezone.
+        if ($assignment->due_date) {
+            $now = Carbon::now(config('app.business_timezone'));
+            $due = $assignment->due_date->copy()->setTimezone(config('app.business_timezone'));
+
+            if ($now->gt($due)) {
+                return response()->json([
+                    'message' => 'The submission deadline for this assignment has passed.',
+                    'past_due' => true,
+                    'due_date' => $assignment->due_date->toISOString(),
+                ], 403);
+            }
         }
 
         $validated = $request->validate([

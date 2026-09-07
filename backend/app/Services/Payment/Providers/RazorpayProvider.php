@@ -51,6 +51,10 @@ class RazorpayProvider implements PaymentProviderInterface
 
         try {
             $order = $this->api()->order->create($attributes);
+        } catch (PaymentNotConfiguredException $e) {
+            // Missing credentials must surface as a configuration error, not be
+            // swallowed into a generic provider error.
+            throw $e;
         } catch (\Throwable $e) {
             throw new PaymentProviderException('Razorpay order creation failed: ' . $e->getMessage(), 0, $e);
         }
@@ -75,13 +79,13 @@ class RazorpayProvider implements PaymentProviderInterface
             return false;
         }
 
-        try {
-            \Razorpay\Api\Utility::verifyWebhookSignature($payload, trim($signature), $secret);
+        // Razorpay signs webhooks with HMAC-SHA256 over the raw request body.
+        // We validate directly (rather than via the SDK's non-static Utility
+        // wrapper) using a constant-time comparison.
+        $expected = hash_hmac('sha256', $payload, $secret);
+        $actual = trim($signature);
 
-            return true;
-        } catch (\Throwable $e) {
-            return false;
-        }
+        return hash_equals($expected, $actual);
     }
 
     public function fetchPayment(string $paymentId): ?array

@@ -128,4 +128,55 @@ class BatchB2AssignmentIntegrityTest extends TestCase
         $this->assertSame('submitted', $row->status);
         $this->assertSame('v2', $row->submission_text);
     }
+
+    public function test_submission_blocked_when_due_date_has_passed(): void
+    {
+        // Set the due date in the past.
+        $this->assignment->update(['due_date' => now()->subDay()]);
+
+        $this->submit('late work')->assertStatus(403);
+    }
+
+    public function test_late_submission_response_indicates_past_due(): void
+    {
+        $this->assignment->update(['due_date' => now()->subHour()]);
+
+        $res = $this->submit('late work');
+        $res->assertStatus(403);
+        $res->assertJsonPath('past_due', true);
+        $res->assertJsonStructure(['message', 'past_due', 'due_date']);
+    }
+
+    public function test_submission_allowed_before_due_date(): void
+    {
+        // due_date is set to now + 7 days in setUp.
+        $this->submit('on-time work')->assertCreated();
+    }
+
+    public function test_submission_allowed_on_due_date_boundary(): void
+    {
+        // Reference: now == due date should still be allowed (not strictly greater).
+        $this->assignment->update(['due_date' => now()->addMinute()]);
+
+        $this->submit('just in time')->assertCreated();
+    }
+
+    public function test_submission_allowed_when_no_due_date_set(): void
+    {
+        $this->assignment->update(['due_date' => null]);
+
+        $this->submit('no deadline work')->assertCreated();
+    }
+
+    public function test_update_of_existing_submission_also_blocked_after_due_date(): void
+    {
+        // Submit while open.
+        $this->submit('first version')->assertCreated();
+
+        // Freeze the clock after the deadline and attempt an update to an existing
+        // (ungraded) submission -> must also be hard blocked.
+        $this->assignment->update(['due_date' => now()->subDay()]);
+
+        $this->submit('late revision')->assertStatus(403);
+    }
 }

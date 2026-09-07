@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\TutorQuizController;
 use App\Http\Controllers\Api\VideoPlaybackController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
+use App\Http\Controllers\Api\LiveKitWebhookController;
 use App\Models\LessonProgress;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -85,6 +86,19 @@ Route::get('/health', function (App\Services\Infrastructure\RedisHealthService $
 | API token. Integrity is guaranteed by HMAC webhook-signature verification.
 |*/
 Route::post('/payments/razorpay/webhook', [PaymentWebhookController::class, 'handle'])
+    ->middleware('throttle:webhook');
+
+/*
+|--------------------------------------------------------------------------
+| LiveKit Webhook (public, signature verified, throttled)
+|--------------------------------------------------------------------------
+| LiveKit signs webhook requests with a JWT (Bearer token) using the API
+| secret. The endpoint is unauthenticated because LiveKit cannot present a
+| Sanctum token; integrity is guaranteed by JWT signature verification. It
+| updates class-session attendance in response to participant_joined,
+| participant_left, room_started and room_finished events.
+|*/
+Route::post('/livekit/webhook', [LiveKitWebhookController::class, 'handle'])
     ->middleware('throttle:webhook');
 
 /*
