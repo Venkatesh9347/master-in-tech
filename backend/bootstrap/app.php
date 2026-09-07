@@ -14,6 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
 
+        // Trusted proxies are env-driven via config/trustedproxy.php. With no
+        // TRUSTED_PROXIES configured the app trusts NO proxies (forwarded
+        // headers are ignored), which is the safe default for direct access.
+        $middleware->append(\Illuminate\Http\Middleware\TrustProxies::class);
+
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
             'super_admin' => \App\Http\Middleware\EnsureUserIsSuperAdmin::class,

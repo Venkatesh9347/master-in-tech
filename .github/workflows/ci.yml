@@ -1,0 +1,231 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # CI-only dummy value so the frontend production build has an explicit API
+  # origin. The built artifact is never deployed from CI; real deployments must
+  # set their own VITE_API_URL (see frontend/.env.example and DEPLOYMENT.md).
+  # The backend test suite is configured in backend/phpunit.xml (sqlite).
+  CI: true
+
+jobs:
+  backend:
+    name: Backend (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3']
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: bcmath,ctype,dom,fileinfo,gd,intl,mbstring,openssl,pdo,pdo_mysql,pdo_sqlite,sqlite3,tokenizer,xml,zip
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache-dir
+        run: composer config -g cache-dir
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache-dir.outputs.cache-dir }}
+          key: composer-${{ matrix.php }}-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: |
+            composer-${{ matrix.php }}-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: Prepare SQLite test database and run migrations
+        run: |
+          touch database/database.sqlite
+          php artisan migrate --force --no-interaction
+
+      - name: Run backend test suite
+        run: php artisan test
+
+  frontend:
+    name: Frontend (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22']
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies (lockfile)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npx tsc -b
+
+      - name: Vite production build
+        run: npm run build
+        env:
+          # Placeholder origin so the CI build participates in the VITE_API_URL
+          # enforcement (a real deployment's artifact is produced on deploy).
+          VITE_API_URL: http://127.0.0.1:8001/api
+
+  db-smoke-mysql:
+    name: DB smoke (MySQL 8.4)
+    runs-on: ubuntu-latest
+    # Informational: MySQL-only results must not block the primary pipeline.
+    continue-on-error: true
+    needs: backend
+    defaults:
+      run:
+        working-directory: ./backend
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: masterintech_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo,pdo_mysql,bcmath,ctype,dom,fileinfo,gd,intl,mbstring,openssl,tokenizer,xml,zip
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: Run migrations on MySQL
+        run: php artisan migrate --force --no-interaction
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_DATABASE: masterintech_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+
+      - name: Run backend test suite on MySQL
+        run: php artisan test
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_DATABASE: masterintech_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+
+  db-smoke-postgres:
+    name: DB smoke (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    # Informational: PostgreSQL-only results must not block the primary pipeline.
+    continue-on-error: true
+    needs: backend
+    defaults:
+      run:
+        working-directory: ./backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: masterintech_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U root -d masterintech_test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo,pdo_pgsql,bcmath,ctype,dom,fileinfo,gd,intl,mbstring,openssl,tokenizer,xml,zip
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: Run migrations on PostgreSQL
+        run: php artisan migrate --force --no-interaction
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_DATABASE: masterintech_test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+
+      - name: Run backend test suite on PostgreSQL
+        run: php artisan test
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_DATABASE: masterintech_test
+          DB_USERNAME: root
+          DB_PASSWORD: root

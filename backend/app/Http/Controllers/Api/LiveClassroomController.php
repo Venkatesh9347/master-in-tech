@@ -96,7 +96,16 @@ class LiveClassroomController extends Controller
         $this->authorizeSessionAccess($user, $session);
 
         $isHost = $session->isHost($user);
-        $token = $tokenService->createTokenForSession($session, $user);
+
+        try {
+            $token = $tokenService->createTokenForSession($session, $user);
+            $wsUrl = $tokenService->getWsUrl();
+        } catch (\App\Services\LiveKit\Exceptions\LiveKitConfigurationException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'LIVEKIT_NOT_CONFIGURED',
+            ], 503);
+        }
 
         // Record or refresh participant entry
         $participant = LiveClassroomParticipant::updateOrCreate(
@@ -115,7 +124,7 @@ class LiveClassroomController extends Controller
 
         return response()->json([
             'token' => $token,
-            'ws_url' => $tokenService->getWsUrl(),
+            'ws_url' => $wsUrl,
             'room_id' => $session->room_id,
             'session' => [
                 'id' => $session->id,

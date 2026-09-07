@@ -4,6 +4,7 @@ namespace App\Services\LiveKit;
 
 use App\Models\LiveClassroomSession;
 use App\Models\User;
+use App\Services\LiveKit\Exceptions\LiveKitConfigurationException;
 use Illuminate\Support\Str;
 
 class LiveKitTokenService
@@ -22,18 +23,49 @@ class LiveKitTokenService
     }
 
     /**
+     * Whether LiveKit is fully configured (endpoint, key and secret present).
+     *
+     * Used by controllers/tests to fail cleanly before minting tokens, so we
+     * never build JWTs or emit websocket URLs from empty/default credentials.
+     */
+    public static function isConfigured(): bool
+    {
+        $wsUrl = trim((string) config('services.livekit.url'));
+        $apiKey = trim((string) config('services.livekit.api_key'));
+        $apiSecret = trim((string) config('services.livekit.api_secret'));
+
+        return $wsUrl !== '' && $apiKey !== '' && $apiSecret !== '';
+    }
+
+    /**
      * Get configured LiveKit WebSocket URL.
+     *
+     * @throws LiveKitConfigurationException when LiveKit is not configured.
      */
     public function getWsUrl(): string
     {
+        if (! static::isConfigured()) {
+            throw new LiveKitConfigurationException(
+                'LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET on the server.'
+            );
+        }
+
         return $this->wsUrl;
     }
 
     /**
      * Get configured LiveKit API Key.
+     *
+     * @throws LiveKitConfigurationException when LiveKit is not configured.
      */
     public function getApiKey(): string
     {
+        if (! static::isConfigured()) {
+            throw new LiveKitConfigurationException(
+                'LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET on the server.'
+            );
+        }
+
         return $this->apiKey;
     }
 
@@ -47,6 +79,8 @@ class LiveKitTokenService
      */
     public function createTokenForSession(LiveClassroomSession $session, User $user, array $overrides = []): string
     {
+        $this->assertConfigured();
+
         $isHost = $session->isHost($user);
         $ttl = $this->defaultTtl;
         $now = time();
@@ -105,6 +139,8 @@ class LiveKitTokenService
      */
     public function createTokenForClassSession(\App\Models\ClassSession $session, User $user, array $overrides = []): string
     {
+        $this->assertConfigured();
+
         $isHost = $session->isHost($user);
         $roomName = $session->resolveLivekitRoomName();
         $ttl = $this->defaultTtl;
@@ -153,6 +189,20 @@ class LiveKitTokenService
         ];
 
         return $this->signJwt($payload, $this->apiSecret);
+    }
+
+    /**
+     * Fail loudly unless LiveKit is configured.
+     *
+     * @throws LiveKitConfigurationException
+     */
+    protected function assertConfigured(): void
+    {
+        if (! static::isConfigured()) {
+            throw new LiveKitConfigurationException(
+                'LiveKit is not configured. Unable to generate a secure token without LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET.'
+            );
+        }
     }
 
     /**

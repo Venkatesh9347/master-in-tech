@@ -4,11 +4,33 @@ import axios from "axios";
 //   - Local development: VITE_API_URL is set in the (gitignored) frontend/.env.
 //   - Production:     VITE_API_URL MUST point at the HTTPS API origin and is
 //                     injected at build time (see frontend/.env.example).
-// The inline dev fallback below is used only when no value was injected at
-// build time; it must never be relied upon for a production bundle.
-// The Laravel backend runs on :8001; OpenViking owns :8000.
+// Production builds are REJECTED at build time in vite.config.ts when
+// VITE_API_URL is missing, so a deployed bundle can never silently call a
+// local dev server. The runtime guard below is a second line of defence for
+// builds produced outside the normal pipeline.
+const configuredBaseUrl = import.meta.env.VITE_API_URL as string | undefined;
+
+// Production guard: a deployed bundle must never start with an undefined API
+// base URL. The build itself is already rejected in vite.config.ts when
+// VITE_API_URL is missing; this is a second line of defence for bundles built
+// outside the normal pipeline.
+if (!configuredBaseUrl && import.meta.env.PROD) {
+  throw new Error(
+    "VITE_API_URL is not defined. A production build must be created with " +
+      "VITE_API_URL pointing to the HTTPS API origin. See frontend/.env.example " +
+      "and DEPLOYMENT.md."
+  );
+}
+
+// The 127.0.0.1 fallback below is LOCAL-DEVELOPMENT ONLY: it appears in the
+// source, but in `vite build` (production mode) this ternary folds to the
+// else-branch and the minifier drops the dev string entirely, so a shipped
+// bundle never contains it. The Laravel backend runs on :8001; OpenViking owns :8000.
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:8001/api",
+  baseURL:
+    import.meta.env.MODE === "development"
+      ? configuredBaseUrl || "http://127.0.0.1:8001/api"
+      : (configuredBaseUrl as string),
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",

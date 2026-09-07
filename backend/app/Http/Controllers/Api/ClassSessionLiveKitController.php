@@ -44,7 +44,17 @@ class ClassSessionLiveKitController extends Controller
         }
 
         $isHost = $session->isHost($user);
-        $token = $tokenService->createTokenForClassSession($session, $user);
+
+        try {
+            $token = $tokenService->createTokenForClassSession($session, $user);
+            $wsUrl = $tokenService->getWsUrl();
+        } catch (\App\Services\LiveKit\Exceptions\LiveKitConfigurationException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'code' => 'LIVEKIT_NOT_CONFIGURED',
+            ], 503);
+        }
+
         $roomName = $session->resolveLivekitRoomName();
 
         // If host joins, mark livekit status as active
@@ -77,7 +87,7 @@ class ClassSessionLiveKitController extends Controller
 
         return response()->json([
             'token' => $token,
-            'ws_url' => $tokenService->getWsUrl(),
+            'ws_url' => $wsUrl,
             'room_name' => $roomName,
             'room_id' => $roomName,
             'session' => [

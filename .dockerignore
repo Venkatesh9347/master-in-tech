@@ -1,0 +1,30 @@
+# Keep the Docker build context small and never bake local secrets into images.
+
+.git
+.github
+backend-incomplete
+
+# Backend: dependencies, local env, local databases, uploaded/storage content
+backend/vendor
+backend/node_modules
+backend/.env
+backend/.env.backup
+backend/.env.production
+backend/storage
+backend/database/*.sqlite*
+
+# Frontend: dependencies, build output, local env files
+frontend/node_modules
+frontend/dist
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+frontend/.env.*.local
+
+# General
+node_modules
+*.log
+.DS_Store
+.idea
+.vscode
+Thumbs.db

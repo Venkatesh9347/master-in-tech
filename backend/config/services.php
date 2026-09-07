@@ -42,7 +42,12 @@ return [
     ],
 
     'livekit' => [
-        'url' => env('LIVEKIT_URL', 'wss://livekit.example.com'),
+        // No default is provided for the URL. LiveKit is a real external
+        // service; leaving a fake/default value here would let the app mint
+        // tokens against a non-existent endpoint and silently break live
+        // classrooms. When LiveKit is configured (see DEPLOYMENT.md), set
+        // LIVEKIT_URL to the actual project URL (e.g. wss://your-livekit-host).
+        'url' => env('LIVEKIT_URL'),
         'api_key' => env('LIVEKIT_API_KEY'),
         'api_secret' => env('LIVEKIT_API_SECRET'),
         'token_ttl' => (int) env('LIVEKIT_TOKEN_TTL', 7200),

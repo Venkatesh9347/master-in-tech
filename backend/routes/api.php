@@ -71,9 +71,22 @@ Route::post('/auth/otp/resend', [AuthController::class, 'resendOtp'])->middlewar
 Route::post('/enquiries', [EnquiryController::class, 'store'])->middleware('throttle:public-submission');
 
 Route::get('/health', function (App\Services\Infrastructure\RedisHealthService $redis) {
+    $databaseOk = false;
+
+    try {
+        DB::select('select 1');
+        $databaseOk = true;
+    } catch (\Throwable $e) {
+        // Database unreachable: reported below. Never leak exception details.
+    }
+
     return response()->json([
         'status' => 'ok',
         'service' => 'master-in-tech-api',
+        'database' => [
+            'status' => $databaseOk ? 'ok' : 'error',
+            'driver' => config('database.default'),
+        ],
         'redis' => $redis->status(),
     ]);
 });

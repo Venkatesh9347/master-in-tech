@@ -19,8 +19,11 @@ class AppServiceProvider extends ServiceProvider
             $provider = config('ai.default_provider', 'stub');
 
             return match ($provider) {
+                'stub' => new \App\Services\Ai\Providers\StubLlmProvider(),
                 'openai' => new \App\Services\Ai\Providers\OpenAiProvider(),
-                default => new \App\Services\Ai\Providers\StubLlmProvider(),
+                default => throw new \RuntimeException(
+                    "Unsupported AI_PROVIDER [{$provider}]. Supported providers: \"stub\", \"openai\"."
+                ),
             };
         });
 

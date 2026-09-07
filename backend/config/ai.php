@@ -10,6 +10,11 @@ return [
     | Supported: "openai", "stub"
     | Use "stub" for local development without API credentials.
     |
+    | Selecting any other value fails loudly at service resolution time (an
+    | exception is thrown instead of silently falling back), so a typo or an
+    | unsupported provider (e.g. a not-yet-implemented "ollama") can never
+    | silently route traffic somewhere unexpected.
+    |
     */
     'default_provider' => env('AI_PROVIDER', 'stub'),
 

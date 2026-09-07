@@ -29,7 +29,7 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
-        <env name="LIVEKIT_URL" value="wss://livekit.example.com"/>
+        <env name="LIVEKIT_URL" value="wss://livekit.dev.test"/>
         <env name="LIVEKIT_API_KEY" value="devkey"/>
         <env name="LIVEKIT_API_SECRET" value="secret"/>
         <env name="PAYMENT_PROVIDER" value="stub"/>
