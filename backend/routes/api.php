@@ -315,7 +315,21 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::post('/student/class-sessions/{id}/join', [StudentClassSessionController::class, 'join']);
 
     Route::get('/courses/{course}/progress', function (int $course) {
-        $progress = LessonProgress::where('user_id', auth()->id())
+        $user = auth()->user();
+
+        $enrollment = \App\Models\CourseEnrollment::where('user_id', $user->id)
+            ->where('course_id', $course)
+            ->where('status', '!=', 'dropped')
+            ->first();
+
+        if (! $enrollment) {
+            return response()->json([
+                'message' => 'Course Access Required. You must have an active enrollment in this course to view progress.',
+                'enrollment_required' => true,
+            ], 403);
+        }
+
+        $progress = LessonProgress::where('user_id', $user->id)
             ->where('course_id', $course)
             ->where('completed', true)
             ->pluck('lesson_id');

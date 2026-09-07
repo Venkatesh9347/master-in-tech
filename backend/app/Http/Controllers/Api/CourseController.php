@@ -173,7 +173,7 @@ class CourseController extends Controller
     public function show(Request $request, $id)
     {
         $user = $this->getAuthenticatedUser($request);
-        $isAdmin = $user && $user->role === 'admin';
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
         $course = Course::where('id', $id)
             ->orWhere('slug', $id)
@@ -185,18 +185,37 @@ class CourseController extends Controller
             return response()->json(['message' => 'Course not found'], 404);
         }
 
+        // SEC-001: Unpublished courses are only visible to admin, instructor, or enrolled students
+        if (! $course->is_published) {
+            $isEnrolled = false;
+            $isInstructor = $user && (int) $course->instructor_id === (int) $user->id;
+
+            if ($user) {
+                $enrollment = CourseEnrollment::where('user_id', $user->id)
+                    ->where('course_id', $course->id)
+                    ->where('status', '!=', 'dropped')
+                    ->first();
+                $isEnrolled = (bool) $enrollment;
+            }
+
+            if (! $isAdmin && ! $isInstructor && ! $isEnrolled) {
+                return response()->json(['message' => 'Course not found'], 404);
+            }
+        }
+
         $isEnrolled = false;
         $enrollment = null;
 
         if ($user) {
             $enrollment = CourseEnrollment::where('user_id', $user->id)
                 ->where('course_id', $course->id)
+                ->where('status', '!=', 'dropped')
                 ->first();
             $isEnrolled = (bool) $enrollment;
         }
 
         // Load curriculum hierarchy
-        $isManager = $user && ($user->role === 'admin' || $course->instructor_id === $user->id);
+        $isManager = $user && ($user->role === 'admin' || $user->role === 'super_admin' || $course->instructor_id === $user->id);
         $sectionsQuery = $course->sections()->orderBy('sort_order');
         if (! $isManager) {
             $sectionsQuery->where('is_published', true);
