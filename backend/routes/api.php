@@ -105,6 +105,11 @@ Route::post('/livekit/webhook', [LiveKitWebhookController::class, 'handle'])
 |--------------------------------------------------------------------------
 | Public Dynamic CMS & Catalog Endpoints (Goal 4)
 |--------------------------------------------------------------------------
+| API-006: /api/public/courses and /api/public/courses/{slug} are DEPRECATED
+| in favor of GET /api/courses (CourseController::index) and
+| GET /api/courses/{id} (CourseController::show). The deprecated routes are
+| kept operational for backward compatibility; the frontend uses /api/courses.
+|--------------------------------------------------------------------------
 */
 Route::prefix('public')->group(function () {
     Route::get('/home', [PublicApiController::class, 'home']);

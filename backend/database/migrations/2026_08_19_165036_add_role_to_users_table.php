@@ -8,6 +8,18 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
+     * DB-001: This migration is intentionally duplicated by
+     * 2026_08_19_170248_add_role_to_users_table_v2.php (same column, same
+     * default). Both files are idempotent: each begins with a
+     * Schema::hasColumn('users', 'role') guard and no-ops when the column
+     * already exists. On a fresh database the first file adds the column and
+     * the second no-ops; on an existing database the order no longer matters.
+     *
+     * DO NOT DELETE EITHER FILE: existing databases may already have recorded
+     * both migration names in their migrations table. Removing one would break
+     * `migrate:rollback` for those environments. The duplicate is safe by
+     * design and is kept solely for migration-history compatibility.
+     *
      * Run the migrations.
      */
     public function up(): void

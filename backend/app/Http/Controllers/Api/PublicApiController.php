@@ -93,6 +93,11 @@ class PublicApiController extends Controller
 
     /**
      * Public Courses with Category/Search/Priority Filtering.
+     *
+     * @deprecated API-006: superseded by GET /api/courses (CourseController::index),
+     *             which is a superset (supports the same search/category/difficulty
+     *             filters plus richer catalog metadata and SEC-001 visibility rules).
+     *             Kept operational for backward compatibility until consumers migrate.
      */
     public function courses(Request $request)
     {
@@ -123,6 +128,10 @@ class PublicApiController extends Controller
 
     /**
      * Public Single Course.
+     *
+     * @deprecated API-006: superseded by GET /api/courses/{id} (CourseController::show),
+     *             which additionally handles SEC-001 visibility for unpublished
+     *             courses. Kept operational for backward compatibility.
      */
     public function course(string $idOrSlug)
     {

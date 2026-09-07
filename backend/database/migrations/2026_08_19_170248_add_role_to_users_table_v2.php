@@ -8,6 +8,12 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
+     * DB-001: Redundant copy of 2026_08_19_165036_add_role_to_users_table.php.
+     * Intentionally kept: both are idempotent (Schema::hasColumn guard) and
+     * both may already be recorded as applied in existing databases, so this
+     * file exists purely for migration-history compatibility. It no-ops when
+     * the `role` column already exists.
+     *
      * Run the migrations.
      */
     public function up(): void
