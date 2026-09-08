@@ -29,8 +29,10 @@ class PaymentWebhookTest extends TestCase
 
     protected function postRaw(string $url, string $rawBody, string $signature)
     {
-        return $this->withHeaders(['X-Razorpay-Signature' => $signature])
-            ->call('POST', $url, [], [], [], ['CONTENT_TYPE' => 'application/json'], $rawBody);
+        return $this->call('POST', $url, [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_RAZORPAY_SIGNATURE' => $signature,
+        ], $rawBody);
     }
 
     public function test_valid_webhook_signature_marks_payment_paid(): void

@@ -76,7 +76,11 @@ class RazorpayProvider implements PaymentProviderInterface
         }
 
         try {
-            \Razorpay\Api\Utility::verifyWebhookSignature($payload, trim($signature), $secret);
+            // The SDK's signature verifier is an instance method; calling it
+            // statically throws on PHP 8 (fatal error caught below), which
+            // would reject every valid webhook. Invoke it through an instance.
+            $verifier = new \Razorpay\Api\Utility();
+            $verifier->verifyWebhookSignature($payload, trim($signature), $secret);
 
             return true;
         } catch (\Throwable $e) {
