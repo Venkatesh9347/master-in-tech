@@ -497,14 +497,6 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
     // Admin Assignment Grading
     Route::get('/admin/assignments/submissions', [AdminAssignmentGradeController::class, 'index']);
     Route::post('/admin/assignments/submissions/{id}/grade', [AdminAssignmentGradeController::class, 'grade']);
-
-    // Admin Course Enquiries & Admissions Pipeline
-    Route::get('/admin/enquiries/stats', [EnquiryController::class, 'stats']);
-    Route::get('/admin/enquiries', [EnquiryController::class, 'index']);
-    Route::get('/admin/enquiries/{enquiry}', [EnquiryController::class, 'show']);
-    Route::put('/admin/enquiries/{enquiry}', [EnquiryController::class, 'update']);
-    Route::post('/admin/enquiries/{enquiry}/notes', [EnquiryController::class, 'addNote']);
-    Route::post('/admin/enquiries/{enquiry}/enroll', [EnquiryController::class, 'enroll']);
 });
 
 /*
@@ -513,6 +505,14 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth:sanctum', 'single.session', 'crm'])->group(function () {
+    // Admin Course Enquiries & Admissions Pipeline (CRM/lead area; counsellor accessible)
+    Route::get('/admin/enquiries/stats', [EnquiryController::class, 'stats']);
+    Route::get('/admin/enquiries', [EnquiryController::class, 'index']);
+    Route::get('/admin/enquiries/{enquiry}', [EnquiryController::class, 'show']);
+    Route::put('/admin/enquiries/{enquiry}', [EnquiryController::class, 'update']);
+    Route::post('/admin/enquiries/{enquiry}/notes', [EnquiryController::class, 'addNote']);
+    Route::post('/admin/enquiries/{enquiry}/enroll', [EnquiryController::class, 'enroll']);
+
     Route::prefix('admin/crm')->group(function () {
         Route::get('/stats', [AdminCrmController::class, 'stats']);
         Route::get('/counsellors', [AdminCrmController::class, 'counsellors']);
@@ -526,6 +526,7 @@ Route::middleware(['auth:sanctum', 'single.session', 'crm'])->group(function () 
         Route::post('/leads/{lead}/activities', [AdminCrmController::class, 'activities']);
         Route::post('/leads/{lead}/follow-ups', [AdminCrmController::class, 'storeFollowUp']);
         Route::post('/leads/{lead}/convert', [AdminCrmController::class, 'convert']);
+        Route::get('/batches', [AdminBatchController::class, 'index']);
     });
 });
 

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 // Eager Route Guards & Context Providers
 import AdminRoute from "./components/AdminRoute";
+import CounsellorRoute from "./components/CounsellorRoute";
 import TutorRoute from "./components/TutorRoute";
 import StudentRoute from "./components/StudentRoute";
 import CompanyRoute from "./components/CompanyRoute";
@@ -215,9 +216,7 @@ function App() {
                 <Route path="navigation" element={<AdminNavigation />} />
                 <Route path="media" element={<AdminMedia />} />
                 <Route path="audit-logs" element={<AdminAuditLogs />} />
-                <Route path="crm" element={<AdminCrm />} />
                 <Route path="placements" element={<AdminPlacements />} />
-                <Route path="enquiries" element={<AdminEnquiries />} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="enrollments" element={<AdminEnrollments />} />
                 <Route path="batches" element={<AdminBatches />} />
@@ -235,6 +234,14 @@ function App() {
               <Route path="/cpanel/*" element={<Navigate to="/admin" replace />} />
               <Route path="/c-panel" element={<Navigate to="/admin" replace />} />
               <Route path="/c-panel/*" element={<Navigate to="/admin" replace />} />
+            </Route>
+
+            {/* Counsellor CRM / Admissions Routes (admin, super_admin, counsellor) */}
+            <Route element={<CounsellorRoute />}>
+              <Route path="/admin" element={<AdminLayout />}>
+                <Route path="crm" element={<AdminCrm />} />
+                <Route path="enquiries" element={<AdminEnquiries />} />
+              </Route>
             </Route>
 
             {/* 404 Catch-All */}
