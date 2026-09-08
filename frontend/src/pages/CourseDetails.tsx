@@ -138,7 +138,7 @@ export default function CourseDetails() {
                   Courses
                 </Link>
                 <span>/</span>
-                <span className="text-blue-400">{course.category || 'Engineering'}</span>
+                {course.category && <span className="text-blue-400">{course.category}</span>}
                 <span>/</span>
                 <span className="text-slate-300 truncate max-w-xs">{course.title}</span>
               </div>
@@ -146,12 +146,16 @@ export default function CourseDetails() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                 <div className="lg:col-span-2 space-y-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-3 py-1 rounded-lg text-xs font-extrabold uppercase bg-blue-600/30 text-blue-400 border border-blue-500/30">
-                      {course.category || 'Master Track'}
-                    </span>
-                    <span className="px-3 py-1 rounded-lg text-xs font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                      {course.difficulty || 'Intermediate'} Level
-                    </span>
+                    {course.category && (
+                      <span className="px-3 py-1 rounded-lg text-xs font-extrabold uppercase bg-blue-600/30 text-blue-400 border border-blue-500/30">
+                        {course.category}
+                      </span>
+                    )}
+                    {course.difficulty && (
+                      <span className="px-3 py-1 rounded-lg text-xs font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        {course.difficulty} Level
+                      </span>
+                    )}
                     <span className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                       ⏱️ {course.duration}
                     </span>
@@ -166,15 +170,23 @@ export default function CourseDetails() {
                   </p>
 
                   <div className="flex flex-wrap items-center gap-6 pt-2 text-xs text-slate-400">
-                    <div className="flex items-center gap-1.5 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
-                      <span className="text-amber-400 font-bold">★</span>
-                      <span className="text-white font-bold">{course.average_rating || 4.9}</span>
-                      <span>({course.reviews_count || 36} reviews)</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span>👥</span>
-                      <span>{course.students_count || 450} Enrolled Learners</span>
-                    </div>
+                    {course.average_rating ? (
+                      <div className="flex items-center gap-1.5 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <span className="text-amber-400 font-bold">★</span>
+                        <span className="text-white font-bold">{course.average_rating}</span>
+                        <span>({course.reviews_count ?? 0} reviews)</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <span className="text-white font-bold">New Program</span>
+                      </div>
+                    )}
+                    {!!course.students_count && (
+                      <div className="flex items-center gap-2">
+                        <span>👥</span>
+                        <span>{course.students_count} Enrolled Learners</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <span>👨‍🏫 Lead Faculty:</span>
                       <strong className="text-white">{course.instructor}</strong>
@@ -204,7 +216,7 @@ export default function CourseDetails() {
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400">Interactive Lessons:</span>
                       <span className="font-bold text-white">
-                        {course.lessons_count || sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || '30+'} Topics
+                        {course.lessons_count || sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || '—'} Topics
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -213,7 +225,7 @@ export default function CourseDetails() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400">Level Requirement:</span>
-                      <span className="font-bold text-white">{course.difficulty || 'Intermediate'}</span>
+                      <span className="font-bold text-white">{course.difficulty || '—'}</span>
                     </div>
                   </div>
 
@@ -296,7 +308,7 @@ export default function CourseDetails() {
                       <span>📚</span> Course Curriculum & Modules
                     </h2>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      {sections.length} structured modules • {course.lessons_count || '25+'} interactive learning sessions
+                      {sections.length} structured modules • {course.lessons_count || '—'} interactive learning sessions
                     </p>
                   </div>
 

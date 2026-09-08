@@ -566,26 +566,8 @@ export default function StudentLessons() {
                     {activeLesson?.title || 'Lesson Overview'}
                   </h3>
                   <p className="text-slate-400 leading-relaxed">
-                    {activeLesson?.description ||
-                      'In this module, you will gain hands-on proficiency in building production-standard engineering components, mastering core syntax, debugging workflows, and testing.'}
+                    {activeLesson?.description || 'No description provided for this lesson.'}
                   </p>
-
-                  <div className="pt-4 border-t border-slate-800">
-                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-2">
-                      Key Competency Outcomes
-                    </h4>
-                    <ul className="space-y-1.5 text-xs text-slate-300">
-                      <li className="flex items-center gap-2">
-                        <span className="text-blue-400">✓</span> Master core principles and architecture paradigms
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-blue-400">✓</span> Implement hands-on coding exercises and capstone milestones
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-blue-400">✓</span> Write maintainable, testable code conforming to industry standards
-                      </li>
-                    </ul>
-                  </div>
                 </div>
               )}
 

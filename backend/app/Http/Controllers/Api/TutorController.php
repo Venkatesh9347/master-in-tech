@@ -211,8 +211,8 @@ $averageRating = CourseReview::whereIn('course_id', $courseIds)->avg('rating');
         $inProgressCount = $totalEnrolled - $completedCount;
         $avgProgress = $totalEnrolled > 0 ? round($enrollments->avg('progress_percentage'), 1) : 0;
 
-        $reviews = CourseReview::where('course_id', $course->id)->with('user:id,name')->get();
-        $avgRating = $reviews->count() > 0 ? round($reviews->avg('rating'), 1) : 5.0;
+$reviews = CourseReview::where('course_id', $course->id)->with('user:id,name')->get();
+        $avgRating = $reviews->count() > 0 ? round($reviews->avg('rating'), 1) : null;
 
         $submissionsCount = AssignmentSubmission::where('course_id', $course->id)->count();
         $gradedCount = AssignmentSubmission::where('course_id', $course->id)->where('status', 'graded')->count();

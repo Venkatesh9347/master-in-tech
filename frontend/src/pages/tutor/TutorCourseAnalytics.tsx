@@ -12,7 +12,7 @@ interface AnalyticsData {
   in_progress: number
   completed: number
   average_progress: number
-  average_rating: number
+  average_rating: number | null
   reviews_count: number
   reviews: { id: number; rating: number; review_text: string; created_at: string; user?: { name: string } }[]
   submissions_count: number
@@ -120,7 +120,7 @@ export default function TutorCourseAnalytics() {
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
           <p className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">Average Rating</p>
-          <p className="text-3xl font-black text-amber-600 mt-1">★ {data.average_rating}</p>
+          <p className="text-3xl font-black text-amber-600 mt-1">★ {data.average_rating ?? '—'}</p>
           <p className="text-[10px] text-slate-500 mt-0.5">{data.reviews_count} reviews</p>
         </div>
       </div>
@@ -168,7 +168,7 @@ export default function TutorCourseAnalytics() {
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <span>⭐</span> Student Feedback
             </h2>
-            <span className="text-xs font-bold text-amber-600">★ {data.average_rating} / 5.0</span>
+            <span className="text-xs font-bold text-amber-600">★ {data.average_rating ?? '—'} / 5.0</span>
           </div>
 
           {data.reviews.length === 0 ? (

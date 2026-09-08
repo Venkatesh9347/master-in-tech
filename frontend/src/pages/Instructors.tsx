@@ -19,82 +19,19 @@ interface InstructorItem {
   courses?: string[]
 }
 
-const FALLBACK_INSTRUCTORS: InstructorItem[] = [
-  {
-    name: 'Sarah Johnson',
-    designation: 'Senior Lead Architect',
-    company: 'Microsoft',
-    bio: '10+ years architecting enterprise web systems and cloud services. Passionate about TypeScript, React, and server actions.',
-    avatar: '👩‍💻',
-    skills: ['Full Stack Web Development', 'Cloud Computing'],
-    rating: '4.9 ★ (320 reviews)',
-    graduates_count: '1,400+ students',
-  },
-  {
-    name: 'Aman Verma',
-    designation: 'Staff AI Research Lead',
-    company: 'Google',
-    bio: 'AI researcher and mentor with deep expertise in deep learning, transformer fine-tuning, and scalable inference pipelines.',
-    avatar: '👨‍💻',
-    skills: ['Python with AI', 'Data Science'],
-    rating: '4.9 ★ (410 reviews)',
-    graduates_count: '2,100+ students',
-  },
-  {
-    name: 'Neha Patel',
-    designation: 'Principal SAP Consultant',
-    company: 'SAP Labs',
-    bio: 'Certified SAP FICO and enterprise financial reporting veteran with 8+ years leading multinational ERP deployments.',
-    avatar: '👩‍💼',
-    skills: ['SAP FICO Financial Accounting'],
-    rating: '4.8 ★ (190 reviews)',
-    graduates_count: '950+ students',
-  },
-  {
-    name: 'Rajesh Kumar',
-    designation: 'Principal Cloud Architect',
-    company: 'Amazon Web Services',
-    bio: 'AWS & Kubernetes certified infra specialist who has guided Fortune 100 enterprise migrations and CI/CD automation.',
-    avatar: '👨‍💼',
-    skills: ['Cloud Computing', 'DevOps & Infrastructure'],
-    rating: '4.9 ★ (280 reviews)',
-    graduates_count: '1,600+ students',
-  },
-  {
-    name: 'Priya Sharma',
-    designation: 'Staff Data Scientist',
-    company: 'Netflix',
-    bio: 'Specialist in recommendation systems, experimentation analysis, and high-volume data visualization using Python and SQL.',
-    avatar: '👩‍🔬',
-    skills: ['Data Science & Analytics', 'AI & Machine Learning'],
-    rating: '4.9 ★ (240 reviews)',
-    graduates_count: '1,200+ students',
-  },
-  {
-    name: 'Michael Chen',
-    designation: 'Senior DevOps Specialist',
-    company: 'GitHub',
-    bio: 'Automation advocate focused on secure CI/CD pipelines, container orchestration, and developer productivity tooling.',
-    avatar: '👨‍🔧',
-    skills: ['DevOps & Infrastructure'],
-    rating: '4.8 ★ (150 reviews)',
-    graduates_count: '880+ students',
-  },
-]
-
 export default function Instructors() {
-  const [instructors, setInstructors] = useState<InstructorItem[]>(FALLBACK_INSTRUCTORS)
+  const [instructors, setInstructors] = useState<InstructorItem[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     API.get<InstructorItem[]>('/public/instructors')
       .then((res) => {
-        if (Array.isArray(res.data) && res.data.length > 0) {
+        if (Array.isArray(res.data)) {
           setInstructors(res.data)
         }
       })
       .catch(() => {
-        // Fallback remains active
+        // Leave the directory empty on failure.
       })
       .finally(() => setLoading(false))
   }, [])
@@ -125,15 +62,27 @@ export default function Instructors() {
           </div>
         )}
 
+        {!loading && instructors.length === 0 && (
+          <div className="text-center py-20">
+            <p className="text-3xl">👨‍🏫</p>
+            <p className="text-sm font-semibold text-slate-600 mt-4">
+              Our faculty directory is being onboarded.
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Mentor profiles will appear here as they are announced.
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {instructors.map((instructor) => {
             const displayTitle = instructor.designation || instructor.title
-            const displayGrads = instructor.graduates_count || instructor.graduates || '1,000+ students'
+            const displayGrads = instructor.graduates_count || instructor.graduates
             const displaySkills = Array.isArray(instructor.skills)
               ? instructor.skills
               : Array.isArray(instructor.courses)
               ? instructor.courses
-              : ['Engineering']
+              : []
 
             return (
               <div
@@ -157,9 +106,11 @@ export default function Instructors() {
                   {displayTitle && (
                     <p className="text-xs font-semibold text-blue-600 mb-1">{displayTitle}</p>
                   )}
-                  <p className="text-[11px] text-slate-400 font-medium mb-3">
-                    {instructor.rating || '4.9 ★'} • {displayGrads}
-                  </p>
+                  {(instructor.rating || displayGrads) && (
+                    <p className="text-[11px] text-slate-400 font-medium mb-3">
+                      {[instructor.rating, displayGrads].filter(Boolean).join(' • ')}
+                    </p>
+                  )}
 
                   <p className="text-xs text-slate-600 leading-relaxed mb-6">
                     {instructor.bio}
@@ -167,19 +118,23 @@ export default function Instructors() {
                 </div>
 
                 <div className="pt-4 border-t border-slate-100">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-                    Specialized Programs:
-                  </p>
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    {displaySkills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-semibold border border-blue-200"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
+                  {displaySkills.length > 0 && (
+                    <>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                        Specialized Programs:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 mb-4">
+                        {displaySkills.map((skill) => (
+                          <span
+                            key={skill}
+                            className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-semibold border border-blue-200"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
 
                   <Link
                     to="/courses"

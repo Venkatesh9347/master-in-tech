@@ -378,7 +378,7 @@ export default function StudentClassDetails() {
                       </div>
                       <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                         <p className="text-[10px] text-slate-400 uppercase font-bold">Passing Score</p>
-                        <p className="font-bold text-slate-800 mt-0.5">{session.quiz?.passing_score || 70}%</p>
+                        <p className="font-bold text-slate-800 mt-0.5">{session.quiz?.passing_score != null ? `${session.quiz.passing_score}%` : '—'}</p>
                       </div>
                     </div>
                   </section>

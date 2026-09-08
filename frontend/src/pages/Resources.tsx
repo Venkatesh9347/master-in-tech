@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import API from '../services/api'
@@ -15,64 +14,19 @@ interface ResourceItem {
   url_or_file?: string | null
 }
 
-const FALLBACK_RESOURCES: ResourceItem[] = [
-  {
-    title: 'Full Stack & AI Developer Roadmap',
-    description: 'Step-by-step visual career guide from fundamentals to senior system design.',
-    icon: '🗺️',
-    tag: 'Career Roadmap',
-    type: 'Guide',
-  },
-  {
-    title: 'Top 100 Technical Interview Questions',
-    description: 'Curated data structures, algorithms, React, and Node.js interview questions with solutions.',
-    icon: '💡',
-    tag: 'Interview Prep',
-    type: 'Cheatsheet',
-  },
-  {
-    title: 'Docker, Kubernetes & Cloud Architecture Cheat Sheet',
-    description: 'Quick command reference, manifest templates, and production best practices.',
-    icon: '☁️',
-    tag: 'DevOps Tooling',
-    type: 'Cheatsheet',
-  },
-  {
-    title: 'Python & Generative AI Starter Notebooks',
-    description: 'Hands-on Jupyter notebooks for LLM prompt engineering, embeddings, and vector databases.',
-    icon: '🤖',
-    tag: 'AI & ML',
-    type: 'Code Repo',
-  },
-  {
-    title: 'SAP FICO Configuration & Workflow Guide',
-    description: 'Comprehensive enterprise accounting ledger setup and transaction code reference.',
-    icon: '🏢',
-    tag: 'Enterprise ERP',
-    type: 'Documentation',
-  },
-  {
-    title: 'Career Switch Case Studies & Resume Templates',
-    description: 'Real resumes and career transition strategies used by our successful alumni.',
-    icon: '📄',
-    tag: 'Career Toolkit',
-    type: 'Template',
-  },
-]
-
 export default function Resources() {
-  const [resources, setResources] = useState<ResourceItem[]>(FALLBACK_RESOURCES)
+  const [resources, setResources] = useState<ResourceItem[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     API.get<ResourceItem[]>('/public/resources')
       .then((res) => {
-        if (Array.isArray(res.data) && res.data.length > 0) {
+        if (Array.isArray(res.data)) {
           setResources(res.data)
         }
       })
       .catch(() => {
-        // Fallback remains active
+        // Leave the library empty on failure.
       })
       .finally(() => setLoading(false))
   }, [])
@@ -100,6 +54,18 @@ export default function Resources() {
         {loading && (
           <div className="text-center text-xs font-bold text-slate-400 mb-6">
             Loading knowledge resources...
+          </div>
+        )}
+
+        {!loading && resources.length === 0 && (
+          <div className="text-center py-20">
+            <p className="text-3xl">📚</p>
+            <p className="text-sm font-semibold text-slate-600 mt-4">
+              Our knowledge library is being compiled.
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Free guides and starter kits will be published here soon.
+            </p>
           </div>
         )}
 
@@ -135,6 +101,7 @@ export default function Resources() {
                   <span className="text-[11px] font-bold text-slate-400 uppercase">
                     {res.type}
                   </span>
+                  {/* Only surface an access link when a real URL/file exists. */}
                   {res.url_or_file ? (
                     <a
                       href={res.url_or_file}
@@ -144,14 +111,7 @@ export default function Resources() {
                     >
                       Access Free →
                     </a>
-                  ) : (
-                    <Link
-                      to="/courses"
-                      className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                    >
-                      Access Free →
-                    </Link>
-                  )}
+                  ) : null}
                 </div>
               </div>
             )

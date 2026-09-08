@@ -37,19 +37,16 @@ export default function TutorProfile() {
         setName(u.name || '')
         setEmail(u.email || '')
         setPhone(u.phone || '')
-        setHeadline(u.headline || 'Senior Technical Educator & Curriculum Architect')
-        setExpertise(u.expertise || 'Software Engineering, Full Stack, Cloud, DevOps')
-        setBio(
-          u.bio ||
-            'Passionate engineering instructor with extensive industry experience building production microservices and mentoring learners.'
-        )
+        setHeadline(u.headline || '')
+        setExpertise(u.expertise || '')
+        setBio(u.bio || '')
       })
       .catch(() => {
         setName(user?.name || '')
         setEmail(user?.email || '')
-        setHeadline('Senior Technical Educator')
-        setExpertise('Web Development, Cloud Computing')
-        setBio('Instructor at Master In Tech.')
+        setHeadline('')
+        setExpertise('')
+        setBio('')
       })
       .finally(() => setLoading(false))
   }, [user])

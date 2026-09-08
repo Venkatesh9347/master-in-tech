@@ -182,10 +182,16 @@ export default function CourseCatalogDetails() {
 
               {/* Stats Row */}
               <div className="flex flex-wrap items-center gap-6 pt-3 text-xs sm:text-sm text-slate-300">
-                <div className="flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/30 px-3 py-1 rounded-xl text-amber-300">
-                  <span className="font-bold">★ {course.average_rating || 4.9}</span>
-                  <span className="text-amber-400/70">({course.reviews_count || 128} ratings)</span>
-                </div>
+                {course.average_rating ? (
+                  <div className="flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/30 px-3 py-1 rounded-xl text-amber-300">
+                    <span className="font-bold">★ {course.average_rating}</span>
+                    <span className="text-amber-400/70">({course.reviews_count ?? 0} ratings)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/30 px-3 py-1 rounded-xl text-amber-300">
+                    <span className="font-bold">New Program</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1.5">
                   <span>⏱️</span>
                   <span>{course.duration}</span>
@@ -194,10 +200,12 @@ export default function CourseCatalogDetails() {
                   <span>📖</span>
                   <span>{totalLessons} Lessons</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span>👥</span>
-                  <span>{(course.students_count || 540).toLocaleString()} Enrolled</span>
-                </div>
+                {!!course.students_count && (
+                  <div className="flex items-center gap-1.5">
+                    <span>👥</span>
+                    <span>{(course.students_count).toLocaleString()} Enrolled</span>
+                  </div>
+                )}
               </div>
 
               {/* Instructor Byline */}

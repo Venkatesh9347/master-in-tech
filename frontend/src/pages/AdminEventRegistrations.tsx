@@ -52,6 +52,37 @@ export default function AdminEventRegistrations() {
     attended: registrations.filter((r) => r.attendance_status === 'attended').length,
   };
 
+  const exportCsv = () => {
+    const escapeCell = (value: unknown) => {
+      const text = String(value ?? '');
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+
+    const header = ['ID', 'Name', 'Email', 'Status', 'Attendance', 'Registered At'];
+    const rows = filteredRegistrations.map((reg) => [
+      reg.id,
+      reg.user?.name,
+      reg.user?.email,
+      reg.status,
+      reg.attendance_status,
+      reg.registered_at,
+    ]);
+
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => escapeCell(cell)).join(','))
+      .join('\n');
+
+    const blob = new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `event-${id}-registrations.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50">
@@ -214,10 +245,13 @@ export default function AdminEventRegistrations() {
           </div>
         )}
 
-        {/* Download CSV - Placeholder */}
         {registrations.length > 0 && (
           <div className="mt-6 flex gap-4">
-            <button className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition">
+            <button
+              type="button"
+              onClick={exportCsv}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition"
+            >
               📥 Export as CSV
             </button>
             <Link

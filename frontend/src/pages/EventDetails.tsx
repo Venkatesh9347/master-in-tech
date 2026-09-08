@@ -198,80 +198,10 @@ export default function EventDetails() {
         <div className="grid gap-8 lg:grid-cols-3 mb-12">
           {/* Left Content */}
           <div className="lg:col-span-2 space-y-8">
-            {/* What You Will Learn */}
+            {/* About this event */}
             <section>
-              <h2 className="text-2xl font-bold text-slate-900 mb-4">What You Will Learn</h2>
-              <ul className="space-y-2">
-                {[
-                  'Understand industry best practices and trends',
-                  'Learn practical techniques from real-world scenarios',
-                  'Gain insights from experienced professionals',
-                  'Network with like-minded individuals',
-                  'Access exclusive learning resources',
-                ].map((item, idx) => (
-                  <li key={idx} className="flex items-start gap-3">
-                    <span className="text-blue-600 font-bold mt-1">✓</span>
-                    <span className="text-slate-700">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            {/* Event Agenda */}
-            <section>
-              <h2 className="text-2xl font-bold text-slate-900 mb-4">Event Agenda</h2>
-              <div className="space-y-4">
-                {[
-                  { time: event.start_time, title: 'Event Begins', desc: 'Welcome & Introductions' },
-                  { time: `${event.start_time}+30min`, title: 'Main Session', desc: event.title },
-                  { time: `${event.end_time}-15min`, title: 'Q&A Session', desc: 'Interactive discussion with the speaker' },
-                  { time: event.end_time, title: 'Event Concludes', desc: 'Thank you and resources' },
-                ].map((item, idx) => (
-                  <div key={idx} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
-                        {idx + 1}
-                      </div>
-                      {idx < 3 && <div className="w-0.5 h-12 bg-blue-200 mt-2" />}
-                    </div>
-                    <div className="pt-2 pb-4">
-                      <p className="text-xs text-blue-600 font-semibold uppercase">{item.time}</p>
-                      <p className="font-bold text-slate-900">{item.title}</p>
-                      <p className="text-sm text-slate-600">{item.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* FAQ */}
-            <section>
-              <h2 className="text-2xl font-bold text-slate-900 mb-4">Frequently Asked Questions</h2>
-              <div className="space-y-4">
-                {[
-                  {
-                    q: 'Can I attend the event if I register late?',
-                    a: 'Yes, as long as seats are available and the event has not started yet.',
-                  },
-                  {
-                    q: 'Will I receive a certificate?',
-                    a: 'Yes, you will receive a certificate of participation after attending the event.',
-                  },
-                  {
-                    q: 'Is the event recorded?',
-                    a: 'Recordings will be made available to registered participants after the event.',
-                  },
-                  {
-                    q: 'Can I cancel my registration?',
-                    a: 'Yes, you can cancel anytime before the event starts.',
-                  },
-                ].map((faq, idx) => (
-                  <div key={idx} className="p-4 bg-blue-50 rounded-lg">
-                    <p className="font-semibold text-slate-900 mb-2">{faq.q}</p>
-                    <p className="text-slate-700">{faq.a}</p>
-                  </div>
-                ))}
-              </div>
+              <h2 className="text-2xl font-bold text-slate-900 mb-4">About This Event</h2>
+              <p className="text-slate-700 leading-relaxed">{event.description}</p>
             </section>
           </div>
 
@@ -280,9 +210,15 @@ export default function EventDetails() {
             {/* Price and Registration */}
             <div className="sticky top-6 p-6 bg-white rounded-lg border border-slate-200 shadow-sm">
               <div className="mb-6 pb-6 border-b border-slate-200">
-                <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Free Community Workshop
-                </span>
+                {event.price ? (
+                  <span className="text-sm font-extrabold text-slate-900">
+                    ₹{Number(event.price).toLocaleString('en-IN')}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Free Event
+                  </span>
+                )}
               </div>
 
               <div className="mb-6 pb-6 border-b border-slate-200">
