@@ -237,9 +237,7 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     });
 
     // Dedicated Placement Portal (Authenticated Student Operations)
-    Route::get('/placements/student-status', [PlacementPortalController::class, 'studentDashboardStatus']);
     Route::get('/student/placement-dashboard/status', [PlacementPortalController::class, 'studentDashboardStatus']);
-    Route::get('/student/placement-status', [PlacementPortalController::class, 'studentDashboardStatus']);
     Route::get('/placements/profile-prefill', [PlacementPortalController::class, 'profilePrefill']);
     Route::post('/placements/opportunities/{opportunity}/apply', [PlacementPortalController::class, 'apply']);
     Route::get('/placements/my-applications', [PlacementPortalController::class, 'myApplications']);
@@ -254,11 +252,6 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
         Route::post('/{interview}/cancel', [StudentMockInterviewController::class, 'cancel']);
         Route::post('/{interview}/reschedule', [StudentMockInterviewController::class, 'reschedule']);
     });
-    // Alias student route for mock-interview (singular)
-    Route::get('/student/mock-interview/eligibility', [StudentMockInterviewController::class, 'eligibility']);
-    Route::get('/student/mock-interview/slots', [StudentMockInterviewController::class, 'slots']);
-    Route::post('/student/mock-interview/book', [StudentMockInterviewController::class, 'book']);
-    Route::get('/student/mock-interview/my-interviews', [StudentMockInterviewController::class, 'myInterviews']);
 
     // Event Registration
     Route::post('/events/{eventId}/register', [EventRegistrationController::class, 'register']);
@@ -563,34 +556,9 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
             Route::post('/{job}/approve', [AdminCorporatePartnerController::class, 'approveJob']);
             Route::post('/{job}/reject', [AdminCorporatePartnerController::class, 'rejectJob']);
         });
-
-        // Mandatory Mock Interviews & Professional Interviewers Desk
-        Route::prefix('mock-interviews')->group(function () {
-            Route::get('/stats', [AdminMockInterviewController::class, 'stats']);
-            Route::get('/eligibility', [AdminMockInterviewController::class, 'eligibilityList']);
-            Route::post('/eligibility-override', [AdminMockInterviewController::class, 'overrideEligibility']);
-            Route::post('/dashboard-control/status', [AdminMockInterviewController::class, 'updateDashboardStatus']);
-            Route::get('/interviewers', [AdminMockInterviewController::class, 'interviewers']);
-            Route::post('/interviewers', [AdminMockInterviewController::class, 'storeInterviewer']);
-            Route::get('/interviewers/{interviewer}', [AdminMockInterviewController::class, 'showInterviewer']);
-            Route::put('/interviewers/{interviewer}', [AdminMockInterviewController::class, 'updateInterviewer']);
-            Route::delete('/interviewers/{interviewer}', [AdminMockInterviewController::class, 'destroyInterviewer']);
-            Route::get('/slots', [AdminMockInterviewController::class, 'slots']);
-            Route::post('/slots', [AdminMockInterviewController::class, 'storeSlot']);
-            Route::put('/slots/{slot}', [AdminMockInterviewController::class, 'updateSlot']);
-            Route::delete('/slots/{slot}', [AdminMockInterviewController::class, 'destroySlot']);
-            Route::get('/bookings', [AdminMockInterviewController::class, 'bookings']);
-            Route::get('/bookings/{interview}', [AdminMockInterviewController::class, 'showBooking']);
-            Route::put('/bookings/{interview}/status', [AdminMockInterviewController::class, 'updateBookingStatus']);
-            Route::post('/bookings/{interview}/reassign', [AdminMockInterviewController::class, 'reassignInterviewer']);
-            Route::post('/bookings/{interview}/reschedule', [AdminMockInterviewController::class, 'rescheduleBooking']);
-            Route::post('/bookings/{interview}/cancel', [AdminMockInterviewController::class, 'cancelBooking']);
-            Route::post('/bookings/{interview}/evaluate', [AdminMockInterviewController::class, 'evaluateBooking']);
-            Route::get('/evaluations', [AdminMockInterviewController::class, 'evaluations']);
-        });
     });
 
-    // Standalone /admin/mock-interviews alias
+    // Mandatory Mock Interviews & Professional Interviewers Desk
     Route::prefix('admin/mock-interviews')->group(function () {
         Route::get('/stats', [AdminMockInterviewController::class, 'stats']);
         Route::get('/eligibility', [AdminMockInterviewController::class, 'eligibilityList']);
@@ -614,10 +582,6 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
         Route::post('/bookings/{interview}/evaluate', [AdminMockInterviewController::class, 'evaluateBooking']);
         Route::get('/evaluations', [AdminMockInterviewController::class, 'evaluations']);
     });
-
-    // Singular /admin/placement/settings alias
-    Route::get('/admin/placement/settings', [AdminPlacementController::class, 'getSettings']);
-    Route::put('/admin/placement/settings', [AdminPlacementController::class, 'updateSettings']);
 
     // Admin Student Enrollments & Course Assignment Management
     Route::get('/admin/enrollments/stats', [AdminEnrollmentController::class, 'stats']);

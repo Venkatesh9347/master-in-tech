@@ -108,20 +108,15 @@ class PlacementControlTest extends TestCase
         Sanctum::actingAs($admin);
 
         // 1. Read default settings
-        $resGet = $this->getJson('/api/admin/placement/settings');
+        $resGet = $this->getJson('/api/admin/placements/settings');
         $resGet->assertStatus(200)
             ->assertJson([
                 'placement_enabled' => true,
                 'job_applications_enabled' => true,
             ]);
 
-        // 2. Read via plural route alias
-        $resGetPlural = $this->getJson('/api/admin/placements/settings');
-        $resGetPlural->assertStatus(200)
-            ->assertJsonFragment(['placement_enabled' => true]);
-
-        // 3. Update placement settings
-        $resPut = $this->putJson('/api/admin/placement/settings', [
+        // 2. Update placement settings
+        $resPut = $this->putJson('/api/admin/placements/settings', [
             'placement_enabled' => false,
             'mock_interview_required' => true,
             'job_applications_enabled' => false,
@@ -148,23 +143,23 @@ class PlacementControlTest extends TestCase
 
         // 1. Student attempts to update -> 403 Forbidden
         Sanctum::actingAs($student);
-        $this->putJson('/api/admin/placement/settings', ['placement_enabled' => false])->assertStatus(403);
-        $this->getJson('/api/admin/placement/settings')->assertStatus(403);
+        $this->putJson('/api/admin/placements/settings', ['placement_enabled' => false])->assertStatus(403);
+        $this->getJson('/api/admin/placements/settings')->assertStatus(403);
 
         // 2. Company attempts to update -> 403 Forbidden
         Sanctum::actingAs($companyUser);
-        $this->putJson('/api/admin/placement/settings', ['placement_enabled' => false])->assertStatus(403);
-        $this->getJson('/api/admin/placement/settings')->assertStatus(403);
+        $this->putJson('/api/admin/placements/settings', ['placement_enabled' => false])->assertStatus(403);
+        $this->getJson('/api/admin/placements/settings')->assertStatus(403);
 
         // 3. Tutor attempts to update -> 403 Forbidden
         Sanctum::actingAs($tutor);
-        $this->putJson('/api/admin/placement/settings', ['placement_enabled' => false])->assertStatus(403);
-        $this->getJson('/api/admin/placement/settings')->assertStatus(403);
+        $this->putJson('/api/admin/placements/settings', ['placement_enabled' => false])->assertStatus(403);
+        $this->getJson('/api/admin/placements/settings')->assertStatus(403);
 
         // 4. Unauthenticated guest -> 401 Unauthorized
         app('auth')->forgetGuards();
-        $this->putJson('/api/admin/placement/settings', ['placement_enabled' => false])->assertStatus(401);
-        $this->getJson('/api/admin/placement/settings')->assertStatus(401);
+        $this->putJson('/api/admin/placements/settings', ['placement_enabled' => false])->assertStatus(401);
+        $this->getJson('/api/admin/placements/settings')->assertStatus(401);
     }
 
     public function test_student_and_public_read_placement_availability_state(): void
@@ -181,7 +176,7 @@ class PlacementControlTest extends TestCase
         // Admin disables placement
         $admin = $this->createAdmin();
         Sanctum::actingAs($admin);
-        $this->putJson('/api/admin/placement/settings', ['placement_enabled' => false]);
+        $this->putJson('/api/admin/placements/settings', ['placement_enabled' => false]);
 
         // Public / Student checks availability state -> receives disabled flag
         app('auth')->forgetGuards();
@@ -202,7 +197,7 @@ class PlacementControlTest extends TestCase
 
         // 1. Admin disables placement
         Sanctum::actingAs($admin);
-        $this->putJson('/api/admin/placement/settings', ['placement_enabled' => false]);
+        $this->putJson('/api/admin/placements/settings', ['placement_enabled' => false]);
 
         // 2. Student attempts to access opportunities -> 403 PLACEMENT_DISABLED
         Sanctum::actingAs($student);
@@ -243,7 +238,7 @@ class PlacementControlTest extends TestCase
 
         // Admin disables placement
         Sanctum::actingAs($admin);
-        $this->putJson('/api/admin/placement/settings', ['placement_enabled' => false]);
+        $this->putJson('/api/admin/placements/settings', ['placement_enabled' => false]);
 
         // Student LMS features remain fully functional
         Sanctum::actingAs($student);
@@ -266,7 +261,7 @@ class PlacementControlTest extends TestCase
 
         // 1. Admin enables placement portal but pauses job applications
         Sanctum::actingAs($admin);
-        $this->putJson('/api/admin/placement/settings', [
+        $this->putJson('/api/admin/placements/settings', [
             'placement_enabled' => true,
             'job_applications_enabled' => false,
         ]);
@@ -295,7 +290,7 @@ class PlacementControlTest extends TestCase
         Sanctum::actingAs($admin);
 
         // Admin enables mock interview requirement
-        $this->putJson('/api/admin/placement/settings', [
+        $this->putJson('/api/admin/placements/settings', [
             'placement_enabled' => true,
             'mock_interview_required' => true,
             'job_applications_enabled' => true,
@@ -317,7 +312,7 @@ class PlacementControlTest extends TestCase
         $this->assertTrue(Cache::has(PlacementSettingService::CACHE_KEY));
 
         // Update settings -> cache is invalidated and fresh values returned
-        $this->putJson('/api/admin/placement/settings', ['placement_enabled' => false]);
+        $this->putJson('/api/admin/placements/settings', ['placement_enabled' => false]);
         $this->assertFalse(PlacementSettingService::isPlacementEnabled());
     }
 
@@ -329,7 +324,7 @@ class PlacementControlTest extends TestCase
         $revokedToken = $admin->createToken('old_tab', ['session:expired_session_999'])->plainTextToken;
 
         $res = $this->withHeader('Authorization', 'Bearer ' . $revokedToken)
-            ->getJson('/api/admin/placement/settings');
+            ->getJson('/api/admin/placements/settings');
 
         $res->assertStatus(401)
             ->assertJsonFragment(['code' => 'SESSION_REVOKED']);

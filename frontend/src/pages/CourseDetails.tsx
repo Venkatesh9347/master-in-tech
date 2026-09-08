@@ -25,8 +25,11 @@ export default function CourseDetails() {
     }
     if (user) {
       API.post(`/courses/${course?.id}/enroll`)
-        .finally(() => {
+        .then(() => {
           navigate(`/student/courses/${course?.id}/lessons`)
+        })
+        .catch(() => {
+          setEnquiryOpen(true)
         })
       return
     }
