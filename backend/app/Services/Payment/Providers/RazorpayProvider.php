@@ -49,8 +49,13 @@ class RazorpayProvider implements PaymentProviderInterface
             $attributes['notes']['description'] = $options['description'];
         }
 
+        // Resolve the SDK client first so a missing-credentials configuration
+        // error surfaces as PaymentNotConfiguredException, not as a wrapped
+        // gateway failure. Only genuine SDK/network failures below are wrapped.
+        $api = $this->api();
+
         try {
-            $order = $this->api()->order->create($attributes);
+            $order = $api->order->create($attributes);
         } catch (\Throwable $e) {
             throw new PaymentProviderException('Razorpay order creation failed: ' . $e->getMessage(), 0, $e);
         }
