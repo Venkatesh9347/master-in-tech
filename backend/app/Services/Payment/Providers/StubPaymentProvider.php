@@ -44,6 +44,12 @@ class StubPaymentProvider implements PaymentProviderInterface
         return $signature !== '';
     }
 
+    public function verifyPaymentSignature(string $orderId, string $paymentId, string $signature): bool
+    {
+        // Stub confirms require no signature (non-empty is always accepted).
+        return $signature !== '';
+    }
+
     public function fetchPayment(string $paymentId): ?array
     {
         $data = $this->decodePaymentToken($paymentId);

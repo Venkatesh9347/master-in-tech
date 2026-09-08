@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Course;
+use App\Models\CourseEnrollment;
 use App\Models\PaymentTransaction;
 use App\Models\User;
 use App\Services\Payment\Data\PaymentOrder;
@@ -9,6 +11,7 @@ use App\Services\Payment\Exceptions\PaymentVerificationException;
 use App\Services\Payment\PaymentProviderInterface;
 use App\Services\Payment\PaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -24,16 +27,105 @@ class PaymentConfirmTest extends TestCase
         config(['payment.default_provider' => 'stub']);
     }
 
+    private function createCourse(array $attributes = []): Course
+    {
+        $title = $attributes['title'] ?? 'Course ' . Str::random(5);
+
+        return Course::create(array_merge([
+            'title' => $title,
+            'slug' => Str::slug($title),
+            'code' => $attributes['code'] ?? 'FSD',
+            'description' => 'Comprehensive technical training course description.',
+            'category' => 'Engineering',
+            'instructor' => 'Senior Specialist',
+            'duration' => '8 weeks',
+            'difficulty' => 'Intermediate',
+            'is_published' => true,
+            'price' => 250.00,
+        ], $attributes));
+    }
+
+    /* ---------------- HTTP: POST /api/payments/order ---------------- */
+
+    public function test_create_order_requires_a_course_id(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/order', ['amount' => 250.00])
+            ->assertStatus(422);
+    }
+
+    public function test_create_order_rejects_unknown_or_unpublished_course(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $unpublished = $this->createCourse(['is_published' => false, 'price' => 250.00]);
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/order', ['course_id' => 999999])
+            ->assertStatus(422);
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/order', ['course_id' => $unpublished->id])
+            ->assertStatus(404);
+    }
+
+    public function test_create_order_derives_amount_from_course_price_only(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['price' => 2499.99]);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/order', ['course_id' => $course->id]);
+
+        $response->assertStatus(201);
+        $response->assertJson([
+            'provider' => 'stub',
+            'course' => ['id' => $course->id, 'title' => $course->title],
+        ]);
+
+        $order = $response->json('order');
+        $this->assertSame(249999, $order['amount']);
+        $this->assertSame('INR', $order['currency']);
+
+        $this->assertDatabaseHas('payment_transactions', [
+            'order_id' => $order['order_id'],
+            'course_id' => $course->id,
+            'user_id' => $student->id,
+            'amount_paise' => 249999,
+            'description' => 'Enrolment fee for ' . $course->title,
+        ]);
+    }
+
+    public function test_same_course_reuses_the_same_order_for_the_same_user(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['price' => 500.00]);
+
+        $first = $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/order', ['course_id' => $course->id])
+            ->assertStatus(201)
+            ->json('order');
+
+        $second = $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/order', ['course_id' => $course->id])
+            ->assertStatus(201)
+            ->json('order');
+
+        $this->assertSame($first['order_id'], $second['order_id']);
+        $this->assertTrue($second['reused']);
+        $this->assertSame(1, PaymentTransaction::where('course_id', $course->id)->count());
+    }
+
     /* ---------------- HTTP: POST /api/payments/confirm ---------------- */
 
     public function test_confirm_endpoint_marks_order_paid_from_stub_provider(): void
     {
         $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['price' => 250.00]);
 
         $orderRes = $this->actingAs($student, 'sanctum')->postJson('/api/payments/order', [
-            'amount' => 250.00,
-            'idempotency_key' => 'confirm-happy-1',
-            'description' => 'Batch fee',
+            'course_id' => $course->id,
         ]);
 
         $orderRes->assertStatus(201);
@@ -49,6 +141,7 @@ class PaymentConfirmTest extends TestCase
             'order' => [
                 'order_id' => $order['order_id'],
                 'status' => 'paid',
+                'course_id' => $course->id,
             ],
         ]);
 
@@ -56,16 +149,24 @@ class PaymentConfirmTest extends TestCase
             'order_id' => $order['order_id'],
             'status' => 'paid',
         ]);
+
+        // Verified payment activates the student's enrollment exactly once.
+        $this->assertDatabaseHas('course_enrollments', [
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+        ]);
+        $this->assertSame(1, CourseEnrollment::where('user_id', $student->id)->where('course_id', $course->id)->count());
     }
 
     public function test_confirm_endpoint_rejects_order_owned_by_another_user(): void
     {
         $owner = User::factory()->create(['role' => 'student']);
         $other = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['price' => 100.00]);
 
         $orderRes = $this->actingAs($owner, 'sanctum')->postJson('/api/payments/order', [
-            'amount' => 100.00,
-            'idempotency_key' => 'confirm-owner-1',
+            'course_id' => $course->id,
         ]);
 
         $order = $orderRes->json('order');
@@ -80,6 +181,7 @@ class PaymentConfirmTest extends TestCase
             'order_id' => $order['order_id'],
             'status' => 'stub_created',
         ]);
+        $this->assertDatabaseMissing('course_enrollments', ['course_id' => $course->id]);
     }
 
     public function test_confirm_endpoint_returns_404_for_unknown_order(): void
@@ -97,10 +199,10 @@ class PaymentConfirmTest extends TestCase
     public function test_confirm_endpoint_rejects_when_provider_entity_does_not_match(): void
     {
         $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['price' => 100.00]);
 
         $orderRes = $this->actingAs($student, 'sanctum')->postJson('/api/payments/order', [
-            'amount' => 100.00,
-            'idempotency_key' => 'confirm-mismatch-1',
+            'course_id' => $course->id,
         ]);
 
         $order = $orderRes->json('order');
@@ -116,6 +218,62 @@ class PaymentConfirmTest extends TestCase
         $this->assertDatabaseHas('payment_transactions', [
             'order_id' => $order['order_id'],
             'status' => 'stub_created',
+        ]);
+        $this->assertDatabaseMissing('course_enrollments', ['course_id' => $course->id]);
+    }
+
+    public function test_razorpay_confirm_requires_a_valid_payment_signature(): void
+    {
+        config(['payment.default_provider' => 'razorpay']);
+        config(['services.razorpay.key_secret' => 'sk_test_secret_123']);
+
+        $fake = new FakePaymentProvider([
+            'id' => 'pay_rp_happy',
+            'status' => 'captured',
+            'order_id' => '', // filled from the real created order below
+            'amount' => 10000,
+            'currency' => 'INR',
+        ], 'sk_test_secret_123', 'razorpay');
+
+        $this->app->instance(PaymentService::class, new PaymentService($fake));
+
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['price' => 100.00]);
+
+        $orderRes = $this->actingAs($student, 'sanctum')->postJson('/api/payments/order', [
+            'course_id' => $course->id,
+        ]);
+        $orderRes->assertStatus(201);
+        $order = $orderRes->json('order');
+
+        $fake->paymentEntity['order_id'] = $order['order_id'];
+
+        $confirmPayload = ['order_id' => $order['order_id'], 'payment_id' => 'pay_rp_happy'];
+
+        // Missing signature -> rejected before any provider fetch.
+        $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/confirm', $confirmPayload)
+            ->assertStatus(422)
+            ->assertJson(['error' => 'invalid_signature']);
+
+        // Forged signature -> rejected.
+        $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/confirm', $confirmPayload + ['signature' => 'forged-signature'])
+            ->assertStatus(422)
+            ->assertJson(['error' => 'invalid_signature']);
+
+        // Valid HMAC(order_id|payment_id, key_secret) -> paid + enrollment.
+        $signature = hash_hmac('sha256', $order['order_id'] . '|pay_rp_happy', 'sk_test_secret_123');
+
+        $this->actingAs($student, 'sanctum')
+            ->postJson('/api/payments/confirm', $confirmPayload + ['signature' => $signature])
+            ->assertStatus(200)
+            ->assertJson(['order' => ['status' => 'paid']]);
+
+        $this->assertDatabaseHas('course_enrollments', [
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
         ]);
     }
 
@@ -270,14 +428,20 @@ class FakePaymentProvider implements PaymentProviderInterface
 {
     public int $fetchCalls = 0;
 
-    public function __construct(private array $paymentEntity)
-    {
+    public array $paymentEntity;
+
+    public function __construct(
+        array $paymentEntity,
+        private string $secret = '',
+        private string $orderProvider = 'stub'
+    ) {
+        $this->paymentEntity = $paymentEntity;
     }
 
     public function createOrder(int $amountPaise, array $options = []): PaymentOrder
     {
         return new PaymentOrder(
-            provider: 'stub',
+            provider: $this->orderProvider,
             orderId: 'fake_ord_' . substr((string) ($options['idempotency_key'] ?? ''), 0, 12),
             paymentId: '',
             idempotencyKey: (string) ($options['idempotency_key'] ?? 'fake_key'),
@@ -290,6 +454,15 @@ class FakePaymentProvider implements PaymentProviderInterface
     public function verifyWebhookSignature(string $payload, string $signature): bool
     {
         return $signature !== '';
+    }
+
+    public function verifyPaymentSignature(string $orderId, string $paymentId, string $signature): bool
+    {
+        if ($this->secret === '' || $signature === '') {
+            return false;
+        }
+
+        return hash_equals(hash_hmac('sha256', $orderId . '|' . $paymentId, $this->secret), $signature);
     }
 
     public function fetchPayment(string $paymentId): ?array

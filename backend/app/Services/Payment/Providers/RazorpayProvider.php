@@ -88,6 +88,22 @@ class RazorpayProvider implements PaymentProviderInterface
         return hash_equals($expected, $actual);
     }
 
+    public function verifyPaymentSignature(string $orderId, string $paymentId, string $signature): bool
+    {
+        $secret = (string) config('services.razorpay.key_secret');
+
+        if ($secret === '' || $signature === '' || $orderId === '' || $paymentId === '') {
+            return false;
+        }
+
+        // Razorpay signs browser-side payment confirmations with HMAC-SHA256 over
+        // "{order_id}|{payment_id}" using the API key secret. Verified directly
+        // with a constant-time comparison (same approach as webhooks).
+        $expected = hash_hmac('sha256', $orderId . '|' . $paymentId, $secret);
+
+        return hash_equals($expected, trim($signature));
+    }
+
     public function fetchPayment(string $paymentId): ?array
     {
         try {

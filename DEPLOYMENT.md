@@ -329,9 +329,26 @@ project as the webhook URL so attendance events land (`participant_joined`,
 - `PAYMENT_PROVIDER=razorpay` — real gateway. Requires `RAZORPAY_KEY_ID`,
   `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
 
+**Checkout flow (course purchases).** `POST /api/payments/order` requires a
+`course_id`; the amount charged is ALWAYS the course price from the database
+and never a client-supplied value. Each (student, course) pair gets one
+server-derived idempotency key, so re-clicking "Pay" reuses the existing order
+and never double-charges. The student's browser opens Razorpay Checkout.js
+with the `key_id`, `order_id`, `amount` and `currency` returned by the server,
+then sends `order_id`, `razorpay_payment_id` and `razorpay_signature` to
+`POST /api/payments/confirm`. The server verifies the payment signature
+(HMAC-SHA256 of `order_id|payment_id` with `RAZORPAY_KEY_SECRET`), re-fetches
+the payment, and checks order/amount/currency before marking the transaction
+`paid` and activating the student's `active` course enrollment exactly once.
+The browser can never declare a payment successful on its own.
+
 Provide `RAZORPAY_WEBHOOK_URL` to the gateway dashboard so
 `POST /api/payments/razorpay/webhook` receives events. The webhook is
-**fail-closed**: HMAC signature verification rejects invalid payloads.
+**fail-closed**: HMAC signature verification rejects invalid payloads, and a
+`paid` transition happens only after order/amount/currency checks. Both the
+confirm endpoint and the webhook converge on the same paid-transition logic
+(stored `payment_id` association + enrollment activation), so exactly one
+`course_enrollments` row is created regardless of which event arrives first.
 `PAYMENT_IDEMPOTENCY=true` gives at-most-once order creation.
 
 ---

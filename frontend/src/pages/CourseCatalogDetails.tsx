@@ -34,10 +34,7 @@ export default function CourseCatalogDetails() {
       return
     }
     if (user) {
-      API.post(`/courses/${course.id}/enroll`)
-        .finally(() => {
-          navigate(`/student/courses/${course.id}/lessons`)
-        })
+      navigate(`/student/checkout/${course.id}`)
       return
     }
     setEnquiryOpen(true)

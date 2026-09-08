@@ -437,10 +437,10 @@ export default function StudentDashboard() {
               </Link>
 
               <Link
-                to="/student/checkout"
+                to="/courses"
                 className="px-5 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-md shadow-amber-900/30"
               >
-                <span>💳</span> Checkout
+                <span>🛒</span> Buy a Course
               </Link>
 
               {placementDashboardEnabled && (

@@ -21,6 +21,11 @@ class PaymentTransaction extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function course(): BelongsTo
+    {
+        return $this->belongsTo(Course::class);
+    }
+
     public static function newIdempotencyKey(): string
     {
         return 'mit_' . now()->format('Ymd_His') . '_' . Str::random(24);

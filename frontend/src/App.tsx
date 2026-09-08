@@ -165,8 +165,7 @@ function App() {
               <Route path="/student/classroom/:sessionId" element={<InternalClassroom />} />
               <Route path="/student/events" element={<StudentEvents />} />
               <Route path="/student/certificates/:code" element={<CertificateView />} />
-              <Route path="/student/checkout" element={<StudentCheckout />} />
-              <Route path="/student/checkout/:orderId" element={<StudentCheckout />} />
+              <Route path="/student/checkout/:courseId" element={<StudentCheckout />} />
               <Route path="/student/profile" element={<StudentProfile />} />
               <Route path="/ai-assistant" element={<AiAssistant />} />
             </Route>

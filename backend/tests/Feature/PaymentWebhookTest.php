@@ -2,8 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\Course;
+use App\Models\CourseEnrollment;
 use App\Models\PaymentTransaction;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class PaymentWebhookTest extends TestCase
@@ -36,6 +40,23 @@ class PaymentWebhookTest extends TestCase
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_RAZORPAY_SIGNATURE' => $signature,
         ], $rawBody);
+    }
+
+    private function createCourse(): Course
+    {
+        $title = 'Course ' . Str::random(5);
+
+        return Course::create([
+            'title' => $title,
+            'slug' => Str::slug($title),
+            'description' => 'Comprehensive technical training course description.',
+            'category' => 'Engineering',
+            'instructor' => 'Senior Specialist',
+            'duration' => '8 weeks',
+            'difficulty' => 'Intermediate',
+            'is_published' => true,
+            'price' => 250.00,
+        ]);
     }
 
     public function test_valid_webhook_signature_marks_payment_paid(): void
@@ -239,5 +260,107 @@ class PaymentWebhookTest extends TestCase
             'payment_id' => 'pay_test_6',
             'status' => 'failed',
         ]);
+    }
+
+    public function test_webhook_paid_activates_course_enrollment_exactly_once(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse();
+
+        PaymentTransaction::create([
+            'provider' => 'razorpay',
+            'order_id' => 'order_enroll_1',
+            'payment_id' => '',
+            'idempotency_key' => 'webhook-enroll-1',
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'amount_paise' => 25000,
+            'currency' => 'INR',
+            'status' => 'created',
+        ]);
+
+        $rawPayload = json_encode([
+            'event' => 'payment.captured',
+            'payload' => [
+                'payment' => ['entity' => [
+                    'id' => 'pay_enroll_1',
+                    'order_id' => 'order_enroll_1',
+                    'amount' => 25000,
+                    'currency' => 'INR',
+                    'status' => 'captured',
+                ]],
+            ],
+        ]);
+
+        // First delivery: paid + enrollment active.
+        $this->postRaw('/api/payments/razorpay/webhook', $rawPayload, $this->sign($rawPayload))
+            ->assertStatus(200)
+            ->assertJson(['status' => 'paid']);
+
+        $this->assertDatabaseHas('course_enrollments', [
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+        ]);
+        $this->assertSame(1, CourseEnrollment::count());
+
+        // Duplicate delivery of the same paid event: no second enrollment.
+        $this->postRaw('/api/payments/razorpay/webhook', $rawPayload, $this->sign($rawPayload))
+            ->assertStatus(200);
+
+        $this->assertSame(1, CourseEnrollment::count());
+    }
+
+    public function test_webhook_ignored_or_failed_event_never_activates_enrollment(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse();
+
+        PaymentTransaction::create([
+            'provider' => 'razorpay',
+            'order_id' => 'order_enroll_2',
+            'payment_id' => 'pay_enroll_2',
+            'idempotency_key' => 'webhook-enroll-2',
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'amount_paise' => 25000,
+            'currency' => 'INR',
+            'status' => 'created',
+        ]);
+
+        // Captured with MIGMATCHED order -> ignored, no enrollment.
+        $mismatch = json_encode([
+            'event' => 'payment.captured',
+            'payload' => [
+                'payment' => ['entity' => [
+                    'id' => 'pay_enroll_2',
+                    'order_id' => 'order_SOMEONE_ELSE',
+                    'amount' => 25000,
+                    'currency' => 'INR',
+                ]],
+            ],
+        ]);
+
+        $this->postRaw('/api/payments/razorpay/webhook', $mismatch, $this->sign($mismatch))
+            ->assertStatus(200)
+            ->assertJson(['status' => 'ignored']);
+
+        $this->assertSame(0, CourseEnrollment::count());
+
+        // Failed event -> failure applied, no enrollment.
+        $failed = json_encode([
+            'event' => 'payment.failed',
+            'payload' => ['payment' => ['entity' => ['id' => 'pay_enroll_2']]],
+        ]);
+
+        $this->postRaw('/api/payments/razorpay/webhook', $failed, $this->sign($failed))
+            ->assertStatus(200)
+            ->assertJson(['status' => 'failed']);
+
+        $this->assertDatabaseHas('payment_transactions', [
+            'payment_id' => 'pay_enroll_2',
+            'status' => 'failed',
+        ]);
+        $this->assertSame(0, CourseEnrollment::count());
     }
 }

@@ -19,15 +19,13 @@ export default function CourseDetails() {
   const [expandedModules, setExpandedModules] = useState<Record<number, boolean>>({})
 
   const handleStartLearning = () => {
-    if (course?.is_enrolled) {
+    if (!course) return
+    if (course.is_enrolled) {
       navigate(`/student/courses/${course.id}/lessons`)
       return
     }
     if (user) {
-      API.post(`/courses/${course?.id}/enroll`)
-        .finally(() => {
-          navigate(`/student/courses/${course?.id}/lessons`)
-        })
+      navigate(`/student/checkout/${course.id}`)
       return
     }
     setEnquiryOpen(true)

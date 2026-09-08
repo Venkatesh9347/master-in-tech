@@ -2,6 +2,7 @@
 
 namespace App\Services\Payment;
 
+use App\Models\CourseEnrollment;
 use App\Models\PaymentTransaction;
 use App\Services\Payment\Data\PaymentOrder;
 use App\Services\Payment\Exceptions\PaymentVerificationException;
@@ -75,6 +76,7 @@ class PaymentService
             'payment_id' => $order->paymentId,
             'idempotency_key' => $order->idempotencyKey !== '' ? $order->idempotencyKey : $key,
             'user_id' => $options['user_id'] ?? null,
+            'course_id' => $options['course_id'] ?? null,
             'amount_paise' => $order->amountPaise,
             'currency' => $order->currency,
             'status' => $order->status,
@@ -95,11 +97,19 @@ class PaymentService
     /**
      * Authoritatively confirm a payment via server-side provider verification.
      *
+     * For the real Razorpay provider a payment callback signature is mandatory:
+     * the transaction is rejected before any provider fetch when the signature
+     * is missing or invalid. Stub-mode confirms remain signature-less.
+     *
      * @throws PaymentVerificationException when any check fails
      */
-    public function authoritativeConfirm(string $orderId, string $paymentId, int $actorUserId): PaymentTransaction
+    public function authoritativeConfirm(string $orderId, string $paymentId, int $actorUserId, ?string $signature = null): PaymentTransaction
     {
         $providerName = $this->providerName();
+
+        if ($providerName === 'razorpay' && ! $this->provider()->verifyPaymentSignature($orderId, $paymentId, (string) $signature)) {
+            throw new PaymentVerificationException('invalid_signature', $orderId, $paymentId);
+        }
 
         $transaction = $this->findByProviderAndOrder($providerName, $orderId);
 
@@ -261,7 +271,39 @@ class PaymentService
 
         $transaction->save();
 
+        // A verified paid transition grants course access. Runs exactly once per
+        // (user, course): the unique index dedupes concurrent webhook/confirm
+        // races, and the "already paid" early return prevents re-activation.
+        if ($newStatus === 'paid') {
+            $this->activateEnrollment($transaction);
+        }
+
         return $transaction;
+    }
+
+    /**
+     * Activate the student's enrollment for the purchased course.
+     *
+     * Only degrades access on conflicts: an existing active/completed/dropped
+     * enrollment row is left untouched (no double-grant, no status downgrade).
+     */
+    public function activateEnrollment(PaymentTransaction $tx): void
+    {
+        if ($tx->user_id === null || $tx->course_id === null) {
+            return;
+        }
+
+        CourseEnrollment::firstOrCreate(
+            [
+                'user_id' => (int) $tx->user_id,
+                'course_id' => (int) $tx->course_id,
+            ],
+            [
+                'status' => 'active',
+                'enrolled_at' => now(),
+                'progress_percentage' => 0,
+            ]
+        );
     }
 
     public function verifyWebhookSignature(string $payload, string $signature): bool
