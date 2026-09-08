@@ -51,7 +51,7 @@ class AdminUserController extends Controller
     {
         $query = User::query()->withCount(['enrollments', 'taughtCourses']);
 
-        if ($request->has('role') && in_array($request->role, ['student', 'tutor', 'admin'], true)) {
+        if ($request->has('role') && in_array($request->role, ['student', 'tutor', 'faculty', 'admin'], true)) {
             $query->where('role', $request->role);
         }
 

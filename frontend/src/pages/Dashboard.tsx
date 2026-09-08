@@ -101,6 +101,13 @@ interface SystemActivityItem {
   icon: string
 }
 
+interface AssignableInstructor {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+
 interface DashboardData {
   statistics: DashboardStatistics
   admissions_pipeline: AdmissionsPipeline
@@ -191,6 +198,18 @@ export default function Dashboard() {
   })
   const [savingCourseEdit, setSavingCourseEdit] = useState(false)
   const [courseActionMsg, setCourseActionMsg] = useState('')
+  const [courseError, setCourseError] = useState('')
+
+  const apiErrorMessage = (err: unknown): string => {
+    const maybe = err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } }
+    if (maybe.response?.data?.message) return maybe.response.data.message
+    const firstFieldError = maybe.response?.data?.errors ? Object.values(maybe.response.data.errors)[0]?.[0] : undefined
+    if (firstFieldError) return firstFieldError
+    return 'Something went wrong. Please try again.'
+  }
+
+  // Instructors eligible to own courses (tutors + faculty)
+  const [assignableInstructors, setAssignableInstructors] = useState<AssignableInstructor[]>([])
 
   const loadDashboard = () => {
     setLoading(true)
@@ -202,6 +221,21 @@ export default function Dashboard() {
         setError('Failed to load administrative operations overview.')
       })
       .finally(() => setLoading(false))
+
+    // Tutors + faculty are eligible to own courses. Load both so the
+    // course create/edit forms can assign a real instructor account.
+    Promise.all([
+      API.get<AssignableInstructor[]>('/admin/users?role=tutor'),
+      API.get<AssignableInstructor[]>('/admin/users?role=faculty'),
+    ])
+      .then(([tutors, faculty]) => {
+        const merged = [...(Array.isArray(tutors.data) ? tutors.data : []), ...(Array.isArray(faculty.data) ? faculty.data : [])]
+        const seen = new Set<number>()
+        setAssignableInstructors(merged.filter((u) => (seen.has(u.id) ? false : (seen.add(u.id), true))))
+      })
+      .catch(() => {
+        setAssignableInstructors([])
+      })
   }
 
   useEffect(() => {
@@ -212,6 +246,7 @@ export default function Dashboard() {
     e.preventDefault()
     setCreatingCourse(true)
     setCourseActionMsg('')
+    setCourseError('')
     try {
       await API.post('/courses', {
         ...courseForm,
@@ -236,8 +271,8 @@ export default function Dashboard() {
         brochure_media_id: undefined,
       })
       loadDashboard()
-    } catch {
-      setError('Failed to create course. Please verify required fields.')
+    } catch (err) {
+      setCourseError(apiErrorMessage(err))
     } finally {
       setCreatingCourse(false)
     }
@@ -262,6 +297,7 @@ export default function Dashboard() {
       brochure_media_id: course.brochure_media_id ? Number(course.brochure_media_id) : undefined,
     })
     setCourseActionMsg('')
+    setCourseError('')
   }
 
   const handleSaveCourseEdit = async (e: React.FormEvent) => {
@@ -269,6 +305,7 @@ export default function Dashboard() {
     if (!editingCourse) return
     setSavingCourseEdit(true)
     setCourseActionMsg('')
+    setCourseError('')
 
     try {
       await API.put(`/courses/${editingCourse.id}`, {
@@ -280,8 +317,8 @@ export default function Dashboard() {
       setCourseActionMsg(`Course '${editCourseForm.title}' updated successfully.`)
       setEditingCourse(null)
       loadDashboard()
-    } catch {
-      setError('Failed to update course.')
+    } catch (err) {
+      setCourseError(apiErrorMessage(err))
     } finally {
       setSavingCourseEdit(false)
     }
@@ -898,6 +935,14 @@ export default function Dashboard() {
             </div>
 
             <form onSubmit={handleCreateCourse} className="space-y-4 text-xs">
+              {courseError && (
+                <div className="p-3 bg-red-950/80 border border-red-800 text-red-300 rounded-xl text-xs font-bold flex items-center justify-between">
+                  <span>⚠ {courseError}</span>
+                  <button type="button" onClick={() => setCourseError('')} className="text-red-300 font-bold">
+                    ×
+                  </button>
+                </div>
+              )}
               <div>
                 <label className="block text-slate-400 font-bold uppercase mb-1">Course Title</label>
                 <input
@@ -943,6 +988,30 @@ export default function Dashboard() {
                     onChange={(e) => setCourseForm({ ...courseForm, instructor: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
                   />
+                </div>
+                <div>
+                  <label className="block text-slate-400 font-bold uppercase mb-1">Assign Tutor (owner)</label>
+                  <select
+                    value={courseForm.instructor_id}
+                    onChange={(e) => {
+                      const id = Number(e.target.value)
+                      const picked = assignableInstructors.find((u) => u.id === id)
+                      setCourseForm({
+                        ...courseForm,
+                        instructor_id: e.target.value ? String(id) : '',
+                        instructor: picked ? picked.name : courseForm.instructor,
+                      })
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
+                  >
+                    <option value="">{assignableInstructors.length ? '-- Not Assigned --' : 'Loading tutors...'}</option>
+                    {assignableInstructors.map((u) => (
+                      <option key={u.id} value={u.id} className="text-white">
+                        {u.name} ({u.role})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Determines which tutor manages this course.</p>
                 </div>
               </div>
 
@@ -1051,6 +1120,14 @@ export default function Dashboard() {
             </div>
 
             <form onSubmit={handleSaveCourseEdit} className="space-y-4 text-xs">
+              {courseError && (
+                <div className="p-3 bg-red-950/80 border border-red-800 text-red-300 rounded-xl text-xs font-bold flex items-center justify-between">
+                  <span>⚠ {courseError}</span>
+                  <button type="button" onClick={() => setCourseError('')} className="text-red-300 font-bold">
+                    ×
+                  </button>
+                </div>
+              )}
               <div>
                 <label className="block text-slate-400 font-bold uppercase mb-1">Course Title</label>
                 <input
@@ -1095,6 +1172,30 @@ export default function Dashboard() {
                     onChange={(e) => setEditCourseForm({ ...editCourseForm, instructor: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
                   />
+                </div>
+                <div>
+                  <label className="block text-slate-400 font-bold uppercase mb-1">Assign Tutor (owner)</label>
+                  <select
+                    value={editCourseForm.instructor_id}
+                    onChange={(e) => {
+                      const id = Number(e.target.value)
+                      const picked = assignableInstructors.find((u) => u.id === id)
+                      setEditCourseForm({
+                        ...editCourseForm,
+                        instructor_id: e.target.value ? String(id) : '',
+                        instructor: picked ? picked.name : editCourseForm.instructor,
+                      })
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
+                  >
+                    <option value="">{assignableInstructors.length ? '-- Not Assigned --' : 'Loading tutors...'}</option>
+                    {assignableInstructors.map((u) => (
+                      <option key={u.id} value={u.id} className="text-white">
+                        {u.name} ({u.role})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Determines which tutor manages this course.</p>
                 </div>
               </div>
 

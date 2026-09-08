@@ -264,7 +264,18 @@ class CourseController extends Controller
     {
         $data = $this->validatedData($request);
         $data['slug'] = Str::slug($data['title']) . '-' . Str::random(4);
-        if ($request->user()) {
+
+        // Admin authoring: honor an explicitly assigned instructor, otherwise
+        // fall back to the creator so catalog ownership is never lost.
+        if (isset($data['instructor_id'])) {
+            $instructor = \App\Models\User::whereKey($data['instructor_id'])->first();
+            if (! $instructor || ! in_array($instructor->role, ['tutor', 'faculty', 'admin', 'super_admin'], true)) {
+                return response()->json([
+                    'message' => 'The assigned instructor must be a tutor, faculty, or admin account.',
+                ], 422);
+            }
+            $data['instructor_id'] = $instructor->id;
+        } elseif ($request->user()) {
             $data['instructor_id'] = $request->user()->id;
         }
 
