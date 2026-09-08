@@ -69,6 +69,13 @@ interface RecentAdmission {
   updated_at: string
 }
 
+interface TutorOption {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+
 interface CourseOverviewItem {
   id: number
   title: string
@@ -151,6 +158,14 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [tutors, setTutors] = useState<TutorOption[]>([])
+  const [tutorLoadError, setTutorLoadError] = useState('')
+
+  useEffect(() => {
+    API.get<TutorOption[]>('/admin/users/tutors')
+      .then((res) => setTutors(res.data))
+      .catch(() => setTutorLoadError('Failed to load instructor list.'))
+  }, [])
 
   // Create Course Modal State
   const [showCourseModal, setShowCourseModal] = useState(false)
@@ -236,8 +251,12 @@ export default function Dashboard() {
         brochure_media_id: undefined,
       })
       loadDashboard()
-    } catch {
-      setError('Failed to create course. Please verify required fields.')
+    } catch (err) {
+      const msg =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined
+      setError(msg || 'Failed to create course. Please verify required fields.')
     } finally {
       setCreatingCourse(false)
     }
@@ -280,8 +299,12 @@ export default function Dashboard() {
       setCourseActionMsg(`Course '${editCourseForm.title}' updated successfully.`)
       setEditingCourse(null)
       loadDashboard()
-    } catch {
-      setError('Failed to update course.')
+    } catch (err) {
+      const msg =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined
+      setError(msg || 'Failed to update course.')
     } finally {
       setSavingCourseEdit(false)
     }
@@ -935,14 +958,30 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-400 font-bold uppercase mb-1">Instructor</label>
-                  <input
-                    type="text"
-                    required
-                    value={courseForm.instructor}
-                    onChange={(e) => setCourseForm({ ...courseForm, instructor: e.target.value })}
+                  <label className="block text-slate-400 font-bold uppercase mb-1">Assign Tutor / Instructor</label>
+                  <select
+                    value={courseForm.instructor_id}
+                    onChange={(e) => {
+                      const selected = tutors.find((t) => t.id === Number(e.target.value))
+                      setCourseForm({
+                        ...courseForm,
+                        instructor_id: e.target.value,
+                        instructor: selected ? selected.name : courseForm.instructor,
+                      })
+                    }}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
-                  />
+                  >
+                    <option value="">Select an instructor...</option>
+                    {tutors.map((tutor) => (
+                      <option key={tutor.id} value={tutor.id}>
+                        {tutor.name} ({tutor.role})
+                      </option>
+                    ))}
+                  </select>
+                  {tutorLoadError && <p className="text-[10px] text-red-400 mt-0.5">{tutorLoadError}</p>}
+                  {!tutors.length && !tutorLoadError && (
+                    <p className="text-[10px] text-slate-500 mt-0.5">No tutors available. The creator will be assigned.</p>
+                  )}
                 </div>
               </div>
 
@@ -1087,14 +1126,27 @@ export default function Dashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-slate-400 font-bold uppercase mb-1">Instructor</label>
-                  <input
-                    type="text"
-                    required
-                    value={editCourseForm.instructor}
-                    onChange={(e) => setEditCourseForm({ ...editCourseForm, instructor: e.target.value })}
+                  <label className="block text-slate-400 font-bold uppercase mb-1">Assign Tutor / Instructor</label>
+                  <select
+                    value={editCourseForm.instructor_id}
+                    onChange={(e) => {
+                      const selected = tutors.find((t) => t.id === Number(e.target.value))
+                      setEditCourseForm({
+                        ...editCourseForm,
+                        instructor_id: e.target.value,
+                        instructor: selected ? selected.name : editCourseForm.instructor,
+                      })
+                    }}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
-                  />
+                  >
+                    <option value="">Select an instructor...</option>
+                    {tutors.map((tutor) => (
+                      <option key={tutor.id} value={tutor.id}>
+                        {tutor.name} ({tutor.role})
+                      </option>
+                    ))}
+                  </select>
+                  {tutorLoadError && <p className="text-[10px] text-red-400 mt-0.5">{tutorLoadError}</p>}
                 </div>
               </div>
 

@@ -466,6 +466,7 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
     // Platform statistics & User management
     Route::get('/admin/stats', [AdminUserController::class, 'stats']);
     Route::get('/admin/users', [AdminUserController::class, 'index']);
+    Route::get('/admin/users/tutors', [AdminUserController::class, 'tutors']);
     Route::get('/admin/users/{user}', [AdminUserController::class, 'show']);
     Route::post('/admin/users', [AdminUserController::class, 'store']);
     Route::put('/admin/users/{user}', [AdminUserController::class, 'update']);

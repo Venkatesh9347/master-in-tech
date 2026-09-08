@@ -45,6 +45,19 @@ class AdminUserController extends Controller
     }
 
     /**
+     * List tutor/faculty accounts for dropdown selectors.
+     */
+    public function tutors()
+    {
+        $users = User::whereIn('role', ['tutor', 'faculty', 'admin', 'super_admin'])
+            ->select('id', 'name', 'email', 'role')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($users);
+    }
+
+    /**
      * List all users with search and role filter.
      */
     public function index(Request $request)

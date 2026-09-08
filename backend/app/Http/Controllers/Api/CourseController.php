@@ -15,7 +15,7 @@ class CourseController extends Controller
     public function index(Request $request)
     {
         $user = $this->getAuthenticatedUser($request);
-        $isAdmin = $user && $user->role === 'admin';
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
         $fallbackCourses = [
             [
@@ -173,7 +173,7 @@ class CourseController extends Controller
     public function show(Request $request, $id)
     {
         $user = $this->getAuthenticatedUser($request);
-        $isAdmin = $user && $user->role === 'admin';
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
         $course = Course::where('id', $id)
             ->orWhere('slug', $id)
@@ -245,7 +245,16 @@ class CourseController extends Controller
     {
         $data = $this->validatedData($request);
         $data['slug'] = Str::slug($data['title']) . '-' . Str::random(4);
-        if ($request->user()) {
+
+        if (isset($data['instructor_id'])) {
+            $instructor = \App\Models\User::whereKey($data['instructor_id'])->first();
+            if (! $instructor || ! in_array($instructor->role, ['tutor', 'faculty', 'admin', 'super_admin'], true)) {
+                return response()->json([
+                    'message' => 'The assigned instructor must be a tutor, faculty, or admin account.',
+                ], 422);
+            }
+            $data['instructor_id'] = $instructor->id;
+        } elseif ($request->user()) {
             $data['instructor_id'] = $request->user()->id;
         }
 
@@ -259,6 +268,17 @@ class CourseController extends Controller
     public function update(Request $request, Course $course)
     {
         $data = $this->validatedData($request);
+
+        if (isset($data['instructor_id']) && $data['instructor_id'] !== $course->instructor_id) {
+            $instructor = \App\Models\User::whereKey($data['instructor_id'])->first();
+            if (! $instructor || ! in_array($instructor->role, ['tutor', 'faculty', 'admin', 'super_admin'], true)) {
+                return response()->json([
+                    'message' => 'The assigned instructor must be a tutor, faculty, or admin account.',
+                ], 422);
+            }
+            $data['instructor_id'] = $instructor->id;
+        }
+
         if (isset($data['title']) && $data['title'] !== $course->title) {
             $data['slug'] = Str::slug($data['title']) . '-' . Str::random(4);
         }
