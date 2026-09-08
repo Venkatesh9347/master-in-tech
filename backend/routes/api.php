@@ -546,14 +546,6 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
     // Admin Assignment Grading
     Route::get('/admin/assignments/submissions', [AdminAssignmentGradeController::class, 'index']);
     Route::post('/admin/assignments/submissions/{id}/grade', [AdminAssignmentGradeController::class, 'grade']);
-
-    // Admin Course Enquiries & Admissions Pipeline
-    Route::get('/admin/enquiries/stats', [EnquiryController::class, 'stats']);
-    Route::get('/admin/enquiries', [EnquiryController::class, 'index']);
-    Route::get('/admin/enquiries/{enquiry}', [EnquiryController::class, 'show']);
-    Route::put('/admin/enquiries/{enquiry}', [EnquiryController::class, 'update']);
-    Route::post('/admin/enquiries/{enquiry}/notes', [EnquiryController::class, 'addNote']);
-    Route::post('/admin/enquiries/{enquiry}/enroll', [EnquiryController::class, 'enroll']);
 });
 
 /*
@@ -562,12 +554,21 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth:sanctum', 'single.session', 'crm'])->group(function () {
+    // Enquiries & Admissions Pipeline (shared by admin, super_admin, counsellor)
+    Route::get('/admin/enquiries/stats', [EnquiryController::class, 'stats']);
+    Route::get('/admin/enquiries', [EnquiryController::class, 'index']);
+    Route::get('/admin/enquiries/{enquiry}', [EnquiryController::class, 'show']);
+    Route::put('/admin/enquiries/{enquiry}', [EnquiryController::class, 'update']);
+    Route::post('/admin/enquiries/{enquiry}/notes', [EnquiryController::class, 'addNote']);
+    Route::post('/admin/enquiries/{enquiry}/enroll', [EnquiryController::class, 'enroll']);
+
     Route::prefix('admin/crm')->group(function () {
         Route::get('/stats', [AdminCrmController::class, 'stats']);
         Route::get('/counsellors', [AdminCrmController::class, 'counsellors']);
         Route::get('/follow-ups', [AdminCrmController::class, 'followUps']);
         Route::put('/follow-ups/{followUp}', [AdminCrmController::class, 'updateFollowUp']);
         Route::get('/leads', [AdminCrmController::class, 'index']);
+        Route::get('/batch-options', [AdminBatchController::class, 'crmBatchOptions']);
         Route::post('/leads', [AdminCrmController::class, 'store']);
         Route::get('/leads/{lead}', [AdminCrmController::class, 'show']);
         Route::put('/leads/{lead}', [AdminCrmController::class, 'update']);

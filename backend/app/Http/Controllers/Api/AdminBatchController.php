@@ -70,6 +70,32 @@ class AdminBatchController extends Controller
     }
 
     /**
+     * Lightweight cohort list for the CRM conversion picker. Read-only, minimal
+     * fields only, so counsellors can assign a batch without full admin control.
+     */
+    public function crmBatchOptions(Request $request)
+    {
+        $query = Batch::query()->whereIn('status', ['upcoming', 'ongoing']);
+
+        if ($request->filled('course_id') && $request->course_id !== 'all') {
+            $query->forCourse((int) $request->course_id);
+        }
+
+        return response()->json($query->orderBy('start_date', 'desc')->get()->map(function (Batch $batch) {
+            return [
+                'id' => $batch->id,
+                'name' => $batch->name,
+                'code' => $batch->code,
+                'course_id' => $batch->course_id,
+                'status' => $batch->status,
+                'start_date' => $batch->start_date,
+                'schedule_time' => $batch->schedule_time,
+                'max_students' => $batch->max_students,
+            ];
+        })->values());
+    }
+
+    /**
      * Create a new batch with automatic RIT(COURSE_CODE)BCDDMMYY generation.
      */
     public function store(Request $request)

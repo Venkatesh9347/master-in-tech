@@ -13,7 +13,9 @@ export default function AdminLayout() {
     navigate('/login')
   }
 
-  const navLinks = [
+  const isCounsellor = user?.role === 'counsellor'
+
+  const adminNavLinks = [
     { label: 'Overview & Catalog', to: '/admin', icon: '📊' },
     { label: 'CRM & Pipeline', to: '/admin/crm', icon: '🎯' },
     { label: 'Leads & Enquiries', to: '/admin/enquiries', icon: '📬' },
@@ -38,6 +40,13 @@ export default function AdminLayout() {
     { label: 'Grading', to: '/admin/submissions', icon: '📝' },
     { label: 'Audit Logs', to: '/admin/audit-logs', icon: '📋' },
   ]
+
+  const counsellorNavLinks = [
+    { label: 'CRM & Pipeline', to: '/admin/crm', icon: '🎯' },
+    { label: 'Leads & Enquiries', to: '/admin/enquiries', icon: '📬' },
+  ]
+
+  const navLinks = isCounsellor ? counsellorNavLinks : adminNavLinks
 
   useEffect(() => {
     if (activeTabRef.current) {
@@ -82,7 +91,11 @@ export default function AdminLayout() {
               <div className="text-right hidden sm:block">
                 <p className="text-xs font-bold text-white leading-tight">{user?.name}</p>
                 <p className="text-[10px] text-purple-400 font-semibold uppercase">
-                  {user?.role === 'super_admin' ? 'Super Administrator' : 'Administrator'}
+                  {user?.role === 'super_admin'
+                    ? 'Super Administrator'
+                    : user?.role === 'counsellor'
+                      ? 'Admissions Counsellor'
+                      : 'Administrator'}
                 </p>
               </div>
               <button

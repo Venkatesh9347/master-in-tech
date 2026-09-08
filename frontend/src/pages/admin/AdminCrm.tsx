@@ -314,7 +314,7 @@ export default function AdminCrm() {
       .then((res) => setCourses(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
 
-    API.get<BatchOption[]>('/admin/batches')
+    API.get<BatchOption[]>('/admin/crm/batch-options')
       .then((res) => setBatches(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
 
