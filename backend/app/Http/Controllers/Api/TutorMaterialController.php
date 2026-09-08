@@ -20,7 +20,7 @@ class TutorMaterialController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         $query = ClassMaterial::with([
             'course:id,title,category,instructor_id',
@@ -52,7 +52,7 @@ class TutorMaterialController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         if (! $isAdmin && ! $user->hasPermission('upload_materials')) {
             return response()->json([
@@ -125,7 +125,7 @@ class TutorMaterialController extends Controller
     public function show(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         $material = ClassMaterial::with([
             'course:id,title,instructor_id',
@@ -148,7 +148,7 @@ class TutorMaterialController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         if (! $isAdmin && ! $user->hasPermission('manage_materials')) {
             return response()->json([
@@ -195,7 +195,7 @@ class TutorMaterialController extends Controller
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         if (! $isAdmin && ! $user->hasPermission('manage_materials')) {
             return response()->json([
@@ -275,7 +275,7 @@ class TutorMaterialController extends Controller
      */
     private function canDownload($user, ClassMaterial $material, int $courseId): bool
     {
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return true;
         }
 
@@ -333,3 +333,4 @@ class TutorMaterialController extends Controller
         return $path !== '' ? $path : null;
     }
 }
+

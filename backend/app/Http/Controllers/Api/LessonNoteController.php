@@ -75,7 +75,7 @@ class LessonNoteController extends Controller
      */
     private function authorizeCourseAccess($user, $courseId): void
     {
-        if (in_array($user->role, ['admin', 'tutor'], true)) {
+        if (in_array($user->role, ['admin', 'super_admin', 'tutor', 'faculty'], true)) {
             return;
         }
 

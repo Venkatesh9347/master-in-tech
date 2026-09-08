@@ -382,7 +382,7 @@ class EnquiryController extends Controller
         }
 
         // Ensure user has student role and active status
-        if ($user->role !== 'admin' && $user->role !== 'tutor') {
+        if ($user->role !== 'admin' && $user->role !== 'super_admin' && $user->role !== 'tutor' && $user->role !== 'faculty') {
             $user->role = 'student';
             $user->status = 'active';
         }

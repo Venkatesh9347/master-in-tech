@@ -640,7 +640,7 @@ class AdminCrmController extends Controller
                 $user->forceFill(['role' => 'student'])->save();
             } else {
                 // Ensure existing account has student role if not admin/tutor
-                if ($user->role !== 'admin' && $user->role !== 'super_admin' && $user->role !== 'tutor') {
+                if ($user->role !== 'admin' && $user->role !== 'super_admin' && $user->role !== 'tutor' && $user->role !== 'faculty') {
                     $user->role = 'student';
                     $user->status = 'active';
                 }

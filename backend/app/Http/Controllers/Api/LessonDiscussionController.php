@@ -111,11 +111,11 @@ class LessonDiscussionController extends Controller
      */
     private function authorizeCourseAccess($user, Course $course): void
     {
-        if ($user->role === 'admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
-        if ($user->role === 'tutor') {
+        if (in_array($user->role, ['tutor', 'faculty'], true)) {
             return;
         }
 

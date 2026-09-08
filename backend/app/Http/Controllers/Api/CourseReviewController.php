@@ -52,7 +52,7 @@ class CourseReviewController extends Controller
             ->where('course_id', $course->id)
             ->exists();
 
-        if (! $isEnrolled && $user->role !== 'admin') {
+        if (! $isEnrolled && ! $user->isAdmin()) {
             return response()->json([
                 'message' => 'You must be enrolled in the course to write a review.',
             ], 403);

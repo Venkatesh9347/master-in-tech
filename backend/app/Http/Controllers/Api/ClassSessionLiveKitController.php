@@ -185,7 +185,7 @@ class ClassSessionLiveKitController extends Controller
      */
     private function authorizeSessionAccess(User $user, ClassSession $session): void
     {
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
@@ -202,3 +202,4 @@ class ClassSessionLiveKitController extends Controller
         }
     }
 }
+

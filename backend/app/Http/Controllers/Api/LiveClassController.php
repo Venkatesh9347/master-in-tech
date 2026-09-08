@@ -626,11 +626,11 @@ class LiveClassController extends Controller
 
     private function authorizeCourseAccess(User $user, Course $course): void
     {
-        if ($user->role === 'admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
-        if ($user->role === 'tutor' && $course->instructor_id === $user->id) {
+        if (($user->role === 'tutor' || $user->role === 'faculty') && $course->instructor_id === $user->id) {
             return;
         }
 
@@ -645,11 +645,11 @@ class LiveClassController extends Controller
 
     private function authorizeTutorOwnership(User $user, Course $course): void
     {
-        if ($user->role === 'admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
-        if ($user->role === 'tutor' && $course->instructor_id === $user->id) {
+        if (($user->role === 'tutor' || $user->role === 'faculty') && $course->instructor_id === $user->id) {
             return;
         }
 

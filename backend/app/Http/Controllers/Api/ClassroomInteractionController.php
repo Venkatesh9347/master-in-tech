@@ -44,7 +44,7 @@ class ClassroomInteractionController extends Controller
      */
     protected function authorizeAccess(User $user, $session): void
     {
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
@@ -76,7 +76,7 @@ class ClassroomInteractionController extends Controller
      */
     protected function authorizeHost(User $user, $session): void
     {
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
@@ -230,3 +230,4 @@ class ClassroomInteractionController extends Controller
         ]);
     }
 }
+

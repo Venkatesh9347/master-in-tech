@@ -23,7 +23,7 @@ class TutorQuizController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         $query = Quiz::select([
             'id', 'lesson_id', 'title', 'description', 'time_limit', 'passing_score', 'max_attempts', 'is_published', 'created_at', 'updated_at',
@@ -52,7 +52,7 @@ class TutorQuizController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         if (! $isAdmin && ! $user->hasPermission('create_quizzes')) {
             return response()->json([
@@ -156,7 +156,7 @@ class TutorQuizController extends Controller
     public function show(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         $quiz = Quiz::with(['lesson.course:id,title,instructor_id', 'questions.options'])->findOrFail($id);
 
@@ -175,7 +175,7 @@ class TutorQuizController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         if (! $isAdmin && ! $user->hasPermission('edit_quizzes')) {
             return response()->json([
@@ -272,7 +272,7 @@ class TutorQuizController extends Controller
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         if (! $isAdmin && ! $user->hasPermission('delete_quizzes')) {
             return response()->json([
@@ -312,7 +312,7 @@ class TutorQuizController extends Controller
     public function togglePublish(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         if (! $isAdmin && ! $user->hasPermission('publish_quizzes')) {
             return response()->json([
@@ -346,7 +346,7 @@ class TutorQuizController extends Controller
     public function results(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdmin();
 
         if (! $isAdmin && ! $user->hasPermission('view_quiz_results')) {
             return response()->json([
@@ -394,3 +394,4 @@ class TutorQuizController extends Controller
         return null;
     }
 }
+

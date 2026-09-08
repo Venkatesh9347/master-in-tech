@@ -223,7 +223,7 @@ class LiveClassroomController extends Controller
     private function authorizeSessionAccess(User $user, LiveClassroomSession $session): void
     {
         // Admin has universal access
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
@@ -251,7 +251,7 @@ class LiveClassroomController extends Controller
      */
     private function authorizeHostAction(User $user, LiveClassroomSession $session): void
     {
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
@@ -262,3 +262,4 @@ class LiveClassroomController extends Controller
         abort(403, 'Unauthorized: only the assigned tutor or administrator can control this session.');
     }
 }
+

@@ -32,14 +32,14 @@ class VideoPlaybackController extends Controller
         $this->authorizeStudentOrInstructor($user, $course);
 
         // 2. Verify Lesson is Published
-        if (! $lesson->is_published && $user->role !== 'admin' && $course->instructor_id !== $user->id) {
+        if (! $lesson->is_published && ! $user->isAdmin() && $course->instructor_id !== $user->id) {
             return response()->json([
                 'message' => 'This lesson is currently unpublished and unavailable for streaming.',
             ], 403);
         }
 
         // 3. Verify Course is Published/Active
-        if (! $course->is_published && $user->role !== 'admin' && $course->instructor_id !== $user->id) {
+        if (! $course->is_published && ! $user->isAdmin() && $course->instructor_id !== $user->id) {
             return response()->json([
                 'message' => 'This course is currently not published.',
             ], 403);
@@ -204,11 +204,11 @@ class VideoPlaybackController extends Controller
 
     private function authorizeStudentOrInstructor($user, Course $course): void
     {
-        if ($user->role === 'admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
-        if ($user->role === 'tutor' && $course->instructor_id === $user->id) {
+        if (($user->role === 'tutor' || $user->role === 'faculty') && $course->instructor_id === $user->id) {
             return;
         }
 

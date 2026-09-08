@@ -25,7 +25,7 @@ class TutorController extends Controller
     public function stats(Request $request)
     {
         $tutorId = $request->user()->id;
-        $isAdmin = $request->user()->role === 'admin';
+        $isAdmin = $request->user()->isAdmin();
 
         $courseIdsQuery = Course::query();
         if (! $isAdmin) {
@@ -59,7 +59,7 @@ class TutorController extends Controller
     public function courses(Request $request)
     {
         $tutorId = $request->user()->id;
-        $isAdmin = $request->user()->role === 'admin';
+        $isAdmin = $request->user()->isAdmin();
 
         $query = Course::select([
             'id', 'title', 'slug', 'category', 'difficulty', 'duration',
@@ -88,7 +88,7 @@ class TutorController extends Controller
 
         $course->loadCount(['sections', 'lessons', 'enrollments']);
 
-        if ($request->user()->role !== 'admin') {
+        if (! $request->user()->isAdmin()) {
             $course->makeHidden(['price']);
         }
 
@@ -100,7 +100,7 @@ class TutorController extends Controller
      */
     public function storeCourse(Request $request)
     {
-        if ($request->user()->role !== 'admin') {
+        if ($request->user()->isAdmin() === false) {
             return response()->json([
                 'message' => 'Unauthorized. Only administrators can create courses.',
             ], 403);
@@ -144,7 +144,7 @@ class TutorController extends Controller
      */
     public function updateCourse(Request $request, Course $course)
     {
-        if ($request->user()->role !== 'admin') {
+        if ($request->user()->isAdmin() === false) {
             return response()->json([
                 'message' => 'Unauthorized. Tutors cannot modify courses. Courses are managed by administration.',
             ], 403);
@@ -183,7 +183,7 @@ class TutorController extends Controller
      */
     public function destroyCourse(Request $request, Course $course)
     {
-        if ($request->user()->role !== 'admin') {
+        if ($request->user()->isAdmin() === false) {
             return response()->json([
                 'message' => 'Unauthorized. Tutors cannot delete courses. Courses are managed by administration.',
             ], 403);
@@ -257,7 +257,7 @@ class TutorController extends Controller
     public function students(Request $request)
     {
         $tutorId = $request->user()->id;
-        $isAdmin = $request->user()->role === 'admin';
+        $isAdmin = $request->user()->isAdmin();
 
         $courseIdsQuery = Course::query();
         if (! $isAdmin) {
@@ -280,7 +280,7 @@ class TutorController extends Controller
     public function submissions(Request $request)
     {
         $tutorId = $request->user()->id;
-        $isAdmin = $request->user()->role === 'admin';
+        $isAdmin = $request->user()->isAdmin();
 
         $courseIdsQuery = Course::query();
         if (! $isAdmin) {
@@ -314,7 +314,7 @@ class TutorController extends Controller
             return response()->json(['message' => 'Submission not found'], 404);
         }
 
-        if ($request->user()->role !== 'admin' && $submission->course?->instructor_id !== $request->user()->id) {
+        if ($request->user()->isAdmin() === false && $submission->course?->instructor_id !== $request->user()->id) {
             return response()->json([
                 'message' => 'Unauthorized. You can only grade submissions for your own courses.',
             ], 403);
@@ -567,8 +567,9 @@ class TutorController extends Controller
      */
     private function authorizeTutorCourse(Request $request, Course $course): void
     {
-        if ($request->user()->role !== 'admin' && $course->instructor_id !== $request->user()->id) {
+        if ($request->user()->isAdmin() === false && $course->instructor_id !== $request->user()->id) {
             abort(403, 'Unauthorized. You can only access your own courses.');
         }
     }
 }
+

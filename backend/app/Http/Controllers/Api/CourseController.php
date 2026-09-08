@@ -196,7 +196,7 @@ class CourseController extends Controller
         }
 
         // Load curriculum hierarchy
-        $isManager = $user && ($user->role === 'admin' || $course->instructor_id === $user->id);
+        $isManager = $user && ($user->isAdmin() || $course->instructor_id === $user->id);
         $sectionsQuery = $course->sections()->orderBy('sort_order');
         if (! $isManager) {
             $sectionsQuery->where('is_published', true);

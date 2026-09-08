@@ -390,9 +390,9 @@ class AdminClassSessionController extends Controller
             $validated['status'] ?? 'scheduled'
         );
 
-        // L4: the tutor_id must reference a user whose role is tutor.
+        // L4: the tutor_id must reference a user in the teaching tier (tutor/faculty/admin/super_admin).
         $tutor = User::where('id', $validated['tutor_id'])->first();
-        if (! $tutor || $tutor->role !== 'tutor') {
+        if (! $tutor || ! in_array($tutor->role, ['tutor', 'faculty', 'admin', 'super_admin'], true)) {
             throw ValidationException::withMessages([
                 'tutor_id' => ['The selected tutor must be a user with the tutor role.'],
             ]);

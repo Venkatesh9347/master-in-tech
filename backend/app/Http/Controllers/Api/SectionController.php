@@ -17,7 +17,7 @@ class SectionController extends Controller
     {
         $courseModel = $course instanceof Course ? $course : Course::where('id', $course)->orWhere('slug', $course)->firstOrFail();
         $user = $request->user();
-        $isManager = $user && ($user->role === 'admin' || $courseModel->instructor_id === $user->id);
+        $isManager = $user && ($user->isAdmin() || $courseModel->instructor_id === $user->id);
 
         $sectionsQuery = $courseModel->sections()->orderBy('sort_order');
         if (! $isManager) {
@@ -203,7 +203,7 @@ class SectionController extends Controller
             abort(401, 'Unauthenticated.');
         }
 
-        if ($user->role !== 'admin' && $course->instructor_id !== $user->id) {
+        if (! $user->isAdmin() && $course->instructor_id !== $user->id) {
             abort(403, 'Unauthorized. You can only manage curriculum for your own courses.');
         }
     }

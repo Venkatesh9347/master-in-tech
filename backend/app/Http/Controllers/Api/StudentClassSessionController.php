@@ -233,7 +233,7 @@ class StudentClassSessionController extends Controller
             ->where('status', '!=', 'dropped')
             ->exists();
 
-        if (! $isEnrolled && $user->role !== 'admin') {
+        if (! $isEnrolled && ! $user->isAdmin()) {
             return response()->json([
                 'message' => 'Unauthorized. You are not enrolled in the course for this session.',
             ], 403);
@@ -258,7 +258,7 @@ class StudentClassSessionController extends Controller
             ->where('status', '!=', 'dropped')
             ->exists();
 
-        if (! $isEnrolled && $user->role !== 'admin') {
+        if (! $isEnrolled && ! $user->isAdmin()) {
             return response()->json([
                 'message' => 'Unauthorized. You are not enrolled in this course.',
             ], 403);
