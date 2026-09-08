@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -18,6 +19,10 @@ class SingleActiveSessionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Pin the clock so OTP timestamps are deterministic and a slow machine
+        // (or shared test DB) can never let the 30-second window elapse mid-test.
+        Carbon::setTestNow(Carbon::now());
 
         $this->studentUser = User::factory()->create([
             'email' => 'student.session@example.com',
@@ -40,6 +45,13 @@ class SingleActiveSessionTest extends TestCase
             'role' => 'tutor',
             'status' => 'active',
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
     }
 
     protected function resetSanctumGuard(): void
