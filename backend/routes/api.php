@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\QuizController;
 use App\Http\Controllers\Api\SectionController;
 use App\Http\Controllers\Api\StudentClassSessionController;
 use App\Http\Controllers\Api\StudentMockInterviewController;
+use App\Http\Controllers\Api\StudentProfileController;
 use App\Http\Controllers\Api\TutorClassSessionController;
 use App\Http\Controllers\Api\TutorController;
 use App\Http\Controllers\Api\TutorMaterialController;
@@ -302,6 +303,10 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::get('/courses/{course}/enrollment', [EnrollmentController::class, 'check']);
     Route::get('/courses/{course}/enquiry', [EnquiryController::class, 'checkCourseEnquiry']);
     Route::get('/my-courses', [EnrollmentController::class, 'myCourses']);
+
+    // Student Profile
+    Route::get('/student/profile', [StudentProfileController::class, 'show']);
+    Route::put('/student/profile', [StudentProfileController::class, 'update']);
     Route::get('/courses/{course}/lms-progress', [CourseProgressController::class, 'show']);
     Route::get('/courses/{course}/sections/{section}/lessons/{lesson}', [LessonController::class, 'show']);
     Route::post('/courses/{course}/lessons/{lesson}/start', [LessonController::class, 'start']);

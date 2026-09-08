@@ -15,6 +15,20 @@ interface EnrollmentItem {
   course: Course
 }
 
+interface StudentProfileResponse {
+  user: {
+    id: number
+    name: string
+    email: string
+    phone: string | null
+    location: string | null
+    bio: string | null
+    headline?: string | null
+    expertise?: string | null
+    avatar?: string | null
+  }
+}
+
 export default function StudentProfile() {
   const { user } = useAuth()
   const [enrollments, setEnrollments] = useState<EnrollmentItem[]>([])
@@ -22,14 +36,30 @@ export default function StudentProfile() {
 
   // Edit Profile Form State
   const [name, setName] = useState(user?.name || '')
-  const [phone, setPhone] = useState('+91 98765 43210')
-  const [bio, setBio] = useState('Passionate software engineering student building full stack web & AI systems.')
-  const [location, setLocation] = useState('Bangalore, India')
+  const [phone, setPhone] = useState('')
+  const [bio, setBio] = useState('')
+  const [location, setLocation] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+
+  useEffect(() => {
+    API.get<StudentProfileResponse>('/student/profile')
+      .then((res) => {
+        const profile = res.data?.user
+        if (profile) {
+          setName(profile.name ?? user?.name ?? '')
+          setPhone(profile.phone ?? '')
+          setBio(profile.bio ?? '')
+          setLocation(profile.location ?? '')
+        }
+      })
+      .catch(() => {
+        setErrorMsg('Could not load your profile. Please refresh and try again.')
+      })
+  }, [user])
 
   useEffect(() => {
     API.get<EnrollmentItem[]>('/my-courses')
@@ -48,7 +78,7 @@ export default function StudentProfile() {
     (e) => Number(e.progress_percentage) < 100 && e.status !== 'completed'
   )
 
-  const handleProfileSave = (e: React.FormEvent) => {
+  const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (password && password !== confirmPassword) {
       setErrorMsg('New password and confirmation do not match.')
@@ -59,13 +89,23 @@ export default function StudentProfile() {
     setErrorMsg('')
     setSuccessMsg('')
 
-    setTimeout(() => {
-      setSaving(false)
+    try {
+      await API.put('/student/profile', {
+        name,
+        phone,
+        location,
+        bio,
+        ...(password ? { password } : {}),
+      })
       setSuccessMsg('Profile and settings updated successfully!')
       setPassword('')
       setConfirmPassword('')
-      setTimeout(() => setSuccessMsg(''), 4000)
-    }, 700)
+      window.setTimeout(() => setSuccessMsg(''), 4000)
+    } catch {
+      setErrorMsg('Could not save your profile. Please verify the details and try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
