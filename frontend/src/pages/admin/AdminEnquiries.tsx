@@ -63,6 +63,15 @@ interface PipelineStats {
   no_response: number
 }
 
+interface BatchOption {
+  id: number
+  code: string
+  name?: string | null
+  course_id: number
+  status?: string
+  start_date?: string
+}
+
 const statusBadgeStyles: Record<LeadStatus, string> = {
   new: 'bg-blue-950/80 text-blue-300 border-blue-700',
   contacted: 'bg-amber-950/80 text-amber-300 border-amber-700',
@@ -129,6 +138,8 @@ export default function AdminEnquiries() {
   // Enrollment Confirmation Modal State
   const [enrollModalEnquiry, setEnrollModalEnquiry] = useState<EnquiryItem | null>(null)
   const [enrollSelectedCourseId, setEnrollSelectedCourseId] = useState<number | string>('')
+  const [enrollSelectedBatchId, setEnrollSelectedBatchId] = useState<number | string>('')
+  const [enrollBatches, setEnrollBatches] = useState<BatchOption[]>([])
   const [enrollStudentPassword, setEnrollStudentPassword] = useState('')
   const [enrolling, setEnrolling] = useState(false)
 
@@ -141,6 +152,22 @@ export default function AdminEnquiries() {
       })
       .catch(() => {})
   }, [])
+
+  // Fetch available cohort batches for the enrollment modal (read-only list, counsellor-safe)
+  useEffect(() => {
+    API.get<BatchOption[]>('/admin/crm/batches')
+      .then((res) => setEnrollBatches(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {})
+  }, [])
+
+  // Reset batch selection whenever the chosen course changes
+  useEffect(() => {
+    setEnrollSelectedBatchId('')
+  }, [enrollSelectedCourseId])
+
+  const batchesForSelectedCourse = enrollBatches.filter(
+    (b) => b.course_id === Number(enrollSelectedCourseId)
+  )
 
   const loadPipeline = useCallback(() => {
     setLoading(true)
@@ -280,6 +307,7 @@ export default function AdminEnquiries() {
   const handleOpenEnrollModal = (enquiry: EnquiryItem) => {
     setEnrollModalEnquiry(enquiry)
     setEnrollSelectedCourseId(enquiry.course_id || (courses[0]?.id ?? ''))
+    setEnrollSelectedBatchId('')
     setEnrollStudentPassword('')
   }
 
@@ -292,6 +320,7 @@ export default function AdminEnquiries() {
     try {
       await API.post(`/admin/enquiries/${enrollModalEnquiry.id}/enroll`, {
         course_id: enrollSelectedCourseId,
+        batch_id: enrollSelectedBatchId ? Number(enrollSelectedBatchId) : null,
         email: enrollModalEnquiry.email,
         name: enrollModalEnquiry.name,
         password: enrollStudentPassword,
@@ -905,7 +934,7 @@ export default function AdminEnquiries() {
               </div>
             </div>
 
-            {/* Course Selector & Password */}
+            {/* Course Selector & Batch Assignment & Password */}
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
@@ -926,6 +955,28 @@ export default function AdminEnquiries() {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Assign Cohort Batch
+                </label>
+                <select
+                  value={enrollSelectedBatchId}
+                  onChange={(e) => setEnrollSelectedBatchId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                  disabled={!enrollSelectedCourseId || batchesForSelectedCourse.length === 0}
+                >
+                  <option value="">-- Assign Cohort Batch (Optional) --</option>
+                  {batchesForSelectedCourse.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.code} {b.name ? `· ${b.name}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Keeps batch membership consistent with the enrollment. Only batches for the selected course are listed.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
                   Initial Account Password
                 </label>
                 <input
@@ -942,7 +993,7 @@ export default function AdminEnquiries() {
             </div>
 
             <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-xl text-xs text-emerald-300">
-              ⚡ Action: Creates student account (if not already existing), activates LMS classroom enrollment, and marks lead as ENROLLED.
+              ⚡ Action: Creates student account (if not already existing), activates LMS classroom enrollment, syncs cohort batch membership, and marks lead as ENROLLED.
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">

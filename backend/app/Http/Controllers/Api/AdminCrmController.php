@@ -604,7 +604,21 @@ class AdminCrmController extends Controller
         $course = Course::findOrFail($courseId);
 
         $batchId = ! empty($validated['batch_id']) ? (int) $validated['batch_id'] : null;
-        $batch = $batchId ? Batch::findOrFail($batchId) : null;
+        $batch = null;
+        if ($batchId) {
+            $batch = Batch::find($batchId);
+            if (! $batch) {
+                return response()->json([
+                    'message' => 'The selected cohort batch does not exist.',
+                ], 422);
+            }
+            // Enrollment/batch consistency: a cohort batch must belong to the enrolled course.
+            if ($batch->course_id !== $course->id) {
+                return response()->json([
+                    'message' => "The selected cohort batch ({$batch->code}) belongs to a different course. Please choose a batch for '{$course->title}'.",
+                ], 422);
+            }
+        }
 
         $amountPaid = isset($validated['amount_paid']) ? (float) $validated['amount_paid'] : (float) $lead->amount_paid;
 

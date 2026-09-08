@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Batch;
+use App\Models\BatchStudent;
+use App\Models\BatchTransfer;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\Enquiry;
@@ -320,6 +323,7 @@ class EnquiryController extends Controller
     {
         $validated = $request->validate([
             'course_id' => 'nullable|exists:courses,id',
+            'batch_id' => 'nullable|exists:batches,id',
             'name' => 'nullable|string|max:255',
             'email' => 'nullable|email|max:255',
             'password' => 'nullable|string|min:8',
@@ -334,6 +338,23 @@ class EnquiryController extends Controller
         }
 
         $course = Course::findOrFail($courseId);
+
+        $batchId = ! empty($validated['batch_id']) ? (int) $validated['batch_id'] : null;
+        $batch = null;
+        if ($batchId) {
+            $batch = Batch::find($batchId);
+            if (! $batch) {
+                return response()->json([
+                    'message' => 'The selected cohort batch does not exist.',
+                ], 422);
+            }
+            // Enrollment/batch consistency: a cohort batch must belong to the enrolled course.
+            if ($batch->course_id !== $course->id) {
+                return response()->json([
+                    'message' => "The selected cohort batch ({$batch->code}) belongs to a different course. Please choose a batch for '{$course->title}'.",
+                ], 422);
+            }
+        }
 
         $studentEmail = $validated['email'] ?? $enquiry->email;
         $studentName = $validated['name'] ?? $enquiry->name;
@@ -379,6 +400,41 @@ class EnquiryController extends Controller
             ]
         );
 
+        // If a cohort batch was selected, keep batch membership consistent with the enrollment.
+        // Membership history remains audit-immutable: we never delete a prior membership record.
+        $batchMembership = null;
+        if ($batch) {
+            $existingBatchStudent = BatchStudent::where('batch_id', $batch->id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (! $existingBatchStudent) {
+                $batchMembership = BatchStudent::create([
+                    'batch_id' => $batch->id,
+                    'user_id' => $user->id,
+                    'status' => 'active',
+                    'joined_at' => now(),
+                    'notes' => 'Enrolled & granted LMS classroom access from admissions pipeline',
+                ]);
+
+                BatchTransfer::create([
+                    'user_id' => $user->id,
+                    'from_batch_id' => null,
+                    'to_batch_id' => $batch->id,
+                    'action_type' => 'enrolled',
+                    'reason' => 'Enquiry pipeline admission to cohort',
+                    'performed_by' => $request->user()->id,
+                ]);
+            } elseif ($existingBatchStudent->status !== 'active') {
+                $existingBatchStudent->update([
+                    'status' => 'active',
+                    'left_at' => null,
+                    'discontinued_at' => null,
+                ]);
+                $batchMembership = $existingBatchStudent;
+            }
+        }
+
         // Update Enquiry lead status to ENROLLED
         $enquiry->update([
             'status' => Enquiry::STATUS_ENROLLED,
@@ -401,6 +457,8 @@ class EnquiryController extends Controller
             'enquiry' => $enquiry->fresh(['user', 'course', 'notes', 'enrolledUser']),
             'user' => $user,
             'enrollment' => $enrollment,
+            'batch' => $batch,
+            'batch_membership' => $batchMembership,
         ], 200);
     }
 
