@@ -20,16 +20,24 @@ export default function StudentProfile() {
   const [enrollments, setEnrollments] = useState<EnrollmentItem[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Edit Profile Form State
+  // Edit Profile Form State — initialized from the authenticated user
   const [name, setName] = useState(user?.name || '')
-  const [phone, setPhone] = useState('+91 98765 43210')
-  const [bio, setBio] = useState('Passionate software engineering student building full stack web & AI systems.')
-  const [location, setLocation] = useState('Bangalore, India')
+  const [phone, setPhone] = useState(user?.phone || '')
+  const [bio, setBio] = useState(user?.bio || '')
+  const [location, setLocation] = useState(user?.location || '')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+
+  useEffect(() => {
+    if (user?.name) setName(user.name)
+    if (user?.phone) setPhone(user.phone)
+    if (user?.bio) setBio(user.bio)
+    if (user?.location) setLocation(user.location)
+  }, [user])
 
   useEffect(() => {
     API.get<EnrollmentItem[]>('/my-courses')
@@ -48,10 +56,14 @@ export default function StudentProfile() {
     (e) => Number(e.progress_percentage) < 100 && e.status !== 'completed'
   )
 
-  const handleProfileSave = (e: React.FormEvent) => {
+  const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault()
     if (password && password !== confirmPassword) {
       setErrorMsg('New password and confirmation do not match.')
+      return
+    }
+    if (password && !currentPassword) {
+      setErrorMsg('Current password is required to set a new password.')
       return
     }
 
@@ -59,13 +71,35 @@ export default function StudentProfile() {
     setErrorMsg('')
     setSuccessMsg('')
 
-    setTimeout(() => {
-      setSaving(false)
-      setSuccessMsg('Profile and settings updated successfully!')
+    const payload: Record<string, unknown> = {
+      name,
+      phone,
+      location,
+      bio,
+    }
+    if (password) {
+      payload.current_password = currentPassword
+      payload.password = password
+      payload.password_confirmation = confirmPassword
+    }
+
+    try {
+      const res = await API.put('/profile', payload)
+      setSuccessMsg(res.data?.message || 'Profile and settings updated successfully!')
       setPassword('')
       setConfirmPassword('')
+      setCurrentPassword('')
       setTimeout(() => setSuccessMsg(''), 4000)
-    }, 700)
+    } catch (err) {
+      const respData =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? (err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } }).response?.data
+          : undefined
+      const firstError = respData?.errors ? Object.values(respData.errors)[0]?.[0] : undefined
+      setErrorMsg(firstError || respData?.message || 'Failed to update profile. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -199,6 +233,16 @@ export default function StudentProfile() {
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-bold text-slate-700 text-[10px] mb-1">Current Password</label>
+                    <input
+                      type="password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Required to set new password"
+                      className="w-full px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 outline-none"
+                    />
+                  </div>
                   <div>
                     <label className="block font-bold text-slate-700 text-[10px] mb-1">New Password</label>
                     <input

@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\TutorQuizController;
 use App\Http\Controllers\Api\VideoPlaybackController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Models\LessonProgress;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -220,6 +221,10 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
+
+    // Authenticated user's own profile (any logged-in user)
+    Route::get('/profile', [ProfileController::class, 'show']);
+    Route::put('/profile', [ProfileController::class, 'update']);
 
     // Payments (at-most-once order creation via idempotency key)
     Route::post('/payments/order', [PaymentController::class, 'createOrder'])->middleware('throttle:payment-order');
