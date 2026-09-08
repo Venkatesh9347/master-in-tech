@@ -17,63 +17,8 @@ class CourseController extends Controller
         $user = $this->getAuthenticatedUser($request);
         $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
-        $fallbackCourses = [
-            [
-                'id' => 1,
-                'title' => 'Full Stack Web Development',
-                'description' => 'Learn frontend, backend, databases, and APIs to build production-ready web applications.',
-                'instructor' => 'Sarah Johnson',
-                'category' => 'Full Stack Development',
-                'duration' => '12 weeks',
-                'difficulty' => 'Beginner',
-                'average_rating' => 4.9,
-                'reviews_count' => 128,
-                'students_count' => 1420,
-                ...($isAdmin ? ['price' => 24999, 'internal_price' => 24999] : []),
-            ],
-            [
-                'id' => 2,
-                'title' => 'Python with AI & Machine Learning',
-                'description' => 'Master Python programming and the foundations of artificial intelligence and ML workflows.',
-                'instructor' => 'Aman Verma',
-                'category' => 'AI & Machine Learning',
-                'duration' => '10 weeks',
-                'difficulty' => 'Intermediate',
-                'average_rating' => 4.8,
-                'reviews_count' => 96,
-                'students_count' => 1105,
-                ...($isAdmin ? ['price' => 19999, 'internal_price' => 19999] : []),
-            ],
-            [
-                'id' => 3,
-                'title' => 'SAP FICO Financial Accounting',
-                'description' => 'Understand financial accounting, controlling, and enterprise reporting within SAP systems.',
-                'instructor' => 'Neha Patel',
-                'category' => 'Enterprise & SAP',
-                'duration' => '8 weeks',
-                'difficulty' => 'Advanced',
-                'average_rating' => 4.9,
-                'reviews_count' => 84,
-                'students_count' => 870,
-                ...($isAdmin ? ['price' => 17999, 'internal_price' => 17999] : []),
-            ],
-            [
-                'id' => 4,
-                'title' => 'Cloud & DevOps Engineering Mastery',
-                'description' => 'Master AWS, Azure, Docker, Kubernetes, CI/CD pipelines, and Infrastructure as Code.',
-                'instructor' => 'Rajesh Kumar',
-                'category' => 'Cloud Computing',
-                'duration' => '6 weeks',
-                'difficulty' => 'Beginner',
-                'average_rating' => 4.7,
-                'reviews_count' => 210,
-                'students_count' => 3200,
-                ...($isAdmin ? ['price' => 0, 'internal_price' => 0] : []),
-            ],
-        ];
-
         if (! Schema::hasTable('courses')) {
-            return response()->json($fallbackCourses);
+            return response()->json([]);
         }
 
         // 1. If unauthenticated public visitor, serve from 60-second public catalog cache
@@ -86,8 +31,8 @@ class CourseController extends Controller
                 'page' => $request->query('page', 1),
             ]));
 
-            $cachedData = Cache::remember($cacheKey, 60, function () use ($request, $fallbackCourses) {
-                return $this->fetchCatalogData($request, false, [], $fallbackCourses);
+            $cachedData = Cache::remember($cacheKey, 60, function () use ($request) {
+                return $this->fetchCatalogData($request, false, []);
             });
 
             return response()->json($cachedData);
@@ -99,10 +44,10 @@ class CourseController extends Controller
             ->pluck('course_id')
             ->all();
 
-        return response()->json($this->fetchCatalogData($request, $isAdmin, $enrolledCourseIds, $fallbackCourses));
+        return response()->json($this->fetchCatalogData($request, $isAdmin, $enrolledCourseIds));
     }
 
-    private function fetchCatalogData(Request $request, bool $isAdmin, array $enrolledCourseIds, array $fallbackCourses): array
+    private function fetchCatalogData(Request $request, bool $isAdmin, array $enrolledCourseIds): array
     {
         $query = Course::withCount(['sections', 'lessons', 'enrollments', 'reviews'])
             ->withAvg('reviews', 'rating');
@@ -167,7 +112,7 @@ class CourseController extends Controller
 
         return $courses->isNotEmpty()
             ? $courses->map(fn (Course $course) => $this->courseData($course, $isAdmin, $enrolledCourseIds))->values()->all()
-            : $fallbackCourses;
+            : [];
     }
 
     public function show(Request $request, $id)
@@ -367,10 +312,10 @@ class CourseController extends Controller
     {
         $avgRating = isset($course->reviews_avg_rating) && $course->reviews_avg_rating !== null
             ? round((float) $course->reviews_avg_rating, 1)
-            : 4.9;
+            : null;
 
-        $reviewsCount = $course->reviews_count ?? ($course->relationLoaded('reviews') ? $course->reviews->count() : 18);
-        $enrollmentsCount = $course->enrollments_count ?? ($course->relationLoaded('enrollments') ? $course->enrollments->count() : 75);
+        $reviewsCount = $course->reviews_count ?? ($course->relationLoaded('reviews') ? $course->reviews->count() : 0);
+        $enrollmentsCount = $course->enrollments_count ?? ($course->relationLoaded('enrollments') ? $course->enrollments->count() : 0);
 
         $payload = [
             'id' => $course->id,
@@ -378,7 +323,7 @@ class CourseController extends Controller
             'slug' => $course->slug,
             'description' => $course->description,
             'full_description' => $course->full_description ?? $course->description,
-            'category' => $course->category ?? 'Software Engineering',
+            'category' => $course->category,
             'thumbnail' => $course->thumbnail,
             'banner' => $course->banner ?? $course->thumbnail,
             'brochure' => $course->brochure ?? ($course->brochureMediaAsset?->url ?? null),
@@ -387,7 +332,7 @@ class CourseController extends Controller
             'instructor' => $course->instructor,
             'instructor_id' => $course->instructor_id,
             'duration' => $course->duration,
-            'difficulty' => $course->difficulty ?? 'Intermediate',
+            'difficulty' => $course->difficulty,
             'prerequisites' => $course->prerequisites ?? [],
             'learning_objectives' => $course->learning_objectives ?? [],
             'skills_gained' => $course->skills_gained ?? [],

@@ -43,13 +43,13 @@ class TutorController extends Controller
             ->where('status', 'submitted')
             ->count();
 
-        $averageRating = CourseReview::whereIn('course_id', $courseIds)->avg('rating') ?? 5.0;
+$averageRating = CourseReview::whereIn('course_id', $courseIds)->avg('rating');
 
         return response()->json([
             'total_courses' => $totalCourses,
             'total_students' => $totalStudents,
             'pending_submissions' => $pendingSubmissions,
-            'average_rating' => round((float) $averageRating, 1),
+            'average_rating' => $averageRating !== null ? round((float) $averageRating, 1) : null,
         ]);
     }
 

@@ -97,7 +97,7 @@ class AdminDashboardController extends Controller
                 return [
                     'id' => $c->id,
                     'title' => $c->title,
-                    'category' => $c->category ?? 'Software Engineering',
+                    'category' => $c->category,
                     'instructor' => $c->instructor,
                     'is_published' => (bool) $c->is_published,
                     'status' => $c->status ?? ($c->is_published ? 'published' : 'draft'),
@@ -106,7 +106,7 @@ class AdminDashboardController extends Controller
                     'lessons_count' => $c->lessons_count,
                     'duration' => $c->duration,
                     'difficulty' => $c->difficulty,
-                    'average_rating' => $c->reviews_avg_rating ? round((float) $c->reviews_avg_rating, 1) : 4.9,
+                    'average_rating' => $c->reviews_avg_rating ? round((float) $c->reviews_avg_rating, 1) : null,
                     'internal_price' => (float) $c->price, // Admin only
                 ];
             });

@@ -26,7 +26,7 @@ class CourseReviewController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $avgRating = $reviews->count() > 0 ? round($reviews->avg('rating'), 1) : 5.0;
+        $avgRating = $reviews->count() > 0 ? round($reviews->avg('rating'), 1) : null;
 
         return response()->json([
             'average_rating' => $avgRating,
