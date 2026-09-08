@@ -298,18 +298,27 @@ export default function StudentLessons() {
   const handleClaimOrViewCertificate = async () => {
     if (!courseId || generatingCert) return
     setGeneratingCert(true)
+    setActionError(null)
     try {
-      const res = await API.post<{ certificate?: { certificate_code?: string } }>(
-        `/courses/${courseId}/certificate`
-      )
+      const res = await API.post<{
+        certificate?: { certificate_code?: string }
+        message?: string
+      }>(`/courses/${courseId}/certificate`)
       const code = res.data?.certificate?.certificate_code
       if (code) {
         navigate(`/student/certificates/${code}`)
       } else {
-        navigate(`/student/certificates/MIT-2026-${courseId}99`)
+        // No code returned means the certificate was not issued; surface the server message instead.
+        setActionError(
+          res.data?.message || 'Certificate could not be issued. Please complete all lessons first.'
+        )
       }
-    } catch {
-      navigate(`/student/certificates/MIT-2026-${courseId}99`)
+    } catch (err: unknown) {
+      const response = err as { response?: { data?: { message?: string } } }
+      setActionError(
+        response.response?.data?.message ||
+          'Certificate could not be issued. Please ensure all lessons are completed.'
+      )
     } finally {
       setGeneratingCert(false)
     }
