@@ -16,6 +16,7 @@ export interface User {
   created_at?: string;
   enrollments_count?: number;
   taught_courses_count?: number;
+  permissions?: Record<string, boolean>;
 }
 
 export interface GoogleAuthPendingSession {

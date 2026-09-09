@@ -87,7 +87,7 @@ class LiveClass extends Model
 
     public function isHost(User $user): bool
     {
-        return $this->instructor_id === $user->id || $user->role === 'admin';
+        return $this->instructor_id === $user->id || $user->isAdmin();
     }
 
     public function activeAttendanceFor(int $userId): ?LiveClassAttendance

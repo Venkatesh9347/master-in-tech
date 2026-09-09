@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { canAccessArea } from "../lib/permissions";
 
 export default function CompanyRoute() {
   const { user, loading } = useAuth();
@@ -28,7 +29,7 @@ export default function CompanyRoute() {
     return <Navigate to="/tutor" replace />;
   }
 
-  if (user.role !== "company" && user.role !== "recruiter") {
+  if (!canAccessArea(user, "company")) {
     return <Navigate to="/student" replace />;
   }
 

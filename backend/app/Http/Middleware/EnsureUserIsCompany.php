@@ -15,7 +15,7 @@ class EnsureUserIsCompany
     {
         $user = $request->user();
 
-        if (! $user || ! $user->isCompany()) {
+        if (! $user || ! $user->canAccess('company')) {
             return response()->json([
                 'message' => 'Unauthorized. Corporate partner access required.',
             ], 403);

@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { canAccessArea } from "../lib/permissions";
 
 export default function CounsellorRoute() {
   const { user, loading } = useAuth();
@@ -29,10 +30,7 @@ export default function CounsellorRoute() {
     return <Navigate to="/student" replace />;
   }
 
-  const allowed =
-    user.role === "admin" ||
-    user.role === "super_admin" ||
-    user.role === "counsellor";
+  const allowed = canAccessArea(user, "crm");
 
   if (!allowed) {
     return <Navigate to="/login" replace />;

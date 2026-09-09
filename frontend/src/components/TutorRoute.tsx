@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { canAccessArea } from "../lib/permissions";
 
 export default function TutorRoute() {
   const { user, loading } = useAuth();
@@ -24,7 +25,7 @@ export default function TutorRoute() {
     return <Navigate to="/admin" replace />;
   }
 
-  if (user.role !== "tutor" && user.role !== "faculty") {
+  if (!canAccessArea(user, "tutor")) {
     return <Navigate to="/student" replace />;
   }
 

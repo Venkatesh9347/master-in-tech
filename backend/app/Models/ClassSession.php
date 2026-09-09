@@ -444,7 +444,7 @@ class ClassSession extends Model
      */
     public function isHost(User $user): bool
     {
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return true;
         }
 
@@ -461,7 +461,7 @@ class ClassSession extends Model
      */
     public function canStudentJoin(User $user): bool
     {
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return true;
         }
 

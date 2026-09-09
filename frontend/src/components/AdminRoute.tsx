@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { canAccessArea } from "../lib/permissions";
 
 export default function AdminRoute() {
   const { user, loading } = useAuth();
@@ -28,7 +29,7 @@ export default function AdminRoute() {
     return <Navigate to="/admin/crm" replace />;
   }
 
-  if (user.role !== "admin" && user.role !== "super_admin") {
+  if (!canAccessArea(user, "admin")) {
     return <Navigate to="/student" replace />;
   }
 

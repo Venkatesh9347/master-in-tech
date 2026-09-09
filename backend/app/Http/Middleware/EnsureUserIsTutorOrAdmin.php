@@ -17,7 +17,7 @@ class EnsureUserIsTutorOrAdmin
     {
         $user = $request->user();
 
-        if (! $user || ! in_array($user->role, ['tutor', 'faculty', 'admin', 'super_admin'], true)) {
+        if (! $user || ! $user->canAccess('tutor')) {
             return response()->json([
                 'message' => 'Unauthorized. Tutor or Admin access required.',
             ], 403);

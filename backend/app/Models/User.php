@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Support\PermissionMatrix;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\HasApiTokens;
 use Laravel\Sanctum\NewAccessToken;
@@ -39,17 +40,7 @@ class User extends Authenticatable
      */
     public static function defaultTutorPermissions(): array
     {
-        return [
-            'view_assigned_courses' => true,
-            'view_students' => true,
-            'upload_materials' => true,
-            'manage_materials' => true,
-            'create_quizzes' => false,
-            'edit_quizzes' => false,
-            'delete_quizzes' => false,
-            'publish_quizzes' => false,
-            'view_quiz_results' => true,
-        ];
+        return PermissionMatrix::TUTOR_ABILITIES;
     }
 
     /**
@@ -105,7 +96,7 @@ class User extends Authenticatable
      */
     public function hasPermission(string $permission): bool
     {
-        if ($this->role === 'admin' || $this->role === 'super_admin') {
+        if (PermissionMatrix::isSuperUser($this->role)) {
             return true;
         }
 
@@ -116,19 +107,26 @@ class User extends Authenticatable
     }
 
     /**
+     * Check if the user's role may access a route-level area.
+     */
+    public function canAccess(string $area): bool
+    {
+        return PermissionMatrix::canAccess($this->role, $area);
+    }
+
+    /**
      * Get all resolved permissions as a complete associative array (canonical keys only).
      *
      * @return array<string, bool>
      */
     public function getResolvedPermissions(): array
     {
-        if ($this->role === 'admin' || $this->role === 'super_admin') {
-            return array_fill_keys(array_keys(static::defaultTutorPermissions()), true);
-        }
-
         $stored = is_array($this->permissions) ? $this->permissions : [];
 
-        return array_merge(static::defaultTutorPermissions(), static::canonicalizePermissions($stored));
+        return array_merge(
+            PermissionMatrix::abilitiesForRole($this->role),
+            PermissionMatrix::isSuperUser($this->role) ? [] : static::canonicalizePermissions($stored)
+        );
     }
 
     /**
@@ -275,7 +273,7 @@ class User extends Authenticatable
 
     public function isAdmin(): bool
     {
-        return $this->role === 'admin' || $this->role === 'super_admin';
+        return PermissionMatrix::isSuperUser($this->role);
     }
 
     public function isCounsellor(): bool

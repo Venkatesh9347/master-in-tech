@@ -131,7 +131,7 @@ class LiveClassroomSession extends Model
 
     public function isHost(User $user): bool
     {
-        if ($user->role === 'admin' || $user->role === 'super_admin') {
+        if ($user->isAdmin()) {
             return true;
         }
 
