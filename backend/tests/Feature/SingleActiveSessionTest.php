@@ -294,6 +294,47 @@ class SingleActiveSessionTest extends TestCase
             ->assertJsonPath('code', 'SESSION_REVOKED');
     }
 
+    public function test_password_reset_revokes_all_existing_sessions(): void
+    {
+        // 1. Device A logs in
+        $loginA = $this->postJson('/api/login', [
+            'email' => 'student.session@example.com',
+            'password' => 'password123',
+        ]);
+        $loginA->assertStatus(200);
+        $tokenA = $loginA->json('access_token');
+
+        $this->resetSanctumGuard();
+
+        // 2. Token A is valid before the reset
+        $this->withToken($tokenA)->getJson('/api/user')->assertStatus(200);
+
+        $this->resetSanctumGuard();
+
+        // 3. Password is reset via the broker issued token
+        $resetToken = \Illuminate\Support\Facades\Password::broker()->createToken($this->studentUser);
+        $resetRes = $this->postJson('/api/reset-password', [
+            'token' => $resetToken,
+            'email' => 'student.session@example.com',
+            'password' => 'newpassword123',
+            'password_confirmation' => 'newpassword123',
+        ]);
+        $resetRes->assertStatus(200);
+
+        // 4. The old token MUST be rejected after the reset
+        $this->resetSanctumGuard();
+        $this->withToken($tokenA)->getJson('/api/user')->assertStatus(401);
+
+        $this->resetSanctumGuard();
+
+        // 5. Logging in again still works (session marker was rotated, not destroyed)
+        $loginB = $this->postJson('/api/login', [
+            'email' => 'student.session@example.com',
+            'password' => 'newpassword123',
+        ]);
+        $loginB->assertStatus(200);
+    }
+
     public function test_logout_on_old_device_does_not_revoke_newer_session_on_other_device(): void
     {
         // 1. Device A logs in

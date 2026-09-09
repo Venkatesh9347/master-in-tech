@@ -141,6 +141,15 @@ Route::post('/reset-password', function (Request $request) {
                 'password' => Hash::make($password),
                 'remember_token' => null,
             ])->save();
+
+            // A password reset must revoke the account's active sessions on
+            // every device: delete all issued tokens and rotate the single
+            // active session marker so previously issued tokens are rejected.
+            $user->tokens()->delete();
+            $user->forceFill([
+                'current_session_id' => null,
+                'current_session_created_at' => null,
+            ])->save();
         }
     );
 
