@@ -375,7 +375,7 @@ class PlacementPortalController extends Controller
         $course = $courseId ? Course::find($courseId) : null;
 
         // 6. Verified Student Details (Never tampered by client request)
-        $verifiedPhone = ! empty($validated['phone']) ? trim($validated['phone']) : ($user->phone ?? '+91 9000000000');
+        $verifiedPhone = ! empty($validated['phone']) ? trim($validated['phone']) : ($user->phone ?? '');
 
         $application = PlacementApplication::create([
             'placement_opportunity_id' => $opportunity->id,

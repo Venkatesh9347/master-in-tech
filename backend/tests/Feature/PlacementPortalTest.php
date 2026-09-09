@@ -175,6 +175,38 @@ class PlacementPortalTest extends TestCase
         ]);
     }
 
+    public function test_application_without_phone_stores_no_fabricated_contact(): void
+    {
+        $course = $this->createCourse(['title' => 'Full Stack AI']);
+        $batch = $this->createBatch($course, ['code' => 'RIT(AI)BC230826']);
+        $opportunity = $this->createOpportunity(['title' => 'Junior AI Developer']);
+
+        $student = User::factory()->create([
+            'name' => 'No Phone Student',
+            'email' => 'nophone@example.com',
+            'phone' => null,
+            'role' => 'student',
+        ]);
+
+        Sanctum::actingAs($student);
+
+        // No phone submitted and student has no phone on file -> must NOT fabricate a number.
+        $res = $this->postJson("/api/placements/opportunities/{$opportunity->id}/apply", [
+            'batch_number' => 'RIT(AI)BC230826',
+            'course_id' => $course->id,
+            'resume_url' => 'https://example.com/resumes/cv.pdf',
+        ]);
+
+        $res->assertStatus(201);
+
+        $this->assertDatabaseHas('placement_applications', [
+            'placement_opportunity_id' => $opportunity->id,
+            'user_id' => $student->id,
+            'phone' => '',
+        ]);
+        $this->assertSame('', PlacementApplication::where('user_id', $student->id)->value('phone'));
+    }
+
     public function test_invalid_or_non_existent_batch_is_rejected(): void
     {
         $opportunity = $this->createOpportunity();

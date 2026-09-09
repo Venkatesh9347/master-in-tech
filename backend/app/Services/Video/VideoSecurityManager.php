@@ -81,7 +81,7 @@ class VideoSecurityManager
 
         // Format full registered mobile number for dynamic floating watermark
         $rawPhone = trim($user->phone ?? '');
-        $watermarkText = $rawPhone !== '' ? $rawPhone : "+91 9876543210 • {$user->name}";
+        $watermarkText = $rawPhone !== '' ? $rawPhone : trim($user->name ?? '');
 
         return [
             'asset_id' => $asset->asset_id,

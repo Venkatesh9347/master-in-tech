@@ -325,6 +325,41 @@ class MockInterviewFeatureTest extends TestCase
         $res2->assertStatus(422);
     }
 
+    public function test_submit_evaluation_rejects_missing_factor_without_fabricating_scores(): void
+    {
+        $studentData = $this->createStudent('Ritika Sharma', true);
+        $admin = $this->createAdmin();
+
+        $interviewer = $this->createInterviewer();
+        $slot = $this->createSlot($interviewer, Carbon::tomorrow()->toDateString(), '09:00');
+
+        Sanctum::actingAs($studentData['student']);
+        $resBook = $this->postJson('/api/student/mock-interviews/book', ['slot_id' => $slot->id]);
+        $resBook->assertStatus(201);
+        $interview = MockInterview::find($resBook->json('interview.id'));
+
+        // Deliberately omit the "communication" factor — scores must never be fabricated.
+        $incompleteData = [
+            'technical_knowledge' => 9,
+            'programming_problem_solving' => 8,
+            'confidence' => 8,
+            'project_knowledge' => 9,
+            'interview_readiness' => 9,
+            'strengths' => 'Solid fundamentals.',
+            'areas_for_improvement' => 'Keep practicing.',
+            'recommendation' => MockInterviewEvaluation::REC_READY_FOR_PLACEMENT,
+        ];
+
+        try {
+            MockInterviewService::submitEvaluation($interview, $incompleteData, $admin);
+            $this->fail('Expected InvalidArgumentException for a missing evaluation factor.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('communication', $e->getMessage());
+        }
+
+        $this->assertNull(MockInterviewEvaluation::where('mock_interview_id', $interview->id)->first());
+    }
+
     public function test_student_and_admin_cancellation_and_rescheduling(): void
     {
         $studentData = $this->createStudent('Sneha Patil', true);

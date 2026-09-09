@@ -402,15 +402,23 @@ class MockInterviewService
     public static function submitEvaluation(MockInterview $interview, array $data, User $evaluator): MockInterviewEvaluation
     {
         return DB::transaction(function () use ($interview, $data, $evaluator) {
-            // Compute overall rating if not explicitly provided (average of the 6 factors)
-            $factors = [
-                (float) ($data['technical_knowledge'] ?? 5),
-                (float) ($data['programming_problem_solving'] ?? 5),
-                (float) ($data['communication'] ?? 5),
-                (float) ($data['confidence'] ?? 5),
-                (float) ($data['project_knowledge'] ?? 5),
-                (float) ($data['interview_readiness'] ?? 5),
+            // Compute overall rating if not explicitly provided (average of the 6 factors).
+            // Every factor MUST be explicitly supplied — no fabricated placeholder scores.
+            $factorKeys = [
+                'technical_knowledge',
+                'programming_problem_solving',
+                'communication',
+                'confidence',
+                'project_knowledge',
+                'interview_readiness',
             ];
+            $missingFactors = array_values(array_diff($factorKeys, array_keys($data)));
+            if ($missingFactors !== []) {
+                throw new \InvalidArgumentException(
+                    'All evaluation factors must be provided. Missing: ' . implode(', ', $missingFactors) . '.'
+                );
+            }
+            $factors = array_map(fn (string $key) => (float) $data[$key], $factorKeys);
             $computedRating = round(array_sum($factors) / count($factors), 1);
             $overallRating = isset($data['overall_rating']) ? (float) $data['overall_rating'] : $computedRating;
 
