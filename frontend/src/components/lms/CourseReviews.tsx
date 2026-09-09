@@ -19,7 +19,7 @@ interface CourseReviewsProps {
 
 export default function CourseReviews({ courseId, isEnrolled = false }: CourseReviewsProps) {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
-  const [avgRating, setAvgRating] = useState(5.0);
+  const [avgRating, setAvgRating] = useState(0);
   const [reviewCount, setReviewCount] = useState(0);
   const [selectedRating, setSelectedRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
@@ -33,7 +33,7 @@ export default function CourseReviews({ courseId, isEnrolled = false }: CourseRe
     )
       .then((res) => {
         setReviews(res.data.reviews || []);
-        setAvgRating(res.data.average_rating || 5.0);
+        setAvgRating(res.data.average_rating ?? 0);
         setReviewCount(res.data.review_count || 0);
       })
       .catch(() => {});
@@ -76,11 +76,13 @@ export default function CourseReviews({ courseId, isEnrolled = false }: CourseRe
         </div>
 
         <div className="flex items-center gap-4 bg-amber-50/80 border border-amber-200 px-5 py-3 rounded-2xl">
-          <span className="text-3xl font-black text-amber-900">{avgRating}</span>
+          <span className="text-3xl font-black text-amber-900">
+            {reviewCount > 0 ? avgRating : '—'}
+          </span>
           <div>
             <div className="flex text-amber-500 text-base">
-              {'★'.repeat(Math.round(avgRating))}
-              {'☆'.repeat(5 - Math.round(avgRating))}
+              {reviewCount > 0 && '★'.repeat(Math.round(avgRating))}
+              {reviewCount > 0 && '☆'.repeat(5 - Math.round(avgRating))}
             </div>
             <p className="text-xs text-amber-800 font-semibold mt-0.5">
               {reviewCount} {reviewCount === 1 ? 'Rating' : 'Ratings'}
@@ -141,7 +143,7 @@ export default function CourseReviews({ courseId, isEnrolled = false }: CourseRe
           {reviews.map((r) => (
             <div key={r.id} className="pt-4 first:pt-0">
               <div className="flex items-center justify-between mb-1.5">
-                <p className="text-sm font-bold text-slate-900">{r.user?.name || 'Verified Student'}</p>
+                <p className="text-sm font-bold text-slate-900">{r.user?.name || 'Student'}</p>
                 <div className="flex text-amber-500 text-sm">
                   {'★'.repeat(r.rating)}
                   {'☆'.repeat(5 - r.rating)}

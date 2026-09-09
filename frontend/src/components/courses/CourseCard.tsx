@@ -36,7 +36,7 @@ function CourseCardComponent({
   const lessonsCount =
     course.lessons_count ||
     course.sections?.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) ||
-    12;
+    0;
 
   const handleBrochureClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -106,9 +106,11 @@ function CourseCardComponent({
 
         {/* Category Pill */}
         <div className="absolute top-3 left-3 z-10">
-          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-900/90 text-white backdrop-blur-sm border border-slate-700/60">
-            {course.category || 'Engineering'}
-          </span>
+          {course.category && (
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-900/90 text-white backdrop-blur-sm border border-slate-700/60">
+              {course.category}
+            </span>
+          )}
         </div>
 
         {/* Level Pill */}
@@ -124,8 +126,8 @@ function CourseCardComponent({
 
         {/* Duration & Lessons Meta */}
         <div className="absolute bottom-2.5 left-3 right-3 z-10 flex items-center justify-between text-[11px] font-medium text-slate-200">
-          <span>⏱️ {course.duration || '6-12 Weeks'}</span>
-          <span>📖 {lessonsCount} Lessons</span>
+          {course.duration ? <span>⏱️ {course.duration}</span> : <span />}
+          {lessonsCount > 0 ? <span>📖 {lessonsCount} Lessons</span> : null}
         </div>
       </div>
 
@@ -145,12 +147,16 @@ function CourseCardComponent({
 
         {/* Instructor */}
         <div className="mt-auto pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-slate-400">Instructor:</span>
-            <span className="font-semibold text-slate-700 truncate max-w-[140px]">
-              {course.instructor || 'Senior Faculty'}
-            </span>
-          </div>
+          {course.instructor ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-400">Instructor:</span>
+              <span className="font-semibold text-slate-700 truncate max-w-[140px]">
+                {course.instructor}
+              </span>
+            </div>
+          ) : (
+            <span />
+          )}
           {course.average_rating ? (
             <div className="flex items-center gap-1 text-[11px] font-bold text-amber-600">
               <span>★</span>

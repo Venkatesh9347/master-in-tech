@@ -28,6 +28,8 @@ class CourseController extends Controller
                 'search' => $request->query('search'),
                 'category' => $request->query('category'),
                 'level' => $request->query('level') ?? $request->query('difficulty'),
+                'min_price' => $request->query('min_price'),
+                'max_price' => $request->query('max_price'),
                 'page' => $request->query('page', 1),
             ]));
 
@@ -108,6 +110,14 @@ class CourseController extends Controller
             });
         }
 
+        if ($request->filled('min_price')) {
+            $query->where('price', '>=', (float) $request->query('min_price'));
+        }
+
+        if ($request->filled('max_price')) {
+            $query->where('price', '<=', (float) $request->query('max_price'));
+        }
+
         $courses = $query->orderByRaw('COALESCE(priority, 100) ASC')->orderBy('id', 'asc')->get();
 
         return $courses->isNotEmpty()
@@ -130,6 +140,12 @@ class CourseController extends Controller
             return response()->json(['message' => 'Course not found'], 404);
         }
 
+        // Draft courses must not be reachable through the public catalog / detail view.
+        $isManager = $user && ($user->isAdmin() || $course->instructor_id === $user->id);
+        if (! $course->is_published && ! $isManager) {
+            return response()->json(['message' => 'Course not found'], 404);
+        }
+
         $isEnrolled = false;
         $enrollment = null;
 
@@ -141,7 +157,6 @@ class CourseController extends Controller
         }
 
         // Load curriculum hierarchy
-        $isManager = $user && ($user->isAdmin() || $course->instructor_id === $user->id);
         $sectionsQuery = $course->sections()->orderBy('sort_order');
         if (! $isManager) {
             $sectionsQuery->where('is_published', true);
