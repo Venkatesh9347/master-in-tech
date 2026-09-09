@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Batch;
+use App\Models\BatchStudent;
+use App\Models\BatchTransfer;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\Enquiry;
@@ -323,6 +326,7 @@ class EnquiryController extends Controller
             'name' => 'nullable|string|max:255',
             'email' => 'nullable|email|max:255',
             'password' => 'nullable|string|min:8',
+            'batch_id' => 'nullable|exists:batches,id',
         ]);
 
         $courseId = $validated['course_id'] ?? $enquiry->course_id;
@@ -378,6 +382,42 @@ class EnquiryController extends Controller
                 'status' => 'active',
             ]
         );
+
+        // Optionally assign the student to a cohort batch (audited), consistent
+        // with the CRM conversion flow. Batch history is never deleted.
+        if (! empty($validated['batch_id'])) {
+            $batch = Batch::find($validated['batch_id']);
+            if ($batch && (int) $batch->course_id === $course->id) {
+                $existingBatchStudent = BatchStudent::where('batch_id', $batch->id)
+                    ->where('user_id', $user->id)
+                    ->first();
+
+                if (! $existingBatchStudent) {
+                    BatchStudent::create([
+                        'batch_id' => $batch->id,
+                        'user_id' => $user->id,
+                        'status' => 'active',
+                        'joined_at' => now(),
+                        'notes' => 'Assigned during enquiry-to-enrollment conversion',
+                    ]);
+
+                    BatchTransfer::create([
+                        'user_id' => $user->id,
+                        'from_batch_id' => null,
+                        'to_batch_id' => $batch->id,
+                        'action_type' => 'enrolled',
+                        'reason' => 'Enquiry lead enrolled with cohort assignment',
+                        'performed_by' => $request->user()->id,
+                    ]);
+                } elseif ($existingBatchStudent->status !== 'active') {
+                    $existingBatchStudent->update([
+                        'status' => 'active',
+                        'left_at' => null,
+                        'discontinued_at' => null,
+                    ]);
+                }
+            }
+        }
 
         // Update Enquiry lead status to ENROLLED
         $enquiry->update([

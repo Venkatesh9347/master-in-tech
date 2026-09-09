@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Batch;
+use App\Models\BatchStudent;
+use App\Models\BatchTransfer;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\Lesson;
@@ -141,6 +144,7 @@ class AdminEnrollmentController extends Controller
             'name' => 'nullable|string|max:255',
             'course_id' => 'required|exists:courses,id',
             'status' => 'nullable|string|in:active,completed,pending,cancelled',
+            'batch_id' => 'nullable|exists:batches,id',
         ]);
 
         $userId = $validated['user_id'] ?? null;
@@ -205,6 +209,42 @@ class AdminEnrollmentController extends Controller
             'user:id,name,email,student_id,status,avatar,role',
             'course:id,title,slug,category,difficulty,duration,thumbnail,instructor',
         ]);
+
+        // Optionally assign the student to a cohort batch (audited), consistent
+        // with the CRM conversion flow. Batch history is never deleted.
+        if (! empty($validated['batch_id']) && $status === 'active') {
+            $batch = Batch::find($validated['batch_id']);
+            if ($batch && (int) $batch->course_id === $courseId) {
+                $existingBatchStudent = BatchStudent::where('batch_id', $batch->id)
+                    ->where('user_id', $userId)
+                    ->first();
+
+                if (! $existingBatchStudent) {
+                    BatchStudent::create([
+                        'batch_id' => $batch->id,
+                        'user_id' => $userId,
+                        'status' => 'active',
+                        'joined_at' => now(),
+                        'notes' => 'Assigned during admin enrollment creation',
+                    ]);
+
+                    BatchTransfer::create([
+                        'user_id' => $userId,
+                        'from_batch_id' => null,
+                        'to_batch_id' => $batch->id,
+                        'action_type' => 'enrolled',
+                        'reason' => 'Admin created enrollment with cohort assignment',
+                        'performed_by' => $request->user()->id,
+                    ]);
+                } elseif ($existingBatchStudent->status !== 'active') {
+                    $existingBatchStudent->update([
+                        'status' => 'active',
+                        'left_at' => null,
+                        'discontinued_at' => null,
+                    ]);
+                }
+            }
+        }
 
         AuditLog::log('created_enrollment', $enrollment, null, $enrollment->toArray());
 
