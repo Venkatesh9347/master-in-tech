@@ -24,7 +24,6 @@ export default function Courses() {
   const [search, setSearch] = useState(initialSearch)
   const [selectedCategory, setSelectedCategory] = useState(initialCategory)
   const [selectedDifficulty, setSelectedDifficulty] = useState(initialLevel)
-  const [sortBy, setSortBy] = useState('title_asc')
 
   // Lead Generation Enquiry Modal
   const [enquiryOpen, setEnquiryOpen] = useState(false)
@@ -76,7 +75,6 @@ export default function Courses() {
     setSearch('')
     setSelectedCategory('All')
     setSelectedDifficulty('All Levels')
-    setSortBy('title_asc')
     setSearchParams({})
   }
 
@@ -86,34 +84,27 @@ export default function Courses() {
   }
 
   const filteredCourses = useMemo(() => {
-    return courses
-      .filter((course) => {
-        const matchesSearch =
-          search === '' ||
-          course.title.toLowerCase().includes(search.toLowerCase()) ||
-          course.description.toLowerCase().includes(search.toLowerCase()) ||
-          (course.skills_gained && course.skills_gained.some((s) => s.toLowerCase().includes(search.toLowerCase()))) ||
-          course.instructor.toLowerCase().includes(search.toLowerCase())
+    return courses.filter((course) => {
+      const matchesSearch =
+        search === '' ||
+        course.title.toLowerCase().includes(search.toLowerCase()) ||
+        course.description.toLowerCase().includes(search.toLowerCase()) ||
+        (course.skills_gained && course.skills_gained.some((s) => s.toLowerCase().includes(search.toLowerCase()))) ||
+        course.instructor.toLowerCase().includes(search.toLowerCase())
 
-        const matchesCategory =
-          selectedCategory === 'All' ||
-          (course.category && course.category.toLowerCase() === selectedCategory.toLowerCase())
+      const matchesCategory =
+        selectedCategory === 'All' ||
+        (course.category && course.category.toLowerCase() === selectedCategory.toLowerCase())
 
-        const matchesDifficulty =
-          selectedDifficulty === 'All' ||
-          selectedDifficulty === 'All Levels' ||
-          course.difficulty.toLowerCase() === selectedDifficulty.toLowerCase() ||
-          (selectedDifficulty.toLowerCase() === 'basic' && course.difficulty.toLowerCase() === 'beginner')
+      const matchesDifficulty =
+        selectedDifficulty === 'All' ||
+        selectedDifficulty === 'All Levels' ||
+        course.difficulty.toLowerCase() === selectedDifficulty.toLowerCase() ||
+        (selectedDifficulty.toLowerCase() === 'basic' && course.difficulty.toLowerCase() === 'beginner')
 
-        return matchesSearch && matchesCategory && matchesDifficulty
-      })
-      .sort((a, b) => {
-        if (sortBy === 'title_desc') {
-          return b.title.localeCompare(a.title)
-        }
-        return a.title.localeCompare(b.title)
-      })
-  }, [courses, search, selectedCategory, selectedDifficulty, sortBy])
+      return matchesSearch && matchesCategory && matchesDifficulty
+    })
+  }, [courses, search, selectedCategory, selectedDifficulty])
 
   const hasActiveFilters =
     search !== '' ||
