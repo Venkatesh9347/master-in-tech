@@ -4,16 +4,21 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Batch;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\Lesson;
 use App\Models\LessonProgress;
 use App\Models\User;
+use App\Services\EnrollmentAssignmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AdminEnrollmentController extends Controller
 {
+    public function __construct(private readonly EnrollmentAssignmentService $enrollments)
+    {
+    }
     /**
      * Get platform overview statistics for enrollments (admin only).
      */
@@ -140,30 +145,20 @@ class AdminEnrollmentController extends Controller
             'email' => 'required_without:user_id|nullable|email',
             'name' => 'nullable|string|max:255',
             'course_id' => 'required|exists:courses,id',
-            'status' => 'nullable|string|in:active,completed,pending,cancelled',
+            'status' => 'nullable|string|in:active,completed,dropped',
+            'batch_id' => 'nullable|exists:batches,id',
         ]);
 
         $userId = $validated['user_id'] ?? null;
 
         if (! $userId && ! empty($validated['email'])) {
-            $user = User::firstOrCreate(
-                ['email' => strtolower(trim($validated['email']))],
-                [
-                    'name' => $validated['name'] ?? explode('@', $validated['email'])[0],
-                    'password' => \App\Models\User::generateUnusablePassword(),
-                    'status' => 'active',
-                ]
+            // Provision via the shared admission service so the CRM, enquiry and
+            // admin enrollment flows all write the same user rows.
+            $user = $this->enrollments->ensureStudentUser(
+                $validated['name'] ?? explode('@', $validated['email'])[0],
+                $validated['email'],
+                null
             );
-
-            // HIGH-7: role is not mass-assignable; set explicitly for new users.
-            if ($user->wasRecentlyCreated) {
-                $user->forceFill(['role' => 'student'])->save();
-            }
-
-            if ($user->role === 'student' && empty($user->student_id)) {
-                $user->student_id = 'STU-' . (1000 + $user->id);
-                $user->save();
-            }
 
             $userId = $user->id;
         }
@@ -201,6 +196,32 @@ class AdminEnrollmentController extends Controller
             'progress_percentage' => 0.00,
         ]);
 
+        // Optional cohort batch assignment via the shared admission service
+        // (immutable transfer history, never duplicated or rewritten).
+        $batch = null;
+        $batchMembership = null;
+        if (! empty($validated['batch_id']) && $status === 'active') {
+            $batch = Batch::find((int) $validated['batch_id']);
+            if ($batch && (int) $batch->course_id !== $courseId) {
+                return response()->json([
+                    'message' => "The selected cohort batch ({$batch->code}) belongs to a different course. Please choose a batch for the selected course.",
+                    'errors' => [
+                        'batch_id' => ["The selected cohort batch ({$batch->code}) belongs to a different course."],
+                    ],
+                ], 422);
+            }
+            if ($batch) {
+                $batchMembership = $this->enrollments->assignToBatch(
+                    User::findOrFail($userId),
+                    $batch,
+                    $request->user()->id,
+                    'enrolled',
+                    'Admin created enrollment with cohort assignment',
+                    'Assigned during admin enrollment creation'
+                );
+            }
+        }
+
         $enrollment->load([
             'user:id,name,email,student_id,status,avatar,role',
             'course:id,title,slug,category,difficulty,duration,thumbnail,instructor',
@@ -211,6 +232,8 @@ class AdminEnrollmentController extends Controller
         return response()->json([
             'message' => 'Course successfully assigned to student.',
             'enrollment' => $enrollment,
+            'batch' => $batch,
+            'batch_membership' => $batchMembership,
         ], 201);
     }
 
@@ -222,7 +245,7 @@ class AdminEnrollmentController extends Controller
         $old = $enrollment->toArray();
 
         $validated = $request->validate([
-            'status' => 'required|string|in:active,completed,pending,cancelled',
+            'status' => 'required|string|in:active,completed,dropped',
         ]);
 
         $enrollment->update([

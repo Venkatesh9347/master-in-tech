@@ -26,7 +26,7 @@ class EnrollmentAssignmentService
      * existing staff account is never demoted by an admission flow; any other
      * matching account is normalised to an active student.
      */
-    public function ensureStudentUser(string $name, string $email, ?string $phone = null): User
+    public function ensureStudentUser(string $name, string $email, ?string $phone = null, ?string $password = null): User
     {
         $email = strtolower(trim($email));
         $user = User::where('email', $email)->first();
@@ -36,7 +36,7 @@ class EnrollmentAssignmentService
                 'name' => $name,
                 'email' => $email,
                 'phone' => $phone,
-                'password' => User::generateUnusablePassword(),
+                'password' => ($password !== null && $password !== '') ? $password : User::generateUnusablePassword(),
                 'status' => 'active',
             ]);
 

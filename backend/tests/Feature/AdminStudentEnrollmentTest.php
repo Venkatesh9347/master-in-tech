@@ -432,4 +432,105 @@ class AdminStudentEnrollmentTest extends TestCase
                 'code' => 'SESSION_REVOKED',
             ]);
     }
+
+    public function test_admin_enrollment_assigns_batch_membership_when_batch_provided(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse([
+            'title' => 'Cloud Native Cohort Course',
+            'slug' => 'cloud-native-cohort-' . Str::random(4),
+            'code' => 'CNC',
+            'priority' => 10,
+        ]);
+        $batch = \App\Models\Batch::create([
+            'name' => 'Cloud Native Cohort',
+            'code' => 'RIT(CN)BC010826',
+            'course_id' => $course->id,
+            'start_date' => '2026-10-01',
+            'status' => 'upcoming',
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $res = $this->postJson('/api/admin/enrollments', [
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+            'batch_id' => $batch->id,
+        ]);
+
+        $res->assertStatus(201);
+        $this->assertDatabaseHas('batch_students', [
+            'batch_id' => $batch->id,
+            'user_id' => $student->id,
+            'status' => 'active',
+        ]);
+        $this->assertDatabaseHas('batch_transfers', [
+            'user_id' => $student->id,
+            'to_batch_id' => $batch->id,
+            'action_type' => 'enrolled',
+        ]);
+    }
+
+    public function test_admin_enrollment_rejects_batch_from_different_course(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['title' => 'Course A']);
+        $otherCourse = $this->createCourse(['title' => 'Course B']);
+        $batch = \App\Models\Batch::create([
+            'name' => 'Wrong Cohort',
+            'code' => 'RIT(W)BC010826',
+            'course_id' => $otherCourse->id,
+            'start_date' => '2026-10-01',
+            'status' => 'upcoming',
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $res = $this->postJson('/api/admin/enrollments', [
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+            'batch_id' => $batch->id,
+        ]);
+
+        $res->assertStatus(422)
+            ->assertJsonValidationErrors(['batch_id']);
+        $this->assertDatabaseMissing('batch_students', ['user_id' => $student->id]);
+    }
+
+    public function test_admin_enrollment_rejects_statuses_not_in_db_enum(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['title' => 'Enum Alignment Course']);
+
+        Sanctum::actingAs($admin);
+
+        // Phantom statuses that the DB enum does not allow must be rejected as 422.
+        foreach (['pending', 'cancelled'] as $phantom) {
+            $res = $this->postJson('/api/admin/enrollments', [
+                'user_id' => $student->id,
+                'course_id' => $course->id,
+                'status' => $phantom,
+            ]);
+            $res->assertStatus(422)
+                ->assertJsonValidationErrors(['status']);
+        }
+
+        // Valid member of the enum persists cleanly.
+        $resOk = $this->postJson('/api/admin/enrollments', [
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'dropped',
+        ]);
+        $resOk->assertStatus(201);
+        $this->assertDatabaseHas('course_enrollments', [
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'dropped',
+        ]);
+    }
 }

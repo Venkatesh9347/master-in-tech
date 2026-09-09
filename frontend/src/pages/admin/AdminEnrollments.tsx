@@ -695,7 +695,7 @@ export default function AdminEnrollments() {
                         >
                           <option value="active">Active (Enrolled)</option>
                           <option value="completed">Completed (Graduated)</option>
-                          <option value="pending">Pending</option>
+                          <option value="dropped">Dropped</option>
                         </select>
                       </div>
                     </div>
@@ -851,15 +851,14 @@ export default function AdminEnrollments() {
                                   className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition focus:outline-none ${
                                     enrollment.status === 'completed'
                                       ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                                      : enrollment.status === 'cancelled'
+                                      : enrollment.status === 'dropped'
                                       ? 'bg-rose-950/80 text-rose-300 border-rose-800'
                                       : 'bg-purple-950/80 text-purple-300 border-purple-800'
                                   }`}
                                 >
                                   <option value="active">Active</option>
                                   <option value="completed">Completed</option>
-                                  <option value="pending">Pending</option>
-                                  <option value="cancelled">Cancelled</option>
+                                  <option value="dropped">Dropped</option>
                                 </select>
                               </div>
 
@@ -922,8 +921,7 @@ export default function AdminEnrollments() {
                 <option value="all">All Statuses</option>
                 <option value="active">Active</option>
                 <option value="completed">Completed</option>
-                <option value="pending">Pending</option>
-                <option value="cancelled">Cancelled</option>
+                <option value="dropped">Dropped</option>
               </select>
 
               {/* Course Filter */}
@@ -1029,15 +1027,14 @@ export default function AdminEnrollments() {
                             className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition focus:outline-none ${
                               item.status === 'completed'
                                 ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                                : item.status === 'cancelled'
+                                : item.status === 'dropped'
                                 ? 'bg-rose-950/80 text-rose-300 border-rose-800'
                                 : 'bg-purple-950/80 text-purple-300 border-purple-800'
                             }`}
                           >
                             <option value="active">Active</option>
                             <option value="completed">Completed</option>
-                            <option value="pending">Pending</option>
-                            <option value="cancelled">Cancelled</option>
+                            <option value="dropped">Dropped</option>
                           </select>
                         </td>
 
@@ -1129,7 +1126,7 @@ export default function AdminEnrollments() {
                 >
                   <option value="active">Active (Enrolled)</option>
                   <option value="completed">Completed (Graduated)</option>
-                  <option value="pending">Pending</option>
+                  <option value="dropped">Dropped</option>
                 </select>
               </div>
 

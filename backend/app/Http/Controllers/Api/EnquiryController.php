@@ -4,18 +4,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Batch;
-use App\Models\BatchStudent;
-use App\Models\BatchTransfer;
 use App\Models\Course;
-use App\Models\CourseEnrollment;
 use App\Models\Enquiry;
 use App\Models\EnquiryNote;
 use App\Models\User;
+use App\Services\EnrollmentAssignmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 class EnquiryController extends Controller
 {
+    public function __construct(private readonly EnrollmentAssignmentService $enrollments)
+    {
+    }
     /**
      * Store a new course enquiry / demo request (supports both public visitors and authenticated students).
      */
@@ -366,74 +367,25 @@ class EnquiryController extends Controller
             $studentPassword = $providedPassword;
         }
 
-        // Find or provision student account (Google / mobile OTP is the student login path)
-        $user = User::firstOrCreate(
-            ['email' => $studentEmail],
-            [
-                'name' => $studentName,
-                'password' => $studentPassword,
-                'status' => 'active',
-                'phone' => $enquiry->phone,
-            ]
-        );
-
-        if (! $user->student_id) {
-            $user->student_id = 'STU-'.(1000 + $user->id);
-        }
-
-        // Ensure user has student role and active status
-        if (! $user->canAccess('tutor')) {
-            $user->role = 'student';
-            $user->status = 'active';
-        }
-        $user->save();
+        // Find or provision student account via the shared admission service
+        // (single source of truth shared with the CRM conversion flow).
+        $user = $this->enrollments->ensureStudentUser($studentName, $studentEmail, $enquiry->phone, $studentPassword);
 
         // Create or activate enrollment
-        $enrollment = CourseEnrollment::firstOrCreate(
-            [
-                'user_id' => $user->id,
-                'course_id' => $course->id,
-            ],
-            [
-                'enrolled_at' => now(),
-                'status' => 'active',
-            ]
-        );
+        $enrollment = $this->enrollments->ensureActiveEnrollment($user, $course);
 
         // If a cohort batch was selected, keep batch membership consistent with the enrollment.
         // Membership history remains audit-immutable: we never delete a prior membership record.
-        $batchMembership = null;
-        if ($batch) {
-            $existingBatchStudent = BatchStudent::where('batch_id', $batch->id)
-                ->where('user_id', $user->id)
-                ->first();
-
-            if (! $existingBatchStudent) {
-                $batchMembership = BatchStudent::create([
-                    'batch_id' => $batch->id,
-                    'user_id' => $user->id,
-                    'status' => 'active',
-                    'joined_at' => now(),
-                    'notes' => 'Enrolled & granted LMS classroom access from admissions pipeline',
-                ]);
-
-                BatchTransfer::create([
-                    'user_id' => $user->id,
-                    'from_batch_id' => null,
-                    'to_batch_id' => $batch->id,
-                    'action_type' => 'enrolled',
-                    'reason' => 'Enquiry pipeline admission to cohort',
-                    'performed_by' => $request->user()->id,
-                ]);
-            } elseif ($existingBatchStudent->status !== 'active') {
-                $existingBatchStudent->update([
-                    'status' => 'active',
-                    'left_at' => null,
-                    'discontinued_at' => null,
-                ]);
-                $batchMembership = $existingBatchStudent;
-            }
-        }
+        $batchMembership = $batch
+            ? $this->enrollments->assignToBatch(
+                $user,
+                $batch,
+                $request->user()->id,
+                'enrolled',
+                'Enquiry pipeline admission to cohort',
+                'Enrolled & granted LMS classroom access from admissions pipeline'
+            )
+            : null;
 
         // Update Enquiry lead status to ENROLLED
         $enquiry->update([
