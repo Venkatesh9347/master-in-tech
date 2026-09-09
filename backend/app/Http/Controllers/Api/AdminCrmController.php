@@ -5,14 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Batch;
-use App\Models\BatchStudent;
-use App\Models\BatchTransfer;
 use App\Models\Course;
-use App\Models\CourseEnrollment;
 use App\Models\CrmActivity;
 use App\Models\CrmFollowUp;
 use App\Models\Enquiry;
 use App\Models\User;
+use App\Services\EnrollmentAssignmentService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +18,10 @@ use Illuminate\Support\Str;
 
 class AdminCrmController extends Controller
 {
+    public function __construct(private readonly EnrollmentAssignmentService $enrollments)
+    {
+    }
+
     /**
      * Get aggregated CRM Dashboard KPI Metrics.
      */
@@ -625,87 +627,21 @@ class AdminCrmController extends Controller
         DB::beginTransaction();
         try {
             // 1. Find or Provision Student User Account (Prevent duplicate student accounts)
-            $user = User::where('email', $studentEmail)->first();
-
-            if (! $user) {
-                $user = User::create([
-                    'name' => $studentName,
-                    'email' => $studentEmail,
-                    'phone' => $studentPhone,
-                    'password' => User::generateUnusablePassword(),
-                    'status' => 'active',
-                ]);
-
-                // HIGH-7: role is not mass-assignable; set explicitly.
-                $user->forceFill(['role' => 'student'])->save();
-            } else {
-                // Ensure existing account has student role if not admin/tutor
-                if (! $user->canAccess('tutor')) {
-                    $user->role = 'student';
-                    $user->status = 'active';
-                }
-                if (empty($user->phone) && ! empty($studentPhone)) {
-                    $user->phone = $studentPhone;
-                }
-                $user->save();
-            }
-
-            // Ensure unique student ID STU-XXXX
-            if (empty($user->student_id)) {
-                $user->student_id = 'STU-' . (1000 + $user->id);
-                $user->save();
-            }
+            $user = $this->enrollments->ensureStudentUser($studentName, $studentEmail, $studentPhone);
 
             // 2. Ensure Course Enrollment with active LMS access
-            $enrollment = CourseEnrollment::firstOrCreate(
-                [
-                    'user_id' => $user->id,
-                    'course_id' => $course->id,
-                ],
-                [
-                    'enrolled_at' => now(),
-                    'status' => 'active',
-                    'progress_percentage' => 0.00,
-                ]
-            );
-
-            // If enrollment existed but was pending/cancelled, activate it
-            if ($enrollment->status !== 'active') {
-                $enrollment->update(['status' => 'active']);
-            }
+            $enrollment = $this->enrollments->ensureActiveEnrollment($user, $course);
 
             // 3. If Batch is selected, assign student to the cohort batch
             $batchMembership = null;
             if ($batch) {
-                $existingBatchStudent = BatchStudent::where('batch_id', $batch->id)
-                    ->where('user_id', $user->id)
-                    ->first();
-
-                if (! $existingBatchStudent) {
-                    $batchMembership = BatchStudent::create([
-                        'batch_id' => $batch->id,
-                        'user_id' => $user->id,
-                        'status' => 'active',
-                        'joined_at' => now(),
-                        'notes' => 'Admitted & enrolled from CRM conversion',
-                    ]);
-
-                    BatchTransfer::create([
-                        'user_id' => $user->id,
-                        'from_batch_id' => null,
-                        'to_batch_id' => $batch->id,
-                        'action_type' => 'enrolled',
-                        'reason' => 'Direct CRM lead conversion to cohort',
-                        'performed_by' => $request->user()->id,
-                    ]);
-                } elseif ($existingBatchStudent->status !== 'active') {
-                    $existingBatchStudent->update([
-                        'status' => 'active',
-                        'left_at' => null,
-                        'discontinued_at' => null,
-                    ]);
-                    $batchMembership = $existingBatchStudent;
-                }
+                $batchMembership = $this->enrollments->assignToBatch(
+                    $user,
+                    $batch,
+                    performedBy: $request->user()->id,
+                    reason: 'Direct CRM lead conversion to cohort',
+                    notes: 'Admitted & enrolled from CRM conversion',
+                );
             }
 
             // 4. Update Lead to CONVERTED
