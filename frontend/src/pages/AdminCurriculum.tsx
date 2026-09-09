@@ -438,12 +438,8 @@ export default function AdminCurriculum() {
                                 ? '❓'
                                 : les.type === 'assignment'
                                 ? '📝'
-                                : les.type === 'project'
-                                ? '🏆'
                                 : les.type === 'document'
                                 ? '📑'
-                                : les.type === 'article'
-                                ? '📰'
                                 : '📄'}
                             </span>
                             <div className="min-w-0">
@@ -619,11 +615,9 @@ export default function AdminCurriculum() {
                 >
                   <option value="video">📹 Video Lesson</option>
                   <option value="text">📄 Text Lesson</option>
-                  <option value="article">📰 Article Lesson</option>
                   <option value="document">📁 Document / File</option>
                   <option value="quiz">❓ Interactive Quiz</option>
                   <option value="assignment">📝 Practical Assignment</option>
-                  <option value="project">🏆 Capstone Project</option>
                 </select>
               </div>
 

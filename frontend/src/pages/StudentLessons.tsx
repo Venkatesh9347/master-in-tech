@@ -490,7 +490,7 @@ export default function StudentLessons() {
                   onProgress={handlePlaybackProgress}
                 />
               )}
-              {(activeLesson.type === 'text' || activeLesson.type === 'article') && <TextReader lesson={activeLesson} />}
+              {activeLesson.type === 'text' && <TextReader lesson={activeLesson} />}
               {activeLesson.type === 'document' && <TextReader lesson={activeLesson} />}
               {activeLesson.type === 'quiz' && activeLesson.quiz && (
                 <QuizPlayer
@@ -499,13 +499,13 @@ export default function StudentLessons() {
                   onComplete={() => handleLessonComplete()}
                 />
               )}
-              {(activeLesson.type === 'assignment' || activeLesson.type === 'project') && activeLesson.assignment && (
+              {activeLesson.type === 'assignment' && activeLesson.assignment && (
                 <AssignmentViewer
                   assignment={activeLesson.assignment}
                   onComplete={() => handleLessonComplete()}
                 />
               )}
-              {(activeLesson.type === 'assignment' || activeLesson.type === 'project') && !activeLesson.assignment && (
+              {activeLesson.type === 'assignment' && !activeLesson.assignment && (
                 <TextReader lesson={activeLesson} />
               )}
 

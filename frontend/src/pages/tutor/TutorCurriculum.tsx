@@ -793,11 +793,9 @@ export default function TutorCurriculum() {
                   >
                     <option value="video">🎥 Video Lesson</option>
                     <option value="text">📄 Text Lesson</option>
-                    <option value="article">📰 Article Lesson</option>
                     <option value="document">📑 Document / Resource</option>
                     <option value="quiz">📝 Quiz Checkpoint</option>
                     <option value="assignment">🛠️ Practical Assignment</option>
-                    <option value="project">🏆 Capstone Project</option>
                   </select>
                 </div>
 

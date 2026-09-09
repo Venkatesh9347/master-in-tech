@@ -1,6 +1,6 @@
 // LMS Type Definitions for Phase 3
 
-export type LessonType = 'video' | 'text' | 'article' | 'document' | 'quiz' | 'assignment' | 'project';
+export type LessonType = 'video' | 'text' | 'document' | 'quiz' | 'assignment';
 
 export interface LessonMetadata {
   video_url?: string;
