@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
 
 class ProfileController extends Controller
@@ -37,7 +38,21 @@ class ProfileController extends Controller
             'expertise' => 'nullable|string|max:255',
             'current_password' => 'nullable|string|required_with:password',
             'password' => ['nullable', 'string', 'confirmed', Password::min(6)],
+            'avatar' => 'sometimes|nullable',
         ]);
+
+        // Avatar: accept either a plain image URL (Google auth / media asset) or an uploaded image file.
+        if ($request->hasFile('avatar')) {
+            $file = $request->validate([
+                'avatar' => ['required', 'image', 'mimes:jpeg,jpg,png,webp,gif', 'max:2048'],
+            ])['avatar'];
+            $path = $file->store('avatars', 'public');
+            $validated['avatar'] = Storage::disk('public')->url($path);
+        } elseif (array_key_exists('avatar', $validated)) {
+            $validated['avatar'] = $validated['avatar'] === null
+                ? null
+                : $request->validate(['avatar' => ['nullable', 'string', 'max:2048']])['avatar'];
+        }
 
         if (isset($validated['password']) && ! empty($validated['password'])) {
             if (! Hash::check($validated['current_password'] ?? '', $user->password)) {

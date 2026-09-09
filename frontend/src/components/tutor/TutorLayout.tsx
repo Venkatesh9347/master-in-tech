@@ -13,6 +13,7 @@ export default function TutorLayout() {
 
   const navLinks = [
     { label: 'Overview & Metrics', to: '/tutor', icon: '📊' },
+    { label: 'My Courses', to: '/tutor/courses', icon: '📚' },
     { label: 'Learning Materials', to: '/tutor/materials', icon: '📄' },
     { label: 'Quizzes & Tests', to: '/tutor/quizzes', icon: '📝' },
     { label: 'Grading Desk', to: '/tutor/submissions', icon: '✍️' },

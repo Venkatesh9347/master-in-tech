@@ -175,6 +175,12 @@ export default function TutorCourses() {
                       <span>📊</span> Analytics
                     </Link>
                   </div>
+                  <Link
+                    to={`/tutor/courses/${course.id}/live`}
+                    className="py-2 px-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition text-center flex items-center justify-center gap-1 text-[11px]"
+                  >
+                    <span>🔴</span> Live Classes
+                  </Link>
                 </div>
               </div>
             )

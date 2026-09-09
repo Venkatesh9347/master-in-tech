@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -115,5 +117,49 @@ class StudentProfileTest extends TestCase
         $response = $this->putJson('/api/profile', ['name' => 'Anonymous']);
 
         $response->assertStatus(401);
+    }
+
+    public function test_student_can_upload_avatar_image(): void
+    {
+        Storage::fake('public');
+        $student = User::factory()->create(['role' => 'student']);
+        Sanctum::actingAs($student);
+
+        $response = $this->put('/api/profile', [
+            'name' => 'Avatar Student',
+            'avatar' => UploadedFile::fake()->image('photo.jpg', 200, 200),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertOk();
+        $avatarUrl = $response->json('user.avatar');
+        $this->assertNotNull($avatarUrl);
+        $this->assertStringStartsWith('/storage/avatars/', $avatarUrl);
+
+        Storage::disk('public')->assertExists(str_replace('/storage/', '', $avatarUrl));
+    }
+
+    public function test_student_can_set_avatar_url_and_clear_it(): void
+    {
+        $student = User::factory()->create(['role' => 'student', 'avatar' => 'https://example.com/pic.png']);
+        Sanctum::actingAs($student);
+
+        $set = $this->putJson('/api/profile', ['avatar' => 'https://ui-avatars.com/api/?name=Student']);
+        $set->assertOk()->assertJsonPath('user.avatar', 'https://ui-avatars.com/api/?name=Student');
+
+        $clear = $this->putJson('/api/profile', ['avatar' => null]);
+        $clear->assertOk()->assertJsonPath('user.avatar', null);
+    }
+
+    public function test_student_avatar_upload_rejects_non_image_file(): void
+    {
+        Storage::fake('public');
+        $student = User::factory()->create(['role' => 'student']);
+        Sanctum::actingAs($student);
+
+        $response = $this->put('/api/profile', [
+            'avatar' => UploadedFile::fake()->create('notes.txt', 100),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertStatus(422);
     }
 }

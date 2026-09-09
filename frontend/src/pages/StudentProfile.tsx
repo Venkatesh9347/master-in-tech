@@ -28,6 +28,9 @@ export default function StudentProfile() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
+  const [avatar, setAvatar] = useState<string | null>(user?.avatar || null)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
@@ -37,7 +40,15 @@ export default function StudentProfile() {
     if (user?.phone) setPhone(user.phone)
     if (user?.bio) setBio(user.bio)
     if (user?.location) setLocation(user.location)
+    if (user?.avatar) setAvatar(user.avatar)
   }, [user])
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarFile(file)
+    setAvatarPreview(URL.createObjectURL(file))
+  }
 
   useEffect(() => {
     API.get<EnrollmentItem[]>('/my-courses')
@@ -84,8 +95,23 @@ export default function StudentProfile() {
     }
 
     try {
-      const res = await API.put('/profile', payload)
+      let res
+      if (avatarFile) {
+        const formData = new FormData()
+        Object.entries(payload).forEach(([key, value]) => {
+          formData.append(key, String(value))
+        })
+        formData.append('avatar', avatarFile)
+        res = await API.put('/profile', formData)
+      } else {
+        res = await API.put('/profile', payload)
+      }
       setSuccessMsg(res.data?.message || 'Profile and settings updated successfully!')
+      if (avatarFile) {
+        setAvatar(res.data?.user?.avatar || avatarPreview || avatar)
+        setAvatarFile(null)
+        setAvatarPreview(null)
+      }
       setPassword('')
       setConfirmPassword('')
       setCurrentPassword('')
@@ -110,8 +136,18 @@ export default function StudentProfile() {
         {/* Profile Card Header */}
         <section className="bg-white rounded-3xl p-8 sm:p-10 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
           <div className="flex items-center gap-5">
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-3xl flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
-              {user?.name ? user.name.charAt(0).toUpperCase() : 'S'}
+            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-3xl flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0 overflow-hidden">
+              {avatar || avatarPreview ? (
+                <img
+                  src={avatarPreview || avatar || undefined}
+                  alt={name || 'Student'}
+                  className="w-full h-full object-cover"
+                />
+              ) : user?.name ? (
+                user.name.charAt(0).toUpperCase()
+              ) : (
+                'S'
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -176,6 +212,32 @@ export default function StudentProfile() {
             )}
 
             <form onSubmit={handleProfileSave} className="space-y-4 text-xs">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-2xl flex items-center justify-center overflow-hidden shrink-0">
+                  {avatarPreview || avatar ? (
+                    <img
+                      src={avatarPreview || avatar || undefined}
+                      alt={name || 'Student'}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    (name || user?.name || 'S').charAt(0).toUpperCase()
+                  )}
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 uppercase text-[10px] mb-1">
+                    Profile Photo
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                    onChange={handleAvatarChange}
+                    className="text-xs text-slate-500 file:mr-3 file:px-4 file:py-2 file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-700 file:font-bold file:text-xs hover:file:bg-blue-100 cursor-pointer"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">JPG, PNG, WEBP or GIF up to 2 MB.</p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-slate-700 uppercase text-[10px] mb-1">
