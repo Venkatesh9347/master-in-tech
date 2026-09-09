@@ -28,7 +28,9 @@ class ClassSessionLiveKitController extends Controller
 
         $session = ClassSession::with(['course', 'tutor'])->findOrFail($id);
 
-        $this->authorizeSessionAccess($user, $session);
+$this->authorizeSessionAccess($user, $session);
+
+        $isHost = $session->isHost($user);
 
         if ($session->isCancelled()) {
             return response()->json([
@@ -43,7 +45,14 @@ class ClassSessionLiveKitController extends Controller
             ], 400);
         }
 
-        $isHost = $session->isHost($user);
+        // Early-join gate: participants cannot enter before the session starts;
+        // hosts/admins may prepare the room ahead of time.
+        if (! $isHost && $session->isNotYetStarted()) {
+            return response()->json([
+                'message' => 'This class session has not started yet. Please join once the session is live.',
+            ], 403);
+        }
+
         $token = $tokenService->createTokenForClassSession($session, $user);
         $roomName = $session->resolveLivekitRoomName();
 

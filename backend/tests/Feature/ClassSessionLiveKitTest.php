@@ -234,6 +234,64 @@ class ClassSessionLiveKitTest extends TestCase
         $response->assertStatus(401);
     }
 
+    public function test_student_cannot_join_session_before_it_starts(): void
+    {
+        $futureSession = ClassSession::create([
+            'course_id' => $this->course->id,
+            'tutor_id' => $this->assignedTutor->id,
+            'title' => 'Future LiveKit Session',
+            'description' => 'Not yet open',
+            'platform' => 'livekit',
+            'scheduled_date' => Carbon::now('Asia/Kolkata')->addDay()->toDateString(),
+            'start_time' => '10:00',
+            'end_time' => '11:00',
+            'status' => 'scheduled',
+            'created_by' => $this->admin->id,
+        ]);
+
+        $token = $this->enrolledStudent->startNewActiveSession()->plainTextToken;
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/class-sessions/{$futureSession->id}/livekit-token");
+
+        $response->assertStatus(403)
+            ->assertJsonFragment([
+                'message' => 'This class session has not started yet. Please join once the session is live.',
+            ]);
+
+        // No attendance should be recorded for an early-join attempt
+        $this->assertDatabaseMissing('class_session_attendances', [
+            'class_session_id' => $futureSession->id,
+            'user_id' => $this->enrolledStudent->id,
+        ]);
+    }
+
+    public function test_admin_and_tutor_can_join_session_before_it_starts(): void
+    {
+        $futureSession = ClassSession::create([
+            'course_id' => $this->course->id,
+            'tutor_id' => $this->assignedTutor->id,
+            'title' => 'Future Host Prep Session',
+            'description' => 'Hosts may prepare early',
+            'platform' => 'livekit',
+            'scheduled_date' => Carbon::now('Asia/Kolkata')->addDay()->toDateString(),
+            'start_time' => '10:00',
+            'end_time' => '11:00',
+            'status' => 'scheduled',
+            'created_by' => $this->admin->id,
+        ]);
+
+        $tutorToken = $this->assignedTutor->startNewActiveSession()->plainTextToken;
+        $tutorResponse = $this->withHeader('Authorization', 'Bearer ' . $tutorToken)
+            ->postJson("/api/class-sessions/{$futureSession->id}/livekit-token");
+        $tutorResponse->assertStatus(200)->assertJson(['is_host' => true]);
+
+        $adminToken = $this->admin->startNewActiveSession()->plainTextToken;
+        $adminResponse = $this->withHeader('Authorization', 'Bearer ' . $adminToken)
+            ->postJson("/api/class-sessions/{$futureSession->id}/livekit-token");
+        $adminResponse->assertStatus(200)->assertJson(['is_host' => true]);
+    }
+
     public function test_single_active_session_revocation_enforced(): void
     {
         $tokenA = $this->enrolledStudent->startNewActiveSession('Device A')->plainTextToken;

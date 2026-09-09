@@ -217,6 +217,16 @@ class ClassSession extends Model
     }
 
     /**
+     * Determine if the session window has not opened yet (scheduled for a
+     * future date or a later time today). Hosts may prepare the room early;
+     * participants must wait until the session is live.
+     */
+    public function isNotYetStarted(?Carbon $at = null): bool
+    {
+        return $this->calculateStatus($at) === 'scheduled';
+    }
+
+    /**
      * Resolve authoritative batch code for this class session.
      */
     public function resolveBatchCode(?User $forUser = null): string
