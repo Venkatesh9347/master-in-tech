@@ -24,11 +24,20 @@ export default function AdminAuditLogs() {
   const [error, setError] = useState<string | null>(null)
   const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null)
   const [actionFilter, setActionFilter] = useState('')
+  const [entityFilter, setEntityFilter] = useState('')
+  const [userFilter, setUserFilter] = useState('')
+  const [fromFilter, setFromFilter] = useState('')
+  const [toFilter, setToFilter] = useState('')
 
   const loadLogs = useCallback(() => {
     setLoading(true)
     setError(null)
-    const params = actionFilter ? { action: actionFilter } : {}
+    const params: Record<string, string> = {}
+    if (actionFilter) params.action = actionFilter
+    if (entityFilter) params.auditable_type = entityFilter
+    if (userFilter) params.user = userFilter
+    if (fromFilter) params.from = fromFilter
+    if (toFilter) params.to = toFilter
     API.get<AuditLogEntry[] | { data: AuditLogEntry[] | { data: AuditLogEntry[] } }>('/admin/audit-logs', { params })
       .then((res) => {
         let list: AuditLogEntry[] = []
@@ -46,7 +55,7 @@ export default function AdminAuditLogs() {
         setError(response.response?.data?.message || 'Failed to fetch audit logs. Please try again.')
       })
       .finally(() => setLoading(false))
-  }, [actionFilter])
+  }, [actionFilter, entityFilter, userFilter, fromFilter, toFilter])
 
   useEffect(() => {
     loadLogs()
@@ -100,6 +109,61 @@ export default function AdminAuditLogs() {
             🔄 Refresh
           </button>
         </div>
+      </div>
+
+      {/* Advanced Filters */}
+      <div className="bg-slate-950 rounded-3xl border border-slate-800 p-4 sm:p-5 flex flex-col md:flex-row flex-wrap items-end gap-3 text-xs">
+        <div className="flex flex-col gap-1 min-w-[180px] flex-1">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">User (name / email)</label>
+          <input
+            type="text"
+            value={userFilter}
+            onChange={(e) => setUserFilter(e.target.value)}
+            placeholder="e.g. admin@masterintech.com"
+            className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none focus:border-blue-500"
+          />
+        </div>
+        <div className="flex flex-col gap-1 min-w-[180px] flex-1">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Target Model</label>
+          <input
+            type="text"
+            value={entityFilter}
+            onChange={(e) => setEntityFilter(e.target.value)}
+            placeholder="e.g. App\Models\Batch"
+            className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none focus:border-blue-500"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">From Date</label>
+          <input
+            type="date"
+            value={fromFilter}
+            onChange={(e) => setFromFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none focus:border-blue-500"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">To Date</label>
+          <input
+            type="date"
+            value={toFilter}
+            onChange={(e) => setToFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none focus:border-blue-500"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setUserFilter('')
+            setEntityFilter('')
+            setFromFilter('')
+            setToFilter('')
+            setActionFilter('')
+          }}
+          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 font-bold text-slate-300 transition"
+        >
+          ✕ Clear Filters
+        </button>
       </div>
 
       {/* Logs Table */}

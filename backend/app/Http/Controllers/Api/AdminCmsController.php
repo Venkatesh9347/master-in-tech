@@ -762,6 +762,11 @@ class AdminCmsController extends Controller
     */
     public function auditLogs(Request $request)
     {
+        $request->validate([
+            'from' => 'nullable|date',
+            'to' => 'nullable|date|after_or_equal:from',
+        ]);
+
         $query = AuditLog::with('user:id,name,email');
 
         if ($request->filled('action')) {
@@ -770,6 +775,25 @@ class AdminCmsController extends Controller
 
         if ($request->filled('user_id')) {
             $query->where('user_id', $request->user_id);
+        }
+
+        if ($request->filled('user')) {
+            $query->whereHas('user', function ($q) use ($request) {
+                $q->where('name', 'like', '%' . $request->user . '%')
+                    ->orWhere('email', 'like', '%' . $request->user . '%');
+            });
+        }
+
+        if ($request->filled('auditable_type')) {
+            $query->where('auditable_type', $request->auditable_type);
+        }
+
+        if ($request->filled('from')) {
+            $query->where('created_at', '>=', \Carbon\Carbon::parse($request->from)->startOfDay());
+        }
+
+        if ($request->filled('to')) {
+            $query->where('created_at', '<=', \Carbon\Carbon::parse($request->to)->endOfDay());
         }
 
         $logs = $query->orderBy('created_at', 'desc')->paginate(50);
