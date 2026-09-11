@@ -3,9 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Course;
+use App\Models\User;
+use App\Services\EnrollmentAssignmentService;
 use App\Services\Payment\PaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class PaymentWebhookController extends Controller
 {
@@ -55,6 +59,47 @@ class PaymentWebhookController extends Controller
             return response()->json(['status' => 'ignored']);
         }
 
+        // Paid course order -> grant course access. Idempotent: re-deliveries
+        // resolve to the same enrollment and never duplicate it.
+        if ($transaction->status === 'paid' && $transaction->enrollment_id === null) {
+            $this->fulfilCourseOrder($transaction);
+        }
+
         return response()->json(['status' => $transaction->status]);
+    }
+
+    /**
+     * Grant the purchased course enrollment for a paid transaction.
+     * Failures are logged (not retried by the provider): the paid record is
+     * authoritative and staff can reconcile/retry fulfilment from it.
+     */
+    private function fulfilCourseOrder(\App\Models\PaymentTransaction $transaction): void
+    {
+        try {
+            if ($transaction->course_id === null || $transaction->user_id === null) {
+                return;
+            }
+
+            $course = Course::find($transaction->course_id);
+            $user = User::find($transaction->user_id);
+            if ($course === null || $user === null) {
+                Log::warning('Payment fulfilment skipped: course or user missing.', [
+                    'transaction_id' => $transaction->id,
+                ]);
+
+                return;
+            }
+
+            $enrollment = app(EnrollmentAssignmentService::class)
+                ->ensureActiveEnrollment($user, $course);
+
+            $transaction->enrollment_id = $enrollment->id;
+            $transaction->save();
+        } catch (\Throwable $e) {
+            Log::error('Payment fulfilment failed.', [
+                'transaction_id' => $transaction->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

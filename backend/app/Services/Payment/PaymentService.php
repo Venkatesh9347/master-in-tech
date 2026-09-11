@@ -2,7 +2,9 @@
 
 namespace App\Services\Payment;
 
+use App\Models\Course;
 use App\Models\PaymentTransaction;
+use App\Models\User;
 use App\Services\Payment\Data\PaymentOrder;
 use App\Services\Payment\Providers\RazorpayProvider;
 use App\Services\Payment\Providers\StubPaymentProvider;
@@ -41,7 +43,7 @@ class PaymentService
      * gateway is NOT called again — preventing duplicate charges.
      *
      * @param  int  $amountPaise  Amount in minor units (paise/cents).
-     * @param  array{idempotency_key?: string, description?: string, customer?: array, notes?: array}  $options
+     * @param  array{idempotency_key?: string, description?: string, customer?: array, notes?: array, user_id?: int, course_id?: int}  $options
      */
     public function createOrder(int $amountPaise, array $options = []): PaymentOrder
     {
@@ -63,6 +65,7 @@ class PaymentService
             'payment_id' => $order->paymentId,
             'idempotency_key' => $order->idempotencyKey !== '' ? $order->idempotencyKey : $key,
             'user_id' => $options['user_id'] ?? null,
+            'course_id' => $options['course_id'] ?? null,
             'amount_paise' => $order->amountPaise,
             'currency' => $order->currency,
             'status' => $order->status,
@@ -71,6 +74,39 @@ class PaymentService
         ]), $providerName, $key);
 
         return $order;
+    }
+
+    /**
+     * Create a payment order for purchasing a course. The amount is ALWAYS
+     * derived server-side from the course price — the client can neither set
+     * nor influence it.
+     *
+     * An existing non-final order for the same (user, course) is reused so
+     * retries never mint duplicate gateway orders.
+     *
+     * @throws \InvalidArgumentException when the course has no payable price.
+     */
+    public function createCourseOrder(User $user, Course $course, array $options = []): PaymentOrder
+    {
+        $price = (float) ($course->price ?? 0);
+        if ($price <= 0) {
+            throw new \InvalidArgumentException('This course does not require payment.');
+        }
+        $amountPaise = (int) round($price * 100);
+
+        $existing = PaymentTransaction::where('user_id', $user->id)
+            ->where('course_id', $course->id)
+            ->whereNotIn('status', ['paid', 'failed'])
+            ->latest('id')
+            ->first();
+        if ($existing !== null) {
+            return $this->orderFromTransaction($existing, reused: true);
+        }
+
+        return $this->createOrder($amountPaise, array_merge($options, [
+            'user_id' => $user->id,
+            'course_id' => $course->id,
+        ]));
     }
 
     /**

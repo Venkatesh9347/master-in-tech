@@ -184,7 +184,7 @@ export default function SecureVideoPlayer({
     );
   }
 
-  const watermarkMobile = sessionData?.watermark?.mobile_number || '+91 9876543210';
+  const watermarkMobile = sessionData?.watermark?.mobile_number ?? '';
 
   return (
     <div className="flex flex-col space-y-4">

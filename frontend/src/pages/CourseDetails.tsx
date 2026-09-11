@@ -17,6 +17,7 @@ export default function CourseDetails() {
   const [enquiryOpen, setEnquiryOpen] = useState(false)
   const [error, setError] = useState('')
   const [expandedModules, setExpandedModules] = useState<Record<number, boolean>>({})
+  const [actionError, setActionError] = useState('')
 
   const handleStartLearning = () => {
     if (course?.is_enrolled) {
@@ -24,12 +25,23 @@ export default function CourseDetails() {
       return
     }
     if (user) {
+      setActionError('')
       API.post(`/courses/${course?.id}/enroll`)
         .then(() => {
           navigate(`/student/courses/${course?.id}/lessons`)
         })
-        .catch(() => {
-          setEnquiryOpen(true)
+        .catch((err: unknown) => {
+          // Self-enrollment is admin-managed (server responds 403): route to
+          // counselling enquiry. Any other failure is a real error and must
+          // be shown as such — never disguised as an enquiry flow.
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 403) {
+            setEnquiryOpen(true)
+          } else if (status === undefined) {
+            setActionError('Network error. Please check your connection and try again.')
+          } else {
+            setActionError(`Something went wrong (${status}). Please try again later.`)
+          }
         })
       return
     }
@@ -254,6 +266,11 @@ export default function CourseDetails() {
                       >
                         <span>🚀</span> Start Learning / Enroll
                       </button>
+                      {actionError && (
+                        <p className="text-[11px] text-center text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+                          {actionError}
+                        </p>
+                      )}
                       <p className="text-[11px] text-center text-slate-400">
                         Zero commitment. Speak with faculty to review syllabus & prerequisites.
                       </p>

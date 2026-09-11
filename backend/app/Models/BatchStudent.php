@@ -15,7 +15,7 @@ class BatchStudent extends Model
     protected $fillable = [
         'batch_id',
         'user_id',
-        'status', // active, transferred, discontinued, completed
+        'status', // active, transferred, discontinued, completed, removed
         'joined_at',
         'left_at',
         'discontinued_at',

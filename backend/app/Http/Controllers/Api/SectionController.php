@@ -60,6 +60,8 @@ class SectionController extends Controller
 
         $section = $course->sections()->create($validated);
 
+        \App\Models\AuditLog::log('created_section', $section, null, $section->toArray());
+
         return response()->json($section->load('lessons'), 201);
     }
 
@@ -79,7 +81,10 @@ class SectionController extends Controller
             'is_published' => 'boolean',
         ]);
 
+        $old = $section->toArray();
         $section->update($validated);
+
+        \App\Models\AuditLog::log('updated_section', $section, $old, $section->fresh()->toArray());
 
         return response()->json($section->fresh()->load('lessons'));
     }
@@ -92,9 +97,12 @@ class SectionController extends Controller
         $this->authorizeCourseAccess($request, $course);
         $this->authorizeSection($course, $section);
 
+        $wasPublished = (bool) $section->is_published;
         $section->update([
             'is_published' => ! $section->is_published,
         ]);
+
+        \App\Models\AuditLog::log('toggled_section_publish', $section, ['is_published' => $wasPublished], ['is_published' => $section->is_published]);
 
         return response()->json([
             'message' => $section->is_published ? 'Module published successfully.' : 'Module unpublished (draft).',
@@ -130,7 +138,10 @@ class SectionController extends Controller
             }
         }
 
+        $old = $section->toArray();
         $section->delete();
+
+        \App\Models\AuditLog::log('deleted_section', null, $old, null);
 
         return response()->json(['message' => 'Module deleted successfully.']);
     }
@@ -162,9 +173,15 @@ class SectionController extends Controller
             }
 
             if (! empty($validated['lessons'])) {
+                // Collect the course's own section ids once: a reorder must never
+                // move a lesson into a section belonging to another course.
+                $ownSectionIds = $course->sections()->pluck('id')->all();
                 foreach ($validated['lessons'] as $lData) {
                     $update = ['sort_order' => $lData['sort_order']];
                     if (! empty($lData['section_id'])) {
+                        if (! in_array($lData['section_id'], $ownSectionIds, true)) {
+                            abort(404, 'Section not found for this course.');
+                        }
                         $update['section_id'] = $lData['section_id'];
                     }
                     $course->lessons()->where('id', $lData['id'])->update($update);
@@ -176,6 +193,11 @@ class SectionController extends Controller
             ->with(['lessons' => fn ($q) => $q->orderBy('sort_order')])
             ->orderBy('sort_order')
             ->get();
+
+        \App\Models\AuditLog::log('reordered_curriculum', $course, null, [
+            'sections' => collect($validated['sections'] ?? [])->pluck('sort_order', 'id')->all(),
+            'lessons' => collect($validated['lessons'] ?? [])->pluck('sort_order', 'id')->all(),
+        ]);
 
         return response()->json([
             'message' => 'Curriculum reordered successfully.',

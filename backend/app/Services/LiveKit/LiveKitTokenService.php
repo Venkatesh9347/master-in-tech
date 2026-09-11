@@ -22,6 +22,15 @@ class LiveKitTokenService
     }
 
     /**
+     * Whether LiveKit credentials are configured. Tokens must never be minted
+     * with an empty secret (fail-open forgery); callers return 503 instead.
+     */
+    public function isConfigured(): bool
+    {
+        return $this->apiKey !== '' && $this->apiSecret !== '' && $this->wsUrl !== '';
+    }
+
+    /**
      * Get configured LiveKit WebSocket URL.
      */
     public function getWsUrl(): string

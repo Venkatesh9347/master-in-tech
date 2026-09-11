@@ -201,6 +201,17 @@ class AdminBatchController extends Controller
     {
         $code = $batch->code;
         $old = $batch->toArray();
+
+        // A batch with enrolled members must never be hard-deleted: the delete
+        // cascades batch_students and nulls transfer audit links. Discontinue
+        // or transfer members first.
+        $memberCount = $batch->batchStudents()->count();
+        if ($memberCount > 0) {
+            return response()->json([
+                'message' => "Batch {$code} has {$memberCount} member record(s) and cannot be deleted. Discontinue or transfer members first.",
+            ], 422);
+        }
+
         $batch->delete();
 
         AuditLog::log('deleted_batch', null, $old, null);
@@ -587,6 +598,17 @@ class AdminBatchController extends Controller
                     'status' => 'removed',
                     'left_at' => now(),
                     'notes' => ($active->notes ? trim($active->notes) . ' ' : '') . 'Removed from batch on ' . now()->toDateTimeString(),
+                ]);
+
+                // Removal ends the seat: record it in the immutable transfer
+                // history (previously only an AuditLog entry existed).
+                BatchTransfer::create([
+                    'user_id' => $user->id,
+                    'from_batch_id' => $batch->id,
+                    'to_batch_id' => null,
+                    'action_type' => 'removed',
+                    'reason' => 'Removed from batch by admin',
+                    'performed_by' => auth()->id(),
                 ]);
             }
         });

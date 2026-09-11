@@ -53,6 +53,12 @@ $this->authorizeSessionAccess($user, $session);
             ], 403);
         }
 
+        if (! $tokenService->isConfigured()) {
+            return response()->json([
+                'message' => 'Live classroom is not configured. Please contact support.',
+            ], 503);
+        }
+
         $token = $tokenService->createTokenForClassSession($session, $user);
         $roomName = $session->resolveLivekitRoomName();
 

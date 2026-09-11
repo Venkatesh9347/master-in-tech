@@ -64,7 +64,10 @@ class PruneStalePlaybackSessions extends Command
     {
         $count = 0;
         do {
-            $ids = StudentLoginOtp::where('expires_at', '<', now()->subDay())
+            // OTPs are single-use with a 30-second TTL: anything expired over
+            // an hour ago is long dead. (Previously subDay retained expired
+            // OTP hashes a full day after expiry.)
+            $ids = StudentLoginOtp::where('expires_at', '<', now()->subHour())
                 ->limit($chunk)
                 ->pluck('id');
 

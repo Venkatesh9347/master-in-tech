@@ -16,7 +16,7 @@ class BatchTransfer extends Model
         'user_id',
         'from_batch_id',
         'to_batch_id',
-        'action_type', // enrolled, transferred, discontinued, rejoined, completed
+        'action_type', // enrolled, transferred, discontinued, rejoined, completed, removed
         'reason',
         'performed_by',
     ];

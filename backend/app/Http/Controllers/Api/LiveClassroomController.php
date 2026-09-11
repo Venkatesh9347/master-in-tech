@@ -96,6 +96,21 @@ class LiveClassroomController extends Controller
         $this->authorizeSessionAccess($user, $session);
 
         $isHost = $session->isHost($user);
+
+        // Early-join gate (mirrors ClassSession flow): participants may only mint
+        // tokens once the session is live; hosts may enter early to prepare.
+        if (! $isHost && ! $session->isLive()) {
+            return response()->json([
+                'message' => 'This live classroom session has not started yet. Please join once the session is live.',
+            ], 403);
+        }
+
+        if (! $tokenService->isConfigured()) {
+            return response()->json([
+                'message' => 'Live classroom is not configured. Please contact support.',
+            ], 503);
+        }
+
         $token = $tokenService->createTokenForSession($session, $user);
 
         // Record or refresh participant entry

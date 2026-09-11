@@ -183,6 +183,9 @@ class EnrollmentAssignmentServiceTest extends TestCase
         $this->assertSame('active', $membership->fresh()->status);
         $this->assertNull($membership->fresh()->discontinued_at);
         $this->assertEquals(1, BatchStudent::where('batch_id', $batch->id)->where('user_id', $user->id)->count());
-        $this->assertEquals(1, BatchTransfer::where('to_batch_id', $batch->id)->where('user_id', $user->id)->count());
+        // Reactivation reuses the membership row but appends a rejoined
+        // transfer so the seat re-take is visible in batch history.
+        $this->assertEquals(2, BatchTransfer::where('to_batch_id', $batch->id)->where('user_id', $user->id)->count());
+        $this->assertSame('rejoined', BatchTransfer::where('to_batch_id', $batch->id)->where('user_id', $user->id)->latest('id')->value('action_type'));
     }
 }

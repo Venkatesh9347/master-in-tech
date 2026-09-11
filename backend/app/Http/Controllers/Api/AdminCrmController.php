@@ -11,6 +11,7 @@ use App\Models\CrmFollowUp;
 use App\Models\Enquiry;
 use App\Models\User;
 use App\Services\EnrollmentAssignmentService;
+use App\Services\BatchAssignmentException;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,25 +25,29 @@ class AdminCrmController extends Controller
 
     /**
      * Get aggregated CRM Dashboard KPI Metrics.
+     * Counsellors receive scoped metrics (own + unassigned leads only).
      */
     public function stats(Request $request)
     {
         $today = Carbon::today();
+        $user = $request->user();
+        $leads = fn () => Enquiry::visibleTo($user);
+        $followUps = fn () => CrmFollowUp::whereHas('enquiry', fn ($q) => $q->visibleTo($user));
 
-        $totalLeads = Enquiry::count();
-        $newLeads = Enquiry::where('status', Enquiry::STATUS_NEW)->count();
-        $contacted = Enquiry::where('status', Enquiry::STATUS_CONTACTED)->count();
-        $interested = Enquiry::where('status', Enquiry::STATUS_INTERESTED)->count();
-        $demos = Enquiry::whereIn('status', [Enquiry::STATUS_DEMO_SCHEDULED, Enquiry::STATUS_DEMO_COMPLETED])->count();
-        $paymentPending = Enquiry::where('status', Enquiry::STATUS_PAYMENT_PENDING)->count();
-        $converted = Enquiry::whereIn('status', [Enquiry::STATUS_CONVERTED, Enquiry::STATUS_ENROLLED, Enquiry::STATUS_ADMISSION_CONFIRMED])->count();
-        $lost = Enquiry::whereIn('status', [Enquiry::STATUS_LOST, Enquiry::STATUS_NOT_INTERESTED, Enquiry::STATUS_CLOSED])->count();
+        $totalLeads = $leads()->count();
+        $newLeads = $leads()->where('status', Enquiry::STATUS_NEW)->count();
+        $contacted = $leads()->where('status', Enquiry::STATUS_CONTACTED)->count();
+        $interested = $leads()->where('status', Enquiry::STATUS_INTERESTED)->count();
+        $demos = $leads()->whereIn('status', [Enquiry::STATUS_DEMO_SCHEDULED, Enquiry::STATUS_DEMO_COMPLETED])->count();
+        $paymentPending = $leads()->where('status', Enquiry::STATUS_PAYMENT_PENDING)->count();
+        $converted = $leads()->whereIn('status', [Enquiry::STATUS_CONVERTED, Enquiry::STATUS_ENROLLED, Enquiry::STATUS_ADMISSION_CONFIRMED])->count();
+        $lost = $leads()->whereIn('status', [Enquiry::STATUS_LOST, Enquiry::STATUS_NOT_INTERESTED, Enquiry::STATUS_CLOSED])->count();
 
         // Follow-up KPI breakdown
-        $overdueFollowUps = CrmFollowUp::pending()->where('scheduled_at', '<', $today)->count();
-        $todaysFollowUps = CrmFollowUp::pending()->whereDate('scheduled_at', $today)->count();
-        $upcomingFollowUps = CrmFollowUp::pending()->where('scheduled_at', '>', Carbon::tomorrow()->startOfDay())->count();
-        $completedFollowUps = CrmFollowUp::where('status', CrmFollowUp::STATUS_COMPLETED)->count();
+        $overdueFollowUps = $followUps()->pending()->where('scheduled_at', '<', $today)->count();
+        $todaysFollowUps = $followUps()->pending()->whereDate('scheduled_at', $today)->count();
+        $upcomingFollowUps = $followUps()->pending()->where('scheduled_at', '>', Carbon::tomorrow()->startOfDay())->count();
+        $completedFollowUps = $followUps()->where('status', CrmFollowUp::STATUS_COMPLETED)->count();
 
         // Follow-ups due total (overdue + today)
         $followUpsDue = $overdueFollowUps + $todaysFollowUps;
@@ -51,12 +56,12 @@ class AdminCrmController extends Controller
         $conversionRate = $totalLeads > 0 ? round(($converted / $totalLeads) * 100, 1) : 0.0;
 
         // Source breakdown
-        $sourceBreakdown = Enquiry::select('source', DB::raw('count(*) as total'))
+        $sourceBreakdown = $leads()->select('source', DB::raw('count(*) as total'))
             ->groupBy('source')
             ->pluck('total', 'source');
 
         // Priority breakdown
-        $priorityBreakdown = Enquiry::select('priority', DB::raw('count(*) as total'))
+        $priorityBreakdown = $leads()->select('priority', DB::raw('count(*) as total'))
             ->groupBy('priority')
             ->pluck('total', 'priority');
 
@@ -92,6 +97,11 @@ class AdminCrmController extends Controller
             'enrolledUser:id,name,email,student_id',
             'latestFollowUp',
         ])->withCount(['activities', 'followUps']);
+
+        // Record-level scoping: counsellors only ever list own + unassigned.
+        // An explicit assigned_counsellor_id filter for another counsellor
+        // simply yields an empty page — never a leak.
+        $query->visibleTo($request->user());
 
         if ($request->filled('search')) {
             $query->search($request->search);
@@ -183,11 +193,15 @@ class AdminCrmController extends Controller
             ->first();
 
         if ($existing) {
-            return response()->json([
+            $response = [
                 'message' => 'An active lead already exists for this candidate.',
-                'lead' => $existing->load(['course', 'assignedCounsellor', 'latestFollowUp']),
                 'already_exists' => true,
-            ], 422);
+            ];
+            // Never leak another counsellor's lead through duplicate probing.
+            if ($existing->isVisibleTo($request->user())) {
+                $response['lead'] = $existing->load(['course', 'assignedCounsellor', 'latestFollowUp']);
+            }
+            return response()->json($response, 422);
         }
 
         $courseTitle = $validated['course_title'] ?? null;
@@ -196,6 +210,7 @@ class AdminCrmController extends Controller
         }
 
         $counsellorId = $validated['assigned_counsellor_id'] ?? null;
+        $this->denyUnlessReassignAllowed($request, null, $counsellorId);
         $counsellorName = $counsellorId ? User::find($counsellorId)?->name : ($request->user()->name ?? 'Administrator');
 
         $lead = Enquiry::create([
@@ -275,8 +290,9 @@ class AdminCrmController extends Controller
     /**
      * Show single lead details with full timeline and follow-ups.
      */
-    public function show(Enquiry $lead)
+    public function show(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $lead->load([
             'course:id,title,code,category,price,slug,thumbnail,instructor',
             'assignedCounsellor:id,name,email,avatar,role,phone',
@@ -296,6 +312,7 @@ class AdminCrmController extends Controller
      */
     public function update(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $old = $lead->toArray();
 
         $validated = $request->validate([
@@ -327,6 +344,10 @@ class AdminCrmController extends Controller
         $oldStatus = $lead->status;
         $oldPriority = $lead->priority;
         $oldCounsellorId = $lead->assigned_counsellor_id;
+
+        if (array_key_exists('assigned_counsellor_id', $validated)) {
+            $this->denyUnlessReassignAllowed($request, $lead, $validated['assigned_counsellor_id']);
+        }
 
         // If course changed, update title
         if (! empty($validated['course_id']) && $validated['course_id'] != $lead->course_id) {
@@ -395,6 +416,7 @@ class AdminCrmController extends Controller
      */
     public function destroy(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $old = $lead->toArray();
         $name = $lead->name;
         $lead->delete();
@@ -411,6 +433,7 @@ class AdminCrmController extends Controller
      */
     public function activities(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $validated = $request->validate([
             'activity_type' => 'required|string|in:note,call,follow_up,demo_scheduled,demo_completed,payment_event,status_change',
             'title' => 'required|string|max:255',
@@ -458,7 +481,7 @@ class AdminCrmController extends Controller
             'enquiry:id,name,email,phone,course_id,course_title,status,priority,city',
             'assignedTo:id,name,email,avatar',
             'createdBy:id,name,email',
-        ]);
+        ])->whereHas('enquiry', fn ($q) => $q->visibleTo($request->user()));
 
         $today = Carbon::today();
         $filter = $request->input('filter', 'pending');
@@ -489,6 +512,7 @@ class AdminCrmController extends Controller
      */
     public function storeFollowUp(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $validated = $request->validate([
             'scheduled_at' => 'required|date',
             'title' => 'required|string|max:255',
@@ -542,6 +566,9 @@ class AdminCrmController extends Controller
      */
     public function updateFollowUp(Request $request, CrmFollowUp $followUp)
     {
+        if ($followUp->enquiry && ! $followUp->enquiry->isVisibleTo($request->user())) {
+            abort(403, 'You do not have access to this lead.');
+        }
         $validated = $request->validate([
             'status' => 'required|string|in:completed,cancelled,pending',
             'outcome' => 'nullable|string|max:2000',
@@ -587,6 +614,7 @@ class AdminCrmController extends Controller
      */
     public function convert(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $validated = $request->validate([
             'course_id' => 'required|exists:courses,id',
             'batch_id' => 'nullable|exists:batches,id',
@@ -708,6 +736,11 @@ class AdminCrmController extends Controller
                 'batch' => $batch,
                 'lead' => $lead->fresh(['course', 'assignedCounsellor', 'user', 'enrolledUser', 'activities.user']),
             ], 200);
+        } catch (BatchAssignmentException $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -727,5 +760,37 @@ class AdminCrmController extends Controller
             ->get();
 
         return response()->json($counsellors);
+    }
+
+    /**
+     * Record-level gate: counsellors may only touch own + unassigned leads.
+     */
+    private function denyUnlessLeadVisible(Request $request, Enquiry $lead): void
+    {
+        if (! $lead->isVisibleTo($request->user())) {
+            abort(403, 'You do not have access to this lead.');
+        }
+    }
+
+    /**
+     * Ownership guard for (re)assignment: counsellors may claim unassigned
+     * leads for themselves (or release their own back to the pool) but may
+     * never assign leads to other counsellors. Admins are unrestricted.
+     */
+    private function denyUnlessReassignAllowed(Request $request, ?Enquiry $lead, mixed $targetId): void
+    {
+        $user = $request->user();
+        if (! $user || $user->role !== 'counsellor') {
+            return;
+        }
+
+        $targetOk = $targetId === null || (int) $targetId === (int) $user->id;
+        $sourceOk = $lead === null
+            || $lead->assigned_counsellor_id === null
+            || (int) $lead->assigned_counsellor_id === (int) $user->id;
+
+        if (! ($targetOk && $sourceOk)) {
+            abort(403, 'Counsellors can only claim unassigned leads for themselves.');
+        }
     }
 }

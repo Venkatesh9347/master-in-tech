@@ -11,6 +11,7 @@ use App\Models\Lesson;
 use App\Models\LessonProgress;
 use App\Models\User;
 use App\Services\EnrollmentAssignmentService;
+use App\Services\BatchAssignmentException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -211,14 +212,24 @@ class AdminEnrollmentController extends Controller
                 ], 422);
             }
             if ($batch) {
-                $batchMembership = $this->enrollments->assignToBatch(
-                    User::findOrFail($userId),
-                    $batch,
-                    $request->user()->id,
-                    'enrolled',
-                    'Admin created enrollment with cohort assignment',
-                    'Assigned during admin enrollment creation'
-                );
+                try {
+                    $batchMembership = $this->enrollments->assignToBatch(
+                        User::findOrFail($userId),
+                        $batch,
+                        $request->user()->id,
+                        'enrolled',
+                        'Admin created enrollment with cohort assignment',
+                        'Assigned during admin enrollment creation'
+                    );
+                } catch (BatchAssignmentException $e) {
+                    return response()->json([
+                        'message' => $e->getMessage(),
+                        'errors' => [
+                            'batch_id' => [$e->getMessage()],
+                        ],
+                        'enrollment' => $enrollment,
+                    ], 422);
+                }
             }
         }
 

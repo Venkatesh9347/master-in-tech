@@ -163,6 +163,15 @@ class AuthController extends Controller
         ]);
 
         $user = $otpService->verifyOtp($request->temp_token, $request->otp);
+
+        // The account may have been disabled after the OTP was dispatched:
+        // re-check status here so a stale OTP can never mint a session.
+        if (in_array($user->status, ['disabled', 'inactive', 'suspended'], true)) {
+            throw ValidationException::withMessages([
+                'otp' => ['Your account has been deactivated or suspended. Please contact MasterInTech.'],
+            ]);
+        }
+
         $token = $user->startNewActiveSession('auth_token')->plainTextToken;
 
         return response()->json([

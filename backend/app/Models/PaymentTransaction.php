@@ -8,7 +8,21 @@ use Illuminate\Support\Str;
 
 class PaymentTransaction extends Model
 {
-    protected $guarded = [];
+    protected $fillable = [
+        'provider',
+        'order_id',
+        'payment_id',
+        'idempotency_key',
+        'user_id',
+        'course_id',
+        'enrollment_id',
+        'amount_paise',
+        'currency',
+        'status',
+        'description',
+        'metadata',
+        'paid_at',
+    ];
 
     protected $casts = [
         'amount_paise' => 'integer',
@@ -19,6 +33,16 @@ class PaymentTransaction extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function course(): BelongsTo
+    {
+        return $this->belongsTo(Course::class);
+    }
+
+    public function enrollment(): BelongsTo
+    {
+        return $this->belongsTo(CourseEnrollment::class, 'enrollment_id');
     }
 
     public static function newIdempotencyKey(): string

@@ -16,6 +16,36 @@ interface CourseDetailData extends Omit<Course, 'sections'> {
   is_enrolled?: boolean
 }
 
+interface PaymentOrderPayload {
+  provider: string
+  order_id: string
+  payment_id: string
+  amount: number
+  currency: string
+  status: string
+  reused: boolean
+}
+
+interface CreateOrderResponse {
+  message: string
+  order: PaymentOrderPayload
+  key_id: string | null
+}
+
+type PayPhase = 'idle' | 'ordering' | 'ready' | 'verifying'
+
+function loadRazorpayCheckout(): Promise<void> {
+  if (typeof (window as unknown as { Razorpay?: unknown }).Razorpay !== 'undefined') return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+    script.async = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load Razorpay checkout.'))
+    document.body.appendChild(script)
+  })
+}
+
 export default function CourseCatalogDetails() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
@@ -26,6 +56,10 @@ export default function CourseCatalogDetails() {
   const [enquiryOpen, setEnquiryOpen] = useState(false)
   const [error, setError] = useState('')
   const [openSections, setOpenSections] = useState<Record<number, boolean>>({})
+  const [actionError, setActionError] = useState('')
+  const [payPhase, setPayPhase] = useState<PayPhase>('idle')
+  const [payError, setPayError] = useState('')
+  const [payOrder, setPayOrder] = useState<PaymentOrderPayload | null>(null)
 
   const handleStartLearning = () => {
     if (!course) return
@@ -34,16 +68,146 @@ export default function CourseCatalogDetails() {
       return
     }
     if (user) {
+      setActionError('')
       API.post(`/courses/${course.id}/enroll`)
         .then(() => {
           navigate(`/student/courses/${course.id}/lessons`)
         })
-        .catch(() => {
-          setEnquiryOpen(true)
+        .catch((err: unknown) => {
+          // Self-enrollment is admin-managed (server responds 403): route to
+          // counselling enquiry. Any other failure is a real error and must
+          // be shown as such — never disguised as an enquiry flow.
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 403) {
+            setEnquiryOpen(true)
+          } else if (status === undefined) {
+            setActionError('Network error. Please check your connection and try again.')
+          } else {
+            setActionError(`Something went wrong (${status}). Please try again later.`)
+          }
         })
       return
     }
     setEnquiryOpen(true)
+  }
+
+  const pollEnrollmentThenEnter = async (courseId: number) => {
+    setPayPhase('verifying')
+    // Webhook fulfilment is server-side and near-instant; poll briefly.
+    for (let attempt = 0; attempt < 15; attempt++) {
+      await new Promise((r) => setTimeout(r, 2000))
+      try {
+        const res = await API.get<{ enrolled: boolean; enrollment?: { status: string } }>(
+          `/courses/${courseId}/enrollment`
+        )
+        if (res.data?.enrolled && res.data.enrollment?.status === 'active') {
+          navigate(`/student/courses/${courseId}/lessons`)
+          return
+        }
+      } catch {
+        // Keep polling until the attempts run out.
+      }
+    }
+    setPayPhase('ready')
+    setPayError('Payment received but enrollment is taking longer than expected. It will appear under My Courses shortly — or contact support.')
+  }
+
+  const openRazorpayCheckout = async (order: PaymentOrderPayload, keyId: string, courseId: number, courseTitle: string) => {
+    try {
+      await loadRazorpayCheckout()
+    } catch {
+      setPayPhase('ready')
+      setPayError('Could not load the payment gateway. Please check your connection and try again.')
+      return
+    }
+    const RazorpayCtor = (window as unknown as {
+      Razorpay?: new (opts: Record<string, unknown>) => { open(): void }
+    }).Razorpay
+    if (!RazorpayCtor) {
+      setPayPhase('ready')
+      setPayError('Payment gateway failed to initialise. Please try again.')
+      return
+    }
+    const rzp = new RazorpayCtor({
+      key: keyId,
+      order_id: order.order_id,
+      amount: order.amount,
+      currency: order.currency,
+      name: 'MasterInTech',
+      description: `Enrollment: ${courseTitle}`,
+      theme: { color: '#2563eb' },
+      // Gateway verification + enrollment happen server-side via webhook;
+      // the handler only waits for that fulfilment to land.
+      handler: () => {
+        void pollEnrollmentThenEnter(courseId)
+      },
+      modal: {
+        ondismiss: () => {
+          setPayPhase('ready')
+          setPayError('Payment was not completed. No amount was charged.')
+        },
+      },
+    })
+    rzp.open()
+  }
+
+  const handlePayOnline = async () => {
+    if (!course || payPhase === 'ordering' || payPhase === 'verifying') return
+    if (!user) {
+      setEnquiryOpen(true)
+      return
+    }
+    setPayError('')
+    setPayPhase('ordering')
+    try {
+      const res = await API.post<CreateOrderResponse>('/payments/order', {
+        course_id: course.id,
+      })
+      const order = res.data.order
+      setPayOrder(order)
+      if (order.provider === 'razorpay' && res.data.key_id) {
+        await openRazorpayCheckout(order, res.data.key_id, course.id, course.title)
+      } else {
+        // No live gateway in this environment: stay on an explicit
+        // ready state. Dev builds offer a stub-callback simulator below;
+        // production builds direct the learner to counselling instead.
+        setPayPhase('ready')
+      }
+    } catch (err: unknown) {
+      const response = (err as { response?: { status?: number; data?: { message?: string } } })?.response
+      const status = response?.status
+      setPayPhase('idle')
+      if (status === 409) {
+        navigate(`/student/courses/${course.id}/lessons`)
+      } else if (status === 503) {
+        setPayError('Online payments are not enabled yet. Please use Enquire Now and our team will help you enroll.')
+      } else if (status === undefined) {
+        setPayError('Network error. Please check your connection and try again.')
+      } else {
+        setPayError(response?.data?.message || `Something went wrong (${status}). Please try again later.`)
+      }
+    }
+  }
+
+  // DEV-ONLY test affordance (stripped from production builds): drive the
+  // real stub-gateway webhook path so the full order -> webhook ->
+  // enrollment chain is exercisable locally without Razorpay credentials.
+  // It never fabricates enrollment — fulfilment runs server-side.
+  const handleSimulateGatewayCallback = async () => {
+    if (!course || !payOrder) return
+    setPayError('')
+    try {
+      await API.post('/payments/razorpay/webhook', {
+        event: 'payment.captured',
+        payload: { payment: { entity: { id: payOrder.payment_id } } },
+      }, {
+        headers: { 'X-Razorpay-Signature': 'dev-stub-callback' },
+      })
+      await pollEnrollmentThenEnter(course.id)
+    } catch {
+      setPayPhase('ready')
+      setPayError('Test callback failed. Is the stub payment provider active?')
+    }
   }
 
   useEffect(() => {
@@ -143,7 +307,7 @@ export default function CourseCatalogDetails() {
     )
   }
 
-  const totalLessons = sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || (course.lessons_count || 12)
+  const totalLessons = sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || course.lessons_count || 0
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-blue-500 selection:text-white">
@@ -285,6 +449,44 @@ export default function CourseCatalogDetails() {
                     >
                       <span>🚀</span> Start Learning / Enroll
                     </button>
+                    {actionError && (
+                      <p className="text-[11px] text-center text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                        {actionError}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handlePayOnline}
+                      disabled={payPhase === 'ordering' || payPhase === 'verifying'}
+                      className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-800 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      <span>💳</span>
+                      {payPhase === 'ordering'
+                        ? 'Creating secure order…'
+                        : payPhase === 'verifying'
+                          ? 'Verifying payment…'
+                          : 'Pay & Enroll Online'}
+                    </button>
+                    {payError && (
+                      <p className="text-[11px] text-center text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                        {payError}
+                      </p>
+                    )}
+                    {import.meta.env.DEV && payPhase === 'ready' && payOrder && payOrder.provider !== 'razorpay' && (
+                      <div className="rounded-lg border border-dashed border-slate-600 px-3 py-2.5 text-[11px] text-slate-300 space-y-2">
+                        <p className="font-bold text-slate-200">
+                          Test mode — order {payOrder.order_id} ({(payOrder.amount / 100).toLocaleString()} {payOrder.currency})
+                        </p>
+                        <p>No live gateway here. Simulate the gateway callback to run the real webhook → enrollment path:</p>
+                        <button
+                          type="button"
+                          onClick={handleSimulateGatewayCallback}
+                          className="w-full py-1.5 px-3 rounded-lg text-[11px] font-bold bg-slate-700 hover:bg-slate-600 text-white transition"
+                        >
+                          Simulate gateway callback (dev only)
+                        </button>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => setEnquiryOpen(true)}

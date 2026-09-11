@@ -9,6 +9,7 @@ use App\Models\Enquiry;
 use App\Models\EnquiryNote;
 use App\Models\User;
 use App\Services\EnrollmentAssignmentService;
+use App\Services\BatchAssignmentException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -165,7 +166,7 @@ class EnquiryController extends Controller
             'course:id,title,category',
             'notes',
             'enrolledUser:id,name,email',
-        ]);
+        ])->visibleTo($request->user());
 
         if ($request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
@@ -207,23 +208,24 @@ class EnquiryController extends Controller
     }
 
     /**
-     * Pipeline Metrics (Admin only).
+     * Pipeline Metrics (Admin only; scoped for counsellors).
      */
-    public function stats()
+    public function stats(Request $request)
     {
-        $total = Enquiry::count();
+        $leads = Enquiry::visibleTo($request->user());
+        $total = (clone $leads)->count();
         $counts = [
             'total' => $total,
-            'new' => Enquiry::where('status', Enquiry::STATUS_NEW)->count(),
-            'contacted' => Enquiry::where('status', Enquiry::STATUS_CONTACTED)->count(),
-            'demo_scheduled' => Enquiry::where('status', Enquiry::STATUS_DEMO_SCHEDULED)->count(),
-            'demo_completed' => Enquiry::where('status', Enquiry::STATUS_DEMO_COMPLETED)->count(),
-            'interested' => Enquiry::where('status', Enquiry::STATUS_INTERESTED)->count(),
-            'follow_up' => Enquiry::where('status', Enquiry::STATUS_FOLLOW_UP)->count(),
-            'admission_confirmed' => Enquiry::where('status', Enquiry::STATUS_ADMISSION_CONFIRMED)->count(),
-            'enrolled' => Enquiry::where('status', Enquiry::STATUS_ENROLLED)->count(),
-            'not_interested' => Enquiry::where('status', Enquiry::STATUS_NOT_INTERESTED)->count(),
-            'no_response' => Enquiry::where('status', Enquiry::STATUS_NO_RESPONSE)->count(),
+            'new' => (clone $leads)->where('status', Enquiry::STATUS_NEW)->count(),
+            'contacted' => (clone $leads)->where('status', Enquiry::STATUS_CONTACTED)->count(),
+            'demo_scheduled' => (clone $leads)->where('status', Enquiry::STATUS_DEMO_SCHEDULED)->count(),
+            'demo_completed' => (clone $leads)->where('status', Enquiry::STATUS_DEMO_COMPLETED)->count(),
+            'interested' => (clone $leads)->where('status', Enquiry::STATUS_INTERESTED)->count(),
+            'follow_up' => (clone $leads)->where('status', Enquiry::STATUS_FOLLOW_UP)->count(),
+            'admission_confirmed' => (clone $leads)->where('status', Enquiry::STATUS_ADMISSION_CONFIRMED)->count(),
+            'enrolled' => (clone $leads)->where('status', Enquiry::STATUS_ENROLLED)->count(),
+            'not_interested' => (clone $leads)->where('status', Enquiry::STATUS_NOT_INTERESTED)->count(),
+            'no_response' => (clone $leads)->where('status', Enquiry::STATUS_NO_RESPONSE)->count(),
         ];
 
         return response()->json($counts);
@@ -232,8 +234,9 @@ class EnquiryController extends Controller
     /**
      * Show single enquiry details with notes (Admin only).
      */
-    public function show(Enquiry $enquiry)
+    public function show(Request $request, Enquiry $enquiry)
     {
+        $this->denyUnlessLeadVisible($request, $enquiry);
         $enquiry->load(['user:id,name,email,role,phone', 'course', 'notes', 'enrolledUser']);
 
         return response()->json($enquiry);
@@ -244,6 +247,7 @@ class EnquiryController extends Controller
      */
     public function update(Request $request, Enquiry $enquiry)
     {
+        $this->denyUnlessLeadVisible($request, $enquiry);
         $validStatuses = implode(',', Enquiry::PIPELINE_STATUSES);
 
         $validated = $request->validate([
@@ -299,6 +303,7 @@ class EnquiryController extends Controller
      */
     public function addNote(Request $request, Enquiry $enquiry)
     {
+        $this->denyUnlessLeadVisible($request, $enquiry);
         $validated = $request->validate([
             'note' => 'required|string|max:2000',
         ]);
@@ -322,6 +327,7 @@ class EnquiryController extends Controller
      */
     public function enroll(Request $request, Enquiry $enquiry)
     {
+        $this->denyUnlessLeadVisible($request, $enquiry);
         $validated = $request->validate([
             'course_id' => 'nullable|exists:courses,id',
             'batch_id' => 'nullable|exists:batches,id',
@@ -376,16 +382,24 @@ class EnquiryController extends Controller
 
         // If a cohort batch was selected, keep batch membership consistent with the enrollment.
         // Membership history remains audit-immutable: we never delete a prior membership record.
-        $batchMembership = $batch
-            ? $this->enrollments->assignToBatch(
-                $user,
-                $batch,
-                $request->user()->id,
-                'enrolled',
-                'Enquiry pipeline admission to cohort',
-                'Enrolled & granted LMS classroom access from admissions pipeline'
-            )
-            : null;
+        // A full/closed batch is a 422 (not a 500): user+enrollment above are
+        // already provisioned and reusable, only the seat is refused.
+        try {
+            $batchMembership = $batch
+                ? $this->enrollments->assignToBatch(
+                    $user,
+                    $batch,
+                    $request->user()->id,
+                    'enrolled',
+                    'Enquiry pipeline admission to cohort',
+                    'Enrolled & granted LMS classroom access from admissions pipeline'
+                )
+                : null;
+        } catch (BatchAssignmentException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 422);
+        }
 
         // Update Enquiry lead status to ENROLLED
         $enquiry->update([
@@ -448,5 +462,15 @@ class EnquiryController extends Controller
         }
 
         return [null, $courseTitle];
+    }
+
+    /**
+     * Record-level gate: counsellors may only touch own + unassigned leads.
+     */
+    private function denyUnlessLeadVisible(Request $request, Enquiry $lead): void
+    {
+        if (! $lead->isVisibleTo($request->user())) {
+            abort(403, 'You do not have access to this lead.');
+        }
     }
 }

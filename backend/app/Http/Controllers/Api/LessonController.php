@@ -520,6 +520,8 @@ class LessonController extends Controller
 
         $lesson = Lesson::create($validated);
 
+        \App\Models\AuditLog::log('created_lesson', $lesson, null, $lesson->toArray());
+
         return response()->json($lesson->load(['quiz.questions.options', 'assignment', 'resources']), 201);
     }
 
@@ -572,7 +574,10 @@ class LessonController extends Controller
 
         $validated['metadata'] = ! empty($metadata) ? $metadata : null;
 
+        $old = $lesson->toArray();
         $lesson->update($validated);
+
+        \App\Models\AuditLog::log('updated_lesson', $lesson, $old, $lesson->fresh()->toArray());
 
         return response()->json($lesson->fresh()->load(['quiz.questions.options', 'assignment', 'resources']));
     }
@@ -592,9 +597,12 @@ class LessonController extends Controller
             abort(404, 'Lesson not found for this section.');
         }
 
+        $wasPublished = (bool) $lesson->is_published;
         $lesson->update([
             'is_published' => ! $lesson->is_published,
         ]);
+
+        \App\Models\AuditLog::log('toggled_lesson_publish', $lesson, ['is_published' => $wasPublished], ['is_published' => $lesson->is_published]);
 
         return response()->json([
             'message' => $lesson->is_published ? 'Lesson published successfully.' : 'Lesson unpublished (draft).',
@@ -634,7 +642,10 @@ class LessonController extends Controller
             ], 422);
         }
 
+        $old = $lesson->toArray();
         $lesson->delete();
+
+        \App\Models\AuditLog::log('deleted_lesson', null, $old, null);
 
         return response()->json(['message' => 'Lesson deleted successfully.']);
     }

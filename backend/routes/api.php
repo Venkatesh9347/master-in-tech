@@ -49,6 +49,7 @@ use App\Http\Controllers\Api\VideoPlaybackController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Models\CourseEnrollment;
 use App\Models\LessonProgress;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -116,15 +117,11 @@ Route::post('/forgot-password', function (Request $request) {
         $request->only('email')
     );
 
-    if ($status === Password::RESET_LINK_SENT) {
-        return response()->json([
-            'message' => 'Password reset link sent successfully.',
-        ]);
-    }
-
+    // Always return a generic success so the endpoint cannot be used to
+    // enumerate registered accounts (INVALID_USER vs RESET_LINK_SENT).
     return response()->json([
-        'message' => __($status),
-    ], 422);
+        'message' => 'If an account exists for this email, a password reset link has been sent.',
+    ]);
 })->middleware('throttle:auth-forgot');
 
 Route::post('/reset-password', function (Request $request) {
@@ -321,7 +318,20 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::get('/student/class-sessions/{id}', [StudentClassSessionController::class, 'show']);
     Route::post('/student/class-sessions/{id}/join', [StudentClassSessionController::class, 'join']);
 
-    Route::get('/courses/{course}/progress', function (int $course) {
+    Route::get('/courses/{course}/progress', function (Request $request, int $course) {
+        // Same gate as lms-progress and the lesson endpoints: progress data
+        // requires a live (non-dropped) enrollment, not just any login.
+        $isEnrolled = CourseEnrollment::where('user_id', $request->user()->id)
+            ->where('course_id', $course)
+            ->where('status', '!=', 'dropped')
+            ->exists();
+
+        if (! $isEnrolled) {
+            return response()->json([
+                'message' => 'Enrollment required to view course progress.',
+            ], 403);
+        }
+
         $progress = LessonProgress::where('user_id', auth()->id())
             ->where('course_id', $course)
             ->where('completed', true)

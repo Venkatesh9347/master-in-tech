@@ -159,6 +159,8 @@ class AdminUserController extends Controller
             ]);
         }
 
+        \App\Models\AuditLog::log('created_user', $user, null, $user->fresh()->toArray());
+
         // Link enquiry if provided
         if (! empty($validated['enquiry_id'])) {
             $enquiry = \App\Models\Enquiry::find($validated['enquiry_id']);
@@ -209,7 +211,21 @@ class AdminUserController extends Controller
         // managed through the dedicated updateRole policy-controlled endpoint.
         unset($validated['role']);
 
+        $old = $user->toArray();
         $user->update($validated);
+
+        // Revoke all sessions when the account is disabled: the single-session
+        // middleware only compares session ids, so without this a disabled user
+        // would keep a valid Bearer until token expiry.
+        if (($validated['status'] ?? null) === 'disabled' && ($old['status'] ?? null) !== 'disabled') {
+            $user->tokens()->delete();
+            $user->forceFill([
+                'current_session_id' => null,
+                'current_session_created_at' => null,
+            ])->save();
+        }
+
+        \App\Models\AuditLog::log('updated_user', $user, $old, $user->fresh()->toArray());
 
         return response()->json([
             'message' => "User details updated successfully.",
@@ -227,7 +243,20 @@ class AdminUserController extends Controller
         ]);
 
         // HIGH-7: explicit policy-controlled role update bypasses mass assignment.
+        $old = $user->toArray();
         $user->forceFill(['role' => $validated['role']])->save();
+
+        // A role change alters authorization everywhere: revoke sessions so the
+        // user re-authenticates under the new role instead of riding a stale token.
+        if (($old['role'] ?? null) !== $validated['role']) {
+            $user->tokens()->delete();
+            $user->forceFill([
+                'current_session_id' => null,
+                'current_session_created_at' => null,
+            ])->save();
+        }
+
+        \App\Models\AuditLog::log('updated_user_role', $user, $old, $user->fresh()->toArray());
 
         return response()->json([
             'message' => "User role successfully updated to {$validated['role']}.",
@@ -244,7 +273,16 @@ class AdminUserController extends Controller
             return response()->json(['message' => 'Cannot delete your own administrator account.'], 403);
         }
 
+        $old = $user->toArray();
+        // Revoke tokens before delete so no orphaned Bearer survives the account.
+        $user->tokens()->delete();
+        $user->forceFill([
+            'current_session_id' => null,
+            'current_session_created_at' => null,
+        ])->save();
         $user->delete();
+
+        \App\Models\AuditLog::log('deleted_user', null, $old, null);
 
         return response()->json([
             'message' => 'User account removed successfully.',

@@ -23,7 +23,7 @@ interface BatchStudentItem {
   id: number
   batch_id: number
   user_id: number
-  status: 'active' | 'transferred' | 'discontinued' | 'completed'
+  status: 'active' | 'transferred' | 'discontinued' | 'completed' | 'removed'
   joined_at: string
   left_at?: string | null
   discontinued_at?: string | null
@@ -37,7 +37,7 @@ interface BatchTransferLog {
   user_id: number
   from_batch_id?: number | null
   to_batch_id?: number | null
-  action_type: 'enrolled' | 'transferred' | 'discontinued' | 'rejoined' | 'completed'
+  action_type: 'enrolled' | 'transferred' | 'discontinued' | 'rejoined' | 'completed' | 'removed'
   reason?: string | null
   created_at: string
   student?: StudentUser

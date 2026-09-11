@@ -11,19 +11,8 @@ interface CatalogCourseOption {
   code?: string;
 }
 
-const FALLBACK_PROGRAMS: CatalogCourseOption[] = [
-  { id: 0, title: 'Artificial Intelligence' },
-  { id: 0, title: 'Full Stack Web Development' },
-  { id: 0, title: 'Full Stack With AI' },
-  { id: 0, title: 'Python With AI & Machine Learning' },
-  { id: 0, title: 'Generative AI & LLM Systems' },
-  { id: 0, title: 'Data Science & Advanced Analytics' },
-  { id: 0, title: 'Cloud DevOps & Kubernetes' },
-  { id: 0, title: 'SAP Enterprise Architecture' },
-  { id: 0, title: 'Medical Coding & Health Informatics' },
-  { id: 0, title: 'Cybersecurity & Ethical Hacking' },
-  { id: 0, title: 'Mobile App Development (React Native & Flutter)' },
-];
+// Program options are loaded from the live course catalog (/api/courses).
+// No hardcoded fallback: an empty/unreachable catalog renders honestly as empty.
 
 function parseCourseCatalog(payload: unknown): CatalogCourseOption[] {
   const rows = Array.isArray(payload)
@@ -71,7 +60,7 @@ export default function PublicAccessGateModal({
   const [phone, setPhone] = useState('');
   const [courseTitle, setCourseTitle] = useState(initialCourseTitle || '');
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>(courseId);
-  const [programOptions, setProgramOptions] = useState<CatalogCourseOption[]>(FALLBACK_PROGRAMS);
+  const [programOptions, setProgramOptions] = useState<CatalogCourseOption[]>([]);
 
   const [errors, setErrors] = useState<{ name?: string; email?: string; phone?: string }>({});
   const [submitting, setSubmitting] = useState(false);
@@ -95,13 +84,13 @@ export default function PublicAccessGateModal({
 
     API.get('/courses')
       .then((res) => {
+        // Preserve server (C-panel priority) ordering — never re-sort client-side.
         const catalog = parseCourseCatalog(res.data);
-        const options = catalog.length > 0 ? [...catalog].sort((a, b) => a.title.localeCompare(b.title)) : FALLBACK_PROGRAMS;
-        setProgramOptions(options);
+        setProgramOptions(catalog);
 
         const preferredTitle = (initialCourseTitle || '').trim().toLowerCase();
         if (preferredTitle) {
-          const match = options.find((course) => course.title.trim().toLowerCase() === preferredTitle);
+          const match = catalog.find((course) => course.title.trim().toLowerCase() === preferredTitle);
           if (match) {
             setCourseTitle(match.title);
             if (match.id > 0) setSelectedCourseId(match.id);
@@ -109,7 +98,7 @@ export default function PublicAccessGateModal({
         }
       })
       .catch(() => {
-        setProgramOptions(FALLBACK_PROGRAMS);
+        setProgramOptions([]);
       });
   }, [isOpen, initialCourseTitle]);
 

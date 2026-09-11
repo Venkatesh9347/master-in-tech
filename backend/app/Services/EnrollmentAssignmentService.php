@@ -90,6 +90,8 @@ class EnrollmentAssignmentService
      * immutable batch transfer audit record the first time. Re-assigning a
      * deactivated membership simply reactivates the original row so batch
      * history is never rewritten.
+     *
+     * @throws BatchAssignmentException when the batch is closed or full.
      */
     public function assignToBatch(
         User $user,
@@ -102,6 +104,12 @@ class EnrollmentAssignmentService
         $membership = BatchStudent::where('batch_id', $batch->id)
             ->where('user_id', $user->id)
             ->first();
+
+        $isReactivation = $membership !== null && $membership->status !== 'active';
+
+        if ($membership === null || $isReactivation) {
+            $this->assertBatchAssignable($batch, $user);
+        }
 
         if (! $membership) {
             $membership = BatchStudent::create([
@@ -126,8 +134,50 @@ class EnrollmentAssignmentService
                 'left_at' => null,
                 'discontinued_at' => null,
             ]);
+
+            // Reactivation is a lifecycle event: record it so the batch
+            // history shows the seat was re-taken (previously silent).
+            BatchTransfer::create([
+                'user_id' => $user->id,
+                'from_batch_id' => null,
+                'to_batch_id' => $batch->id,
+                'action_type' => 'rejoined',
+                'reason' => $reason !== '' ? $reason : 'Reactivated membership via admission service',
+                'performed_by' => $performedBy,
+            ]);
         }
 
         return $membership;
     }
+
+    /**
+     * Business-rule gate shared by every admission path (CRM conversion,
+     * enquiry enrollment, admin enrollment). Mirrors the transfer/rejoin
+     * guards: closed batches never accept members; capped batches reject
+     * new seats once full.
+     *
+     * @throws BatchAssignmentException
+     */
+    public function assertBatchAssignable(Batch $batch, ?User $user = null): void
+    {
+        if (in_array($batch->status, ['completed', 'cancelled'], true)) {
+            throw new BatchAssignmentException(
+                "Cohort batch {$batch->code} is {$batch->status} and is not accepting new members."
+            );
+        }
+
+        if ($batch->max_students !== null) {
+            $query = BatchStudent::where('batch_id', $batch->id)->where('status', 'active');
+            if ($user !== null) {
+                // Re-seating the same student consumes no new seat.
+                $query->where('user_id', '!=', $user->id);
+            }
+            if ($query->count() >= (int) $batch->max_students) {
+                throw new BatchAssignmentException(
+                    "Cohort batch {$batch->code} is full ({$batch->max_students} seats)."
+                );
+            }
+        }
+    }
 }
+

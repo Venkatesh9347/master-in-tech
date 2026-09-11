@@ -654,8 +654,10 @@ class AdminCmsController extends Controller
 
     public function uploadMedia(Request $request)
     {
+        // NOTE: svg is deliberately excluded — uploaded SVGs are served from
+        // public storage and would execute embedded scripts (stored XSS).
         $request->validate([
-            'file' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp,pdf,mp4|max:51200',
+            'file' => 'required|file|mimes:jpeg,png,jpg,gif,webp,pdf,mp4|max:51200',
             'title' => 'nullable|string|max:255',
             'alt_text' => 'nullable|string|max:255',
             'folder' => 'nullable|string|max:50',
@@ -710,7 +712,7 @@ class AdminCmsController extends Controller
     public function replaceMedia(Request $request, MediaAsset $media)
     {
         $request->validate([
-            'file' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp,pdf,mp4|max:51200',
+            'file' => 'required|file|mimes:jpeg,png,jpg,gif,webp,pdf,mp4|max:51200',
         ]);
 
         $file = $request->file('file');

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import API from '../services/api'
 import ImageUploadField from '../components/admin/ImageUploadField'
@@ -167,12 +167,52 @@ export default function Dashboard() {
       .catch(() => setTutorLoadError('Failed to load instructor list.'))
   }, [])
 
+  // Canonical category names (mirror the live catalog). Used only when the
+  // live category list is unreachable; the API result wins whenever present.
+  const FALLBACK_COURSE_CATEGORIES = useMemo(
+    () => [
+      'AI & ML',
+      'Cloud & DevOps',
+      'Cyber Security',
+      'Data Science',
+      'Database',
+      'Design & Creative',
+      'Full Stack',
+      'Healthcare',
+      'Marketing & Business',
+      'Mobile Engineering',
+      'Quality Assurance & Testing',
+      'SAP',
+    ],
+    []
+  )
+  const [courseCategories, setCourseCategories] = useState<string[]>([])
+
+  useEffect(() => {
+    API.get<{ category: string; count: number }[]>('/course-categories')
+      .then((res) => {
+        const names = Array.isArray(res.data)
+          ? res.data.map((c) => c.category).filter((c): c is string => Boolean(c))
+          : []
+        if (names.length > 0) setCourseCategories(names)
+      })
+      .catch(() => {
+        // Fallback list above keeps the form usable; no fake error raised.
+      })
+  }, [])
+
+  // Live categories first; always keep the form's current value selectable
+  // so editing a course with a legacy value never blanks the dropdown.
+  const baseCategoryOptions = courseCategories.length > 0 ? courseCategories : FALLBACK_COURSE_CATEGORIES
+  const withCurrentCategory = (current: string) =>
+    baseCategoryOptions.includes(current) ? baseCategoryOptions : [...baseCategoryOptions, current]
+
   // Create Course Modal State
   const [showCourseModal, setShowCourseModal] = useState(false)
   const [courseForm, setCourseForm] = useState({
     title: '',
     description: '',
-    category: 'Full Stack Development',
+    category: 'Full Stack',
     instructor: 'Lead Faculty',
     instructor_id: '',
     duration: '10 weeks',
@@ -191,7 +231,7 @@ export default function Dashboard() {
   const [editCourseForm, setEditCourseForm] = useState({
     title: '',
     description: '',
-    category: 'Full Stack Development',
+    category: 'Full Stack',
     instructor: '',
     instructor_id: '',
     duration: '10 weeks',
@@ -941,20 +981,11 @@ export default function Dashboard() {
                     onChange={(e) => setCourseForm({ ...courseForm, category: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
                   >
-                    <option value="Cyber Security">Cyber Security</option>
-                    <option value="DATABASE">DATABASE</option>
-                    <option value="CLOUD COMPUTING">CLOUD COMPUTING</option>
-                    <option value="DATA ENGINEERING">DATA ENGINEERING</option>
-                    <option value="DATA ANALYST">DATA ANALYST</option>
-                    <option value="DATA SCIENCE">DATA SCIENCE</option>
-                    <option value="SAP">SAP</option>
-                    <option value="ARTIFICIAL INTELLIGENCE">ARTIFICIAL INTELLIGENCE</option>
-                    <option value="FULL STACK">FULL STACK</option>
-                    <option value="Marketing & Business">Marketing & Business</option>
-                    <option value="Healthcare & Life Sciences">Healthcare & Life Sciences</option>
-                    <option value="Quality Assurance & Testing">Quality Assurance & Testing</option>
-                    <option value="Mobile Engineering">Mobile Engineering</option>
-                    <option value="Design & Creative">Design & Creative</option>
+                    {withCurrentCategory(courseForm.category).map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1109,20 +1140,11 @@ export default function Dashboard() {
                     onChange={(e) => setEditCourseForm({ ...editCourseForm, category: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white outline-none"
                   >
-                    <option value="Cyber Security">Cyber Security</option>
-                    <option value="DATABASE">DATABASE</option>
-                    <option value="CLOUD COMPUTING">CLOUD COMPUTING</option>
-                    <option value="DATA ENGINEERING">DATA ENGINEERING</option>
-                    <option value="DATA ANALYST">DATA ANALYST</option>
-                    <option value="DATA SCIENCE">DATA SCIENCE</option>
-                    <option value="SAP">SAP</option>
-                    <option value="ARTIFICIAL INTELLIGENCE">ARTIFICIAL INTELLIGENCE</option>
-                    <option value="FULL STACK">FULL STACK</option>
-                    <option value="Marketing & Business">Marketing & Business</option>
-                    <option value="Healthcare & Life Sciences">Healthcare & Life Sciences</option>
-                    <option value="Quality Assurance & Testing">Quality Assurance & Testing</option>
-                    <option value="Mobile Engineering">Mobile Engineering</option>
-                    <option value="Design & Creative">Design & Creative</option>
+                    {withCurrentCategory(editCourseForm.category).map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

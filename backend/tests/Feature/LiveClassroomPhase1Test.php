@@ -153,6 +153,14 @@ class LiveClassroomPhase1Test extends TestCase
     {
         $token = $this->authenticate($this->enrolledStudent);
 
+        // Early-join gate: a scheduled (not yet live) session must refuse
+        // participant tokens while allowing hosts to prepare.
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/live-classroom/sessions/{$this->sessionA->id}/token")
+            ->assertStatus(403);
+
+        $this->sessionA->update(['status' => 'live']);
+
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/live-classroom/sessions/{$this->sessionA->id}/token");
 
@@ -296,6 +304,10 @@ class LiveClassroomPhase1Test extends TestCase
 
     public function test_existing_single_active_session_behavior_remains_intact(): void
     {
+        // Join-window independent: run against a live session so the
+        // early-join gate does not interfere with the revocation assertions.
+        $this->sessionA->update(['status' => 'live']);
+
         // 1. Student logs in on Device A
         $tokenA = $this->enrolledStudent->startNewActiveSession('Device A')->plainTextToken;
 
