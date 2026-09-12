@@ -17,6 +17,7 @@ export default function CourseDetails() {
   const [enquiryOpen, setEnquiryOpen] = useState(false)
   const [error, setError] = useState('')
   const [expandedModules, setExpandedModules] = useState<Record<number, boolean>>({})
+  const [actionError, setActionError] = useState('')
 
   const handleStartLearning = () => {
     if (course?.is_enrolled) {
@@ -24,9 +25,20 @@ export default function CourseDetails() {
       return
     }
     if (user) {
+      setActionError('')
       API.post(`/courses/${course?.id}/enroll`)
-        .finally(() => {
+        .then(() => {
           navigate(`/student/courses/${course?.id}/lessons`)
+        })
+        .catch((err: unknown) => {
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 403) {
+            setEnquiryOpen(true)
+          } else if (status === undefined) {
+            setActionError('Network error. Please check your connection and try again.')
+          } else {
+            setActionError(`Something went wrong (${status}). Please try again later.`)
+          }
         })
       return
     }
@@ -166,15 +178,23 @@ export default function CourseDetails() {
                   </p>
 
                   <div className="flex flex-wrap items-center gap-6 pt-2 text-xs text-slate-400">
-                    <div className="flex items-center gap-1.5 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
-                      <span className="text-amber-400 font-bold">★</span>
-                      <span className="text-white font-bold">{course.average_rating || 4.9}</span>
-                      <span>({course.reviews_count || 36} reviews)</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span>👥</span>
-                      <span>{course.students_count || 450} Enrolled Learners</span>
-                    </div>
+                    {course.average_rating ? (
+                      <div className="flex items-center gap-1.5 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <span className="text-amber-400 font-bold">★</span>
+                        <span className="text-white font-bold">{course.average_rating}</span>
+                        <span>({course.reviews_count ?? 0} reviews)</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 bg-slate-900/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <span className="text-white font-bold">New Program</span>
+                      </div>
+                    )}
+                    {course.students_count ? (
+                      <div className="flex items-center gap-2">
+                        <span>👥</span>
+                        <span>{course.students_count} Enrolled Learners</span>
+                      </div>
+                    ) : null}
                     <div className="flex items-center gap-2">
                       <span>👨‍🏫 Lead Faculty:</span>
                       <strong className="text-white">{course.instructor}</strong>
@@ -204,7 +224,9 @@ export default function CourseDetails() {
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400">Interactive Lessons:</span>
                       <span className="font-bold text-white">
-                        {course.lessons_count || sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || '30+'} Topics
+                        {(course.lessons_count || sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0)) > 0
+                          ? `${course.lessons_count || sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0)} Topics`
+                          : '—'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -239,6 +261,11 @@ export default function CourseDetails() {
                       >
                         <span>🚀</span> Start Learning / Enroll
                       </button>
+                      {actionError && (
+                        <p className="text-[11px] text-center text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+                          {actionError}
+                        </p>
+                      )}
                       <p className="text-[11px] text-center text-slate-400">
                         Zero commitment. Speak with faculty to review syllabus & prerequisites.
                       </p>
@@ -295,9 +322,11 @@ export default function CourseDetails() {
                     <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                       <span>📚</span> Course Curriculum & Modules
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {sections.length} structured modules • {course.lessons_count || '25+'} interactive learning sessions
-                    </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {sections.length} structured modules
+                        {(course.lessons_count || sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0)) > 0 &&
+                          ` • ${course.lessons_count || sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0)} interactive learning sessions`}
+                      </p>
                   </div>
 
                   <button

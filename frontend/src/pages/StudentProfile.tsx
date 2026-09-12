@@ -20,23 +20,30 @@ export default function StudentProfile() {
   const [enrollments, setEnrollments] = useState<EnrollmentItem[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Edit Profile Form State
+  // Edit Profile Form State — initialized from the authenticated account only.
   const [name, setName] = useState(user?.name || '')
-  const [phone, setPhone] = useState('+91 98765 43210')
-  const [bio, setBio] = useState('Passionate software engineering student building full stack web & AI systems.')
-  const [location, setLocation] = useState('Bangalore, India')
+  const [phone, setPhone] = useState(user?.phone || '')
+  const [bio, setBio] = useState('')
+  const [location, setLocation] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [enrollmentsError, setEnrollmentsError] = useState(false)
+
+  useEffect(() => {
+    if (user?.name) setName(user.name)
+    if (user?.phone) setPhone(user.phone)
+  }, [user])
 
   useEffect(() => {
     API.get<EnrollmentItem[]>('/my-courses')
       .then((res) => {
         setEnrollments(Array.isArray(res.data) ? res.data : [])
       })
-      .catch(() => {})
+      .catch(() => {
+        // Never render 0/0/0 statistics on failure — flag it instead.
+        setEnrollmentsError(true)
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -50,22 +57,11 @@ export default function StudentProfile() {
 
   const handleProfileSave = (e: React.FormEvent) => {
     e.preventDefault()
-    if (password && password !== confirmPassword) {
-      setErrorMsg('New password and confirmation do not match.')
-      return
-    }
-
-    setSaving(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    setTimeout(() => {
-      setSaving(false)
-      setSuccessMsg('Profile and settings updated successfully!')
-      setPassword('')
-      setConfirmPassword('')
-      setTimeout(() => setSuccessMsg(''), 4000)
-    }, 700)
+    // No student profile-update endpoint exists on the API yet: saving here
+    // would fake success. The form stays readable, the action stays honest.
+    setErrorMsg(
+      'Profile editing is not available yet. Please contact support to update your details.'
+    )
   }
 
   return (
@@ -102,6 +98,11 @@ export default function StudentProfile() {
         </section>
 
         {/* Learning Statistics Row */}
+        {enrollmentsError ? (
+          <div className="p-4 bg-amber-50 text-amber-800 text-xs font-bold rounded-2xl border border-amber-200 text-center">
+            ⚠️ Could not load your learning statistics. Please check your connection and refresh.
+          </div>
+        ) : (
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs text-center">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Enrolled Courses</p>
@@ -120,6 +121,7 @@ export default function StudentProfile() {
             <p className="text-2xl font-black text-amber-600 mt-1">{completedCourses.length}</p>
           </div>
         </section>
+        )}
 
         {/* Main 2-Column: Edit Form + Enrolled Programs */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -130,11 +132,6 @@ export default function StudentProfile() {
               <p className="text-xs text-slate-500 mt-0.5">Update your personal details and secure credentials.</p>
             </div>
 
-            {successMsg && (
-              <div className="p-4 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-2xl border border-emerald-200">
-                ✓ {successMsg}
-              </div>
-            )}
             {errorMsg && (
               <div className="p-4 bg-red-50 text-red-700 text-xs font-bold rounded-2xl border border-red-200">
                 ⚠️ {errorMsg}
@@ -228,10 +225,9 @@ export default function StudentProfile() {
               <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
-                  disabled={saving}
                   className="px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-sm transition disabled:opacity-50"
                 >
-                  {saving ? 'Saving Changes...' : 'Save Profile Settings'}
+                  Save Profile Settings
                 </button>
               </div>
             </form>
@@ -244,6 +240,10 @@ export default function StudentProfile() {
 
               {loading ? (
                 <p className="text-xs text-slate-400 py-4 text-center">Loading programs...</p>
+              ) : enrollmentsError ? (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl py-3 px-3 text-center">
+                  Could not load programs. Please refresh.
+                </p>
               ) : enrollments.length === 0 ? (
                 <p className="text-xs text-slate-400 py-4 text-center">No enrolled programs yet.</p>
               ) : (

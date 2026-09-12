@@ -39,9 +39,12 @@ export default function EventDetails() {
     API.get<EventCheckRegistrationResponse>(`/events/${event.id}/registration`)
       .then((response) => {
         setIsRegistered(response.data.registered);
+        setRegistrationError('');
       })
       .catch(() => {
-        setIsRegistered(false);
+        // Unknown state — do not assume unregistered. Surface it so a
+        // double-register 422 never surprises the student.
+        setRegistrationError('Could not verify your registration status. Please refresh before registering.');
       });
   }, [event, user]);
 

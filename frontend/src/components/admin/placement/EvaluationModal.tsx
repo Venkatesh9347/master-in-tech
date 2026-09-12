@@ -10,24 +10,27 @@ interface EvaluationModalProps {
 }
 
 export default function EvaluationModal({ interview, existingEvaluation, onClose, onSuccess }: EvaluationModalProps) {
-  const [techScore, setTechScore] = useState<number>(existingEvaluation?.technical_knowledge ?? 7)
-  const [codingScore, setCodingScore] = useState<number>(existingEvaluation?.programming_problem_solving ?? 7)
-  const [commScore, setCommScore] = useState<number>(existingEvaluation?.communication ?? 8)
-  const [confidenceScore, setConfidenceScore] = useState<number>(existingEvaluation?.confidence ?? 7)
-  const [projectScore, setProjectScore] = useState<number>(existingEvaluation?.project_knowledge ?? 8)
-  const [readinessScore, setReadinessScore] = useState<number>(existingEvaluation?.interview_readiness ?? 8)
+  // Fail-closed defaults for new evaluations: minimum scores, blank prose,
+  // non-ready recommendation, unpublished — the evaluator must deliberately
+  // raise and confirm every value. Never prefill high scores or praise text.
+  const [techScore, setTechScore] = useState<number>(existingEvaluation?.technical_knowledge ?? 1)
+  const [codingScore, setCodingScore] = useState<number>(existingEvaluation?.programming_problem_solving ?? 1)
+  const [commScore, setCommScore] = useState<number>(existingEvaluation?.communication ?? 1)
+  const [confidenceScore, setConfidenceScore] = useState<number>(existingEvaluation?.confidence ?? 1)
+  const [projectScore, setProjectScore] = useState<number>(existingEvaluation?.project_knowledge ?? 1)
+  const [readinessScore, setReadinessScore] = useState<number>(existingEvaluation?.interview_readiness ?? 1)
 
   const [strengths, setStrengths] = useState<string>(
-    existingEvaluation?.strengths ?? 'Strong fundamental concepts, excellent communication, and clear project explanations.'
+    existingEvaluation?.strengths ?? ''
   )
   const [areasForImprovement, setAreasForImprovement] = useState<string>(
-    existingEvaluation?.areas_for_improvement ?? 'Practice more live coding problem solving and deeper distributed system design.'
+    existingEvaluation?.areas_for_improvement ?? ''
   )
   const [remarks, setRemarks] = useState<string>(existingEvaluation?.interviewer_remarks ?? '')
   const [recommendation, setRecommendation] = useState<'Ready for Placement' | 'Needs Improvement' | 'Re-interview Required'>(
-    existingEvaluation?.recommendation ?? 'Ready for Placement'
+    existingEvaluation?.recommendation ?? 'Needs Improvement'
   )
-  const [isPublished, setIsPublished] = useState<boolean>(existingEvaluation?.is_published_to_student ?? true)
+  const [isPublished, setIsPublished] = useState<boolean>(existingEvaluation?.is_published_to_student ?? false)
 
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')

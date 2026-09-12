@@ -22,14 +22,16 @@ interface CompanyDashboardData {
 export default function CompanyDashboard() {
   const [data, setData] = useState<CompanyDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   const fetchDashboard = async () => {
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await API.get<CompanyDashboardData>('/company/dashboard')
       setData(res.data)
     } catch {
-      // Non-blocking
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -44,9 +46,11 @@ export default function CompanyDashboard() {
       {/* Header Banner */}
       <div className="bg-slate-950/80 backdrop-blur border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs font-bold uppercase tracking-wider">
-            <span>✓</span> Verified MasterInTech Hiring Partner
-          </div>
+          {data && (
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs font-bold uppercase tracking-wider">
+              <span>✓</span> Verified MasterInTech Hiring Partner
+            </div>
+          )}
           <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
             Welcome, {data?.company?.name || 'Corporate Partner'}
           </h1>
@@ -75,6 +79,17 @@ export default function CompanyDashboard() {
       </div>
 
       {/* KPI Metrics Cards */}
+      {loadError ? (
+        <div className="bg-amber-950/40 border border-amber-800 rounded-2xl p-6 text-center">
+          <p className="text-xs font-bold text-amber-300">
+            ⚠️ Could not load dashboard metrics. Please check your connection and{' '}
+            <button type="button" onClick={fetchDashboard} className="underline hover:text-amber-200">
+              retry
+            </button>
+            .
+          </p>
+        </div>
+      ) : (
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-slate-950/80 backdrop-blur border border-slate-800 rounded-2xl p-5 shadow-sm">
           <div className="flex items-center justify-between text-slate-400 mb-2">
@@ -131,6 +146,7 @@ export default function CompanyDashboard() {
           </span>
         </div>
       </div>
+      )}
 
       {/* Recruitment Quick Action Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">

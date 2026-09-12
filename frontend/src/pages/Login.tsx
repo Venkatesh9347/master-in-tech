@@ -103,6 +103,10 @@ export default function Login() {
       navigate('/admin', { replace: true });
     } else if (loggedInUser.role === 'tutor' || loggedInUser.role === 'faculty') {
       navigate('/tutor', { replace: true });
+    } else if (loggedInUser.role === 'counsellor') {
+      navigate('/admin/crm', { replace: true });
+    } else if (loggedInUser.role === 'company' || loggedInUser.role === 'recruiter') {
+      navigate('/company', { replace: true });
     } else {
       navigate('/student', { replace: true });
     }

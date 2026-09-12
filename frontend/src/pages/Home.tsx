@@ -212,6 +212,13 @@ export default function Home() {
     return true
   }
 
+  // Real lesson inventory derived from loaded catalog data — never a
+  // hardcoded number. Zero/unknown renders a neutral label instead.
+  const totalCatalogLessons = useMemo(
+    () => courses.reduce((acc, c) => acc + (c.lessons_count || 0), 0),
+    [courses]
+  )
+
   const heroSec = sections['hero'] || {}
   const bannerSec = sections['banner'] || {}
   const ctaSec = sections['cta'] || {}
@@ -328,7 +335,9 @@ export default function Home() {
                     <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center gap-2">
                       <span className="text-base">🎯</span>
                       <div>
-                        <p className="text-xs font-bold text-white">780+ Lessons</p>
+                        <p className="text-xs font-bold text-white">
+                          {totalCatalogLessons > 0 ? `${totalCatalogLessons.toLocaleString()}+ Lessons` : 'Structured Lessons'}
+                        </p>
                         <p className="text-[10px] text-slate-400">Database-Driven</p>
                       </div>
                     </div>

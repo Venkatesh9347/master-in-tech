@@ -63,23 +63,25 @@ export default function About() {
           </div>
         </div>
 
-        {/* Numbers Row */}
+        {/* Pillars Row — qualitative strengths only. Graduate counts,
+            ratings and partner tallies must come from verified data sources
+            before any number is displayed here. */}
         <div className="bg-slate-900 text-white rounded-3xl p-8 sm:p-10 shadow-xl grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
           <div>
-            <p className="text-3xl sm:text-4xl font-black text-blue-400">50K+</p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">Graduates Placed</p>
+            <p className="text-3xl sm:text-4xl font-black text-blue-400">✓</p>
+            <p className="text-xs text-slate-400 mt-1 font-medium">Mentor-Led Programs</p>
           </div>
           <div>
-            <p className="text-3xl sm:text-4xl font-black text-amber-400">4.9 ★</p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">Average Rating</p>
+            <p className="text-3xl sm:text-4xl font-black text-amber-400">★</p>
+            <p className="text-xs text-slate-400 mt-1 font-medium">Reviewed Curriculum</p>
           </div>
           <div>
-            <p className="text-3xl sm:text-4xl font-black text-emerald-400">100+</p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">Hiring Partners</p>
+            <p className="text-3xl sm:text-4xl font-black text-emerald-400">🤝</p>
+            <p className="text-xs text-slate-400 mt-1 font-medium">Placement Support</p>
           </div>
           <div>
-            <p className="text-3xl sm:text-4xl font-black text-purple-400">15+</p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">Industry Bootcamps</p>
+            <p className="text-3xl sm:text-4xl font-black text-purple-400">🎓</p>
+            <p className="text-xs text-slate-400 mt-1 font-medium">Verifiable Certificates</p>
           </div>
         </div>
 

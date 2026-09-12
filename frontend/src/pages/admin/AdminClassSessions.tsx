@@ -882,19 +882,26 @@ export default function AdminClassSessions() {
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3 flex flex-col justify-between">
                 <div>
                   <p className="font-bold text-slate-300 mb-1">Meeting Link</p>
-                  <a
-                    href={selectedSession.meeting_url || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:underline break-all font-mono text-[11px] block bg-slate-900 p-2.5 rounded-xl border border-slate-800"
-                  >
-                    {selectedSession.meeting_url || 'No URL configured'}
-                  </a>
+                  {selectedSession.meeting_url ? (
+                    <a
+                      href={selectedSession.meeting_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:underline break-all font-mono text-[11px] block bg-slate-900 p-2.5 rounded-xl border border-slate-800"
+                    >
+                      {selectedSession.meeting_url}
+                    </a>
+                  ) : (
+                    <p className="text-slate-500 font-mono text-[11px] bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+                      No URL configured
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
                   onClick={() => selectedSession.meeting_url && window.open(selectedSession.meeting_url, '_blank', 'noopener,noreferrer')}
-                  className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs transition flex items-center justify-center gap-1.5"
+                  disabled={!selectedSession.meeting_url}
+                  className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span>🚀</span> Launch Real Classroom
                 </button>

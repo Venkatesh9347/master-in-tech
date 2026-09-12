@@ -19,72 +19,12 @@ interface InstructorItem {
   courses?: string[]
 }
 
-const FALLBACK_INSTRUCTORS: InstructorItem[] = [
-  {
-    name: 'Sarah Johnson',
-    designation: 'Senior Lead Architect',
-    company: 'Microsoft',
-    bio: '10+ years architecting enterprise web systems and cloud services. Passionate about TypeScript, React, and server actions.',
-    avatar: '👩‍💻',
-    skills: ['Full Stack Web Development', 'Cloud Computing'],
-    rating: '4.9 ★ (320 reviews)',
-    graduates_count: '1,400+ students',
-  },
-  {
-    name: 'Aman Verma',
-    designation: 'Staff AI Research Lead',
-    company: 'Google',
-    bio: 'AI researcher and mentor with deep expertise in deep learning, transformer fine-tuning, and scalable inference pipelines.',
-    avatar: '👨‍💻',
-    skills: ['Python with AI', 'Data Science'],
-    rating: '4.9 ★ (410 reviews)',
-    graduates_count: '2,100+ students',
-  },
-  {
-    name: 'Neha Patel',
-    designation: 'Principal SAP Consultant',
-    company: 'SAP Labs',
-    bio: 'Certified SAP FICO and enterprise financial reporting veteran with 8+ years leading multinational ERP deployments.',
-    avatar: '👩‍💼',
-    skills: ['SAP FICO Financial Accounting'],
-    rating: '4.8 ★ (190 reviews)',
-    graduates_count: '950+ students',
-  },
-  {
-    name: 'Rajesh Kumar',
-    designation: 'Principal Cloud Architect',
-    company: 'Amazon Web Services',
-    bio: 'AWS & Kubernetes certified infra specialist who has guided Fortune 100 enterprise migrations and CI/CD automation.',
-    avatar: '👨‍💼',
-    skills: ['Cloud Computing', 'DevOps & Infrastructure'],
-    rating: '4.9 ★ (280 reviews)',
-    graduates_count: '1,600+ students',
-  },
-  {
-    name: 'Priya Sharma',
-    designation: 'Staff Data Scientist',
-    company: 'Netflix',
-    bio: 'Specialist in recommendation systems, experimentation analysis, and high-volume data visualization using Python and SQL.',
-    avatar: '👩‍🔬',
-    skills: ['Data Science & Analytics', 'AI & Machine Learning'],
-    rating: '4.9 ★ (240 reviews)',
-    graduates_count: '1,200+ students',
-  },
-  {
-    name: 'Michael Chen',
-    designation: 'Senior DevOps Specialist',
-    company: 'GitHub',
-    bio: 'Automation advocate focused on secure CI/CD pipelines, container orchestration, and developer productivity tooling.',
-    avatar: '👨‍🔧',
-    skills: ['DevOps & Infrastructure'],
-    rating: '4.8 ★ (150 reviews)',
-    graduates_count: '880+ students',
-  },
-]
-
 export default function Instructors() {
-  const [instructors, setInstructors] = useState<InstructorItem[]>(FALLBACK_INSTRUCTORS)
+  // CMS-owned directory only. No hardcoded faculty: invented people,
+  // employers and review counts must never render as real mentors.
+  const [instructors, setInstructors] = useState<InstructorItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     API.get<InstructorItem[]>('/public/instructors')
@@ -94,7 +34,7 @@ export default function Instructors() {
         }
       })
       .catch(() => {
-        // Fallback remains active
+        setLoadError(true)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -125,10 +65,24 @@ export default function Instructors() {
           </div>
         )}
 
+        {!loading && instructors.length === 0 && (
+          <div className="text-center bg-white p-10 rounded-3xl border border-slate-200 shadow-sm max-w-md mx-auto">
+            <span className="text-3xl mb-3 block">👨‍🏫</span>
+            <h2 className="text-base font-bold text-slate-900 mb-2">
+              {loadError ? 'Directory unavailable right now' : 'Faculty profiles coming soon'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {loadError
+                ? 'We could not load the faculty directory. Please check your connection and try again.'
+                : 'Our mentor profiles are being published. Please check back soon.'}
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {instructors.map((instructor) => {
             const displayTitle = instructor.designation || instructor.title
-            const displayGrads = instructor.graduates_count || instructor.graduates || '1,000+ students'
+            const displayGrads = instructor.graduates_count || instructor.graduates
             const displaySkills = Array.isArray(instructor.skills)
               ? instructor.skills
               : Array.isArray(instructor.courses)
@@ -157,9 +111,11 @@ export default function Instructors() {
                   {displayTitle && (
                     <p className="text-xs font-semibold text-blue-600 mb-1">{displayTitle}</p>
                   )}
-                  <p className="text-[11px] text-slate-400 font-medium mb-3">
-                    {instructor.rating || '4.9 ★'} • {displayGrads}
-                  </p>
+                  {(instructor.rating || displayGrads) && (
+                    <p className="text-[11px] text-slate-400 font-medium mb-3">
+                      {[instructor.rating, displayGrads].filter(Boolean).join(' • ')}
+                    </p>
+                  )}
 
                   <p className="text-xs text-slate-600 leading-relaxed mb-6">
                     {instructor.bio}
