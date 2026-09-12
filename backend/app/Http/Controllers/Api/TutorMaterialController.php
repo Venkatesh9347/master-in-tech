@@ -284,9 +284,10 @@ class TutorMaterialController extends Controller
         }
 
         if ($user->role === 'student') {
+            // B3 pay-before-classroom: only active/completed grant access.
             return CourseEnrollment::where('user_id', $user->id)
                 ->where('course_id', $courseId)
-                ->where('status', '!=', 'dropped')
+                ->whereIn('status', ['active', 'completed'])
                 ->exists();
         }
 

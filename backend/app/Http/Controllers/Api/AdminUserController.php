@@ -9,6 +9,8 @@ use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\Event;
 use App\Models\User;
+use App\Services\Enrollment\EnrollmentAccess;
+use App\Services\Enrollment\EnrollmentPaymentGate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -104,6 +106,7 @@ class AdminUserController extends Controller
             'phone' => 'nullable|string|max:30',
             'course_id' => 'nullable|exists:courses,id',
             'enquiry_id' => 'nullable|exists:enquiries,id',
+            'override_reason' => 'nullable|string|min:10|max:1000',
             'headline' => 'nullable|string|max:255',
             'expertise' => 'nullable|string|max:255',
             'bio' => 'nullable|string|max:2000',
@@ -137,15 +140,40 @@ class AdminUserController extends Controller
             $user->save();
         }
 
-        // Auto-enroll in course if specified
+        // Auto-enroll in course if specified (B3 pay-before-classroom: pending
+        // without verified payment or an explicit admin override).
         if (! empty($validated['course_id'])) {
-            CourseEnrollment::firstOrCreate([
+            $overrideReason = EnrollmentPaymentGate::extractOverrideReason(
+                $request->user(),
+                $validated['override_reason'] ?? null
+            );
+            $gate = EnrollmentPaymentGate::resolveStatus(
+                (int) $user->id,
+                (int) $validated['course_id'],
+                $request->user(),
+                $overrideReason
+            );
+
+            $courseEnrollment = CourseEnrollment::firstOrCreate([
                 'user_id' => $user->id,
                 'course_id' => $validated['course_id'],
             ], [
-                'status' => 'active',
+                'status' => $gate['status'],
                 'enrolled_at' => now(),
             ]);
+
+            if ($gate['via_override']) {
+                EnrollmentAccess::logOverride(
+                    $request->user(),
+                    (int) $user->id,
+                    (int) $validated['course_id'],
+                    null,
+                    $courseEnrollment->status,
+                    (string) $overrideReason,
+                    $gate['payment_verified'],
+                    $courseEnrollment
+                );
+            }
         }
 
         // Link enquiry if provided

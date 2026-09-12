@@ -13,6 +13,9 @@ use App\Models\CrmActivity;
 use App\Models\CrmFollowUp;
 use App\Models\Enquiry;
 use App\Models\User;
+use App\Services\Crm\CrmFinanceGuard;
+use App\Services\Enrollment\EnrollmentAccess;
+use App\Services\Enrollment\EnrollmentPaymentGate;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -325,9 +328,10 @@ class AdminCrmController extends Controller
             'qualification' => 'nullable|string|max:255',
             'experience_level' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:255',
-            'expected_revenue' => 'nullable|numeric|min:0',
-            'amount_paid' => 'nullable|numeric|min:0',
+            'expected_revenue' => 'nullable|numeric|min:0|max:10000000',
+            'amount_paid' => 'nullable|numeric|min:0|max:10000000',
             'payment_status' => 'nullable|string|in:unpaid,partial,paid',
+            'correction_reason' => 'nullable|string|min:10|max:1000',
             'lost_reason' => 'nullable|string|max:1000',
             'next_follow_up_date' => 'nullable|date',
             'next_follow_up_time' => 'nullable|string|max:50',
@@ -344,11 +348,50 @@ class AdminCrmController extends Controller
             $this->denyUnlessReassignAllowed($request, $lead, $validated['assigned_counsellor_id']);
         }
 
-        // Payment truth guard: only admins record financial truth on leads.
+        // B3 payment-truth guard BEFORE any mutation (shared helper).
         // Scoped staff may work the pipeline but can never set amounts/status.
-        $this->denyUnlessPaymentTruthAllowed($request, $validated);
+        CrmFinanceGuard::denyUnlessLeadFinanceAllowed($request->user(), $validated);
         if ($request->user()->hasScopedCrmAccess()) {
             unset($validated['amount_paid'], $validated['payment_status']);
+        }
+
+        // B3: authoritative financial controls. Never trust client
+        // payment_status alone; never allow silent lowering of amount_paid.
+        $financeChanged = array_key_exists('amount_paid', $validated) || array_key_exists('payment_status', $validated);
+        $correctionReason = trim((string) ($validated['correction_reason'] ?? ''));
+        unset($validated['correction_reason']);
+
+        if (array_key_exists('amount_paid', $validated) && $validated['amount_paid'] !== null) {
+            $validated['amount_paid'] = CrmFinanceGuard::validateAdminAmount($validated['amount_paid']);
+            $oldPaid = (float) $lead->amount_paid;
+            $newPaid = (float) $validated['amount_paid'];
+
+            if ($newPaid < $oldPaid) {
+                if ($correctionReason === '') {
+                    return response()->json([
+                        'message' => 'Lowering a recorded payment requires an explicit correction reason.',
+                        'errors' => ['correction_reason' => ['A correction reason is required to lower amount_paid.']],
+                    ], 422);
+                }
+            }
+
+            // Derive payment_status server-side; ignore inconsistent client claims.
+            $expected = $validated['expected_revenue'] ?? $lead->expected_revenue;
+            if ($newPaid <= 0) {
+                $validated['payment_status'] = 'unpaid';
+            } elseif ($expected && $newPaid >= (float) $expected) {
+                $validated['payment_status'] = 'paid';
+            } else {
+                $validated['payment_status'] = 'partial';
+            }
+        } elseif (array_key_exists('payment_status', $validated)
+            && in_array($validated['payment_status'], ['paid', 'partial'], true)
+            && (float) $lead->amount_paid <= 0
+            && ! array_key_exists('amount_paid', $validated)) {
+            return response()->json([
+                'message' => 'Payment status cannot be marked paid/partial without a recorded amount.',
+                'errors' => ['payment_status' => ['A recorded amount is required.']],
+            ], 422);
         }
 
         // If course changed, update title
@@ -407,6 +450,17 @@ class AdminCrmController extends Controller
 
         AuditLog::log('updated_crm_lead', $lead, $old, $lead->toArray());
 
+        if ($financeChanged && ! $request->user()->hasScopedCrmAccess()) {
+            AuditLog::log('recorded_lead_payment', $lead, [
+                'amount_paid' => $old['amount_paid'] ?? null,
+                'payment_status' => $old['payment_status'] ?? null,
+            ], [
+                'amount_paid' => $lead->amount_paid,
+                'payment_status' => $lead->payment_status,
+                'correction_reason' => $correctionReason !== '' ? $correctionReason : null,
+            ]);
+        }
+
         return response()->json([
             'message' => 'Lead updated successfully.',
             'lead' => $lead,
@@ -419,6 +473,12 @@ class AdminCrmController extends Controller
     public function destroy(Request $request, Enquiry $lead)
     {
         $this->denyUnlessLeadVisible($request, $lead);
+
+        // B3-5: lead deletion is destructive and admin-only. Frontline CRM
+        // roles (counsellor/telecaller/course_advisor) cannot delete leads.
+        if ($request->user() && $request->user()->hasScopedCrmAccess()) {
+            abort(403, 'Only administrators can delete leads.');
+        }
         $old = $lead->toArray();
         $name = $lead->name;
         $lead->delete();
@@ -443,6 +503,20 @@ class AdminCrmController extends Controller
             'metadata' => 'nullable|array',
         ]);
 
+        // B3: authorization + financial validation BEFORE any persistence.
+        // A rejected request must leave NO persisted activity row.
+        // Scoped staff can never submit financial keys in any activity type.
+        CrmFinanceGuard::denyUnlessLeadFinanceAllowed($request->user(), $validated);
+
+        $isPaymentEvent = $validated['activity_type'] === 'payment_event'
+            && isset($validated['metadata']['amount']);
+
+        $validatedAmount = null;
+        if ($isPaymentEvent) {
+            // Strict admin amount validation (no negatives, no unbounded values).
+            $validatedAmount = CrmFinanceGuard::validateAdminAmount($validated['metadata']['amount']);
+        }
+
         $activity = CrmActivity::create([
             'enquiry_id' => $lead->id,
             'user_id' => $request->user()->id,
@@ -453,21 +527,29 @@ class AdminCrmController extends Controller
         ]);
 
         // If activity is a payment event, update lead amount_paid & payment_status.
-        // Payment truth guard: only admins mutate financial truth. Scoped staff
-        // may log the claim on the timeline, but it never touches the ledger.
-        if ($validated['activity_type'] === 'payment_event' && isset($validated['metadata']['amount'])) {
-            $this->denyUnlessPaymentTruthAllowed($request, $validated);
-            if (! $request->user()->hasScopedCrmAccess()) {
-                $amount = (float) $validated['metadata']['amount'];
-                $newTotal = (float) $lead->amount_paid + $amount;
-                $lead->amount_paid = $newTotal;
-                if ($lead->expected_revenue && $newTotal >= (float) $lead->expected_revenue) {
-                    $lead->payment_status = 'paid';
-                } elseif ($newTotal > 0) {
-                    $lead->payment_status = 'partial';
-                }
-                $lead->save();
+        // Only non-scoped (admin/super_admin) reach here; scoped were rejected above.
+        if ($isPaymentEvent) {
+            $oldLead = $lead->toArray();
+            $amount = $validatedAmount ?? 0.0;
+            $newTotal = round((float) $lead->amount_paid + $amount, 2);
+            $lead->amount_paid = $newTotal;
+            if ($lead->expected_revenue && $newTotal >= (float) $lead->expected_revenue) {
+                $lead->payment_status = 'paid';
+            } elseif ($newTotal > 0) {
+                $lead->payment_status = 'partial';
             }
+            $lead->save();
+
+            AuditLog::log('recorded_lead_payment', $lead, [
+                'amount_paid' => $oldLead['amount_paid'] ?? null,
+                'payment_status' => $oldLead['payment_status'] ?? null,
+            ], [
+                'amount_paid' => $lead->amount_paid,
+                'payment_status' => $lead->payment_status,
+                'delta' => $amount,
+                'activity_id' => $activity->id,
+                'mode' => $validated['metadata']['mode'] ?? null,
+            ]);
         }
 
         $activity->load('user:id,name,email,avatar');
@@ -527,7 +609,23 @@ class AdminCrmController extends Controller
             'assigned_to' => 'nullable|exists:users,id',
         ]);
 
+        // B3-5: scoped staff may only assign follow-ups to themselves.
+        // Admins/super_admin may assign broadly.
+        if ($request->user()->hasScopedCrmAccess()
+            && array_key_exists('assigned_to', $validated)
+            && $validated['assigned_to'] !== null
+            && (int) $validated['assigned_to'] !== (int) $request->user()->id) {
+            abort(403, 'You can only assign follow-ups to yourself.');
+        }
+
         $assignedToId = $validated['assigned_to'] ?? $lead->assigned_counsellor_id ?? $request->user()->id;
+
+        // Default to self for scoped staff when the lead default points elsewhere.
+        if ($request->user()->hasScopedCrmAccess()
+            && (int) $assignedToId !== (int) $request->user()->id
+            && ! array_key_exists('assigned_to', $validated)) {
+            $assignedToId = $request->user()->id;
+        }
 
         $followUp = CrmFollowUp::create([
             'enquiry_id' => $lead->id,
@@ -576,6 +674,15 @@ class AdminCrmController extends Controller
         if ($followUp->enquiry && ! $followUp->enquiry->isVisibleTo($request->user())) {
             abort(403, 'You do not have access to this lead.');
         }
+
+        // B3-5: scoped staff may only act on their own follow-ups (assigned to
+        // them or created by them). Admins are unrestricted.
+        if ($request->user()->hasScopedCrmAccess()
+            && (int) $followUp->assigned_to !== (int) $request->user()->id
+            && (int) $followUp->created_by !== (int) $request->user()->id) {
+            abort(403, 'You can only update your own follow-ups.');
+        }
+
         $validated = $request->validate([
             'status' => 'required|string|in:completed,cancelled,pending',
             'outcome' => 'nullable|string|max:2000',
@@ -632,6 +739,7 @@ class AdminCrmController extends Controller
             'payment_mode' => 'nullable|string|max:50', // card, upi, netbanking, cash, bank_transfer
             'transaction_id' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:1000',
+            'override_reason' => 'nullable|string|min:10|max:1000',
         ]);
 
         $studentEmail = strtolower(trim($validated['email'] ?? $lead->email));
@@ -642,6 +750,20 @@ class AdminCrmController extends Controller
 
         $batchId = ! empty($validated['batch_id']) ? (int) $validated['batch_id'] : null;
         $batch = $batchId ? Batch::findOrFail($batchId) : null;
+
+        // B3-6: a batch belonging to another course must never admit here.
+        if ($batch && (int) $batch->course_id !== $course->id) {
+            return response()->json([
+                'message' => 'The selected batch does not belong to the selected course.',
+                'errors' => ['batch_id' => ['The selected batch does not belong to the selected course.']],
+            ], 422);
+        }
+
+        // B3-2: explicit admin override only; scoped staff can never override.
+        $overrideReason = EnrollmentPaymentGate::extractOverrideReason(
+            $request->user(),
+            $validated['override_reason'] ?? null
+        );
 
         $amountPaid = isset($validated['amount_paid']) ? (float) $validated['amount_paid'] : (float) $lead->amount_paid;
 
@@ -674,8 +796,12 @@ class AdminCrmController extends Controller
                 // HIGH-7: role is not mass-assignable; set explicitly.
                 $user->forceFill(['role' => 'student'])->save();
             } else {
-                // Ensure existing account has student role if not admin/tutor
-                if ($user->role !== 'admin' && $user->role !== 'super_admin' && $user->role !== 'tutor') {
+                // B3-4: preserve existing staff roles; only provision student
+                // status for non-staff accounts. Never demote admin/super_admin,
+                // tutor/faculty, counsellor/telecaller/course_advisor (or
+                // company/recruiter) into student.
+                $staffRoles = ['admin', 'super_admin', 'tutor', 'faculty', 'counsellor', 'telecaller', 'course_advisor', 'company', 'recruiter'];
+                if (! in_array($user->role, $staffRoles, true)) {
                     $user->role = 'student';
                     $user->status = 'active';
                 }
@@ -691,27 +817,61 @@ class AdminCrmController extends Controller
                 $user->save();
             }
 
-            // 2. Ensure Course Enrollment with active LMS access
-            $enrollment = CourseEnrollment::firstOrCreate(
-                [
+            // 2. B3 pay-before-classroom: active LMS access requires a verified
+            // paid PaymentTransaction for this exact user + course, or an
+            // explicit admin override. Otherwise the enrollment stays pending
+            // and classroom access remains blocked.
+            $gate = EnrollmentPaymentGate::resolveStatus(
+                (int) $user->id,
+                (int) $course->id,
+                $request->user(),
+                $overrideReason
+            );
+            $targetStatus = $gate['status'];
+            $viaOverride = $gate['via_override'];
+            $paymentVerified = $gate['payment_verified'];
+
+            $existingEnrollment = CourseEnrollment::where('user_id', $user->id)
+                ->where('course_id', $course->id)
+                ->first();
+
+            $previousEnrollmentStatus = $existingEnrollment?->status;
+
+            if ($existingEnrollment && in_array($existingEnrollment->status, ['active', 'completed'], true)) {
+                $enrollment = $existingEnrollment;
+                $targetStatus = $enrollment->status;
+                $viaOverride = false;
+            } elseif ($existingEnrollment) {
+                if ($targetStatus === EnrollmentPaymentGate::STATUS_ACTIVE) {
+                    $existingEnrollment->update(['status' => 'active']);
+                    $enrollment = $existingEnrollment->fresh();
+                } else {
+                    // Never reactivate dropped/cancelled without payment/override.
+                    // Pending stays pending; dropped/cancelled stay as-is.
+                    if ($existingEnrollment->status === EnrollmentPaymentGate::STATUS_PENDING) {
+                        $enrollment = $existingEnrollment;
+                    } else {
+                        $enrollment = $existingEnrollment;
+                        $targetStatus = $existingEnrollment->status;
+                    }
+                }
+            } else {
+                $enrollment = CourseEnrollment::create([
                     'user_id' => $user->id,
                     'course_id' => $course->id,
-                ],
-                [
                     'enrolled_at' => now(),
-                    'status' => 'active',
+                    'status' => $targetStatus,
                     'progress_percentage' => 0.00,
-                ]
-            );
-
-            // If enrollment existed but was pending/cancelled, activate it
-            if ($enrollment->status !== 'active') {
-                $enrollment->update(['status' => 'active']);
+                ]);
             }
 
-            // 3. If Batch is selected, assign student to the cohort batch
+            $enrollmentActive = $enrollment->status === EnrollmentPaymentGate::STATUS_ACTIVE;
+
+            // 3. Cohort batch is assigned only when LMS access is active.
+            // Pending admissions defer batch placement (no silent cohort access).
             $batchMembership = null;
-            if ($batch) {
+            $batchDeferred = false;
+            if ($batch && $enrollmentActive) {
                 $existingBatchStudent = BatchStudent::where('batch_id', $batch->id)
                     ->where('user_id', $user->id)
                     ->first();
@@ -722,7 +882,9 @@ class AdminCrmController extends Controller
                         'user_id' => $user->id,
                         'status' => 'active',
                         'joined_at' => now(),
-                        'notes' => 'Admitted & enrolled from CRM conversion',
+                        'notes' => $viaOverride
+                            ? 'Admitted via admin payment override from CRM conversion'
+                            : 'Admitted & enrolled from CRM conversion',
                     ]);
 
                     BatchTransfer::create([
@@ -730,7 +892,9 @@ class AdminCrmController extends Controller
                         'from_batch_id' => null,
                         'to_batch_id' => $batch->id,
                         'action_type' => 'enrolled',
-                        'reason' => 'Direct CRM lead conversion to cohort',
+                        'reason' => $viaOverride
+                            ? 'CRM lead conversion with admin payment override'
+                            : 'Direct CRM lead conversion to cohort',
                         'performed_by' => $request->user()->id,
                     ]);
                 } elseif ($existingBatchStudent->status !== 'active') {
@@ -741,11 +905,14 @@ class AdminCrmController extends Controller
                     ]);
                     $batchMembership = $existingBatchStudent;
                 }
+            } elseif ($batch && ! $enrollmentActive) {
+                $batchDeferred = true;
             }
 
-            // 4. Update Lead to CONVERTED
+            // 4. Update lead: converted only with active LMS access, otherwise
+            // payment_pending (admitted, awaiting verified payment).
             $lead->update([
-                'status' => Enquiry::STATUS_CONVERTED,
+                'status' => $enrollmentActive ? Enquiry::STATUS_CONVERTED : Enquiry::STATUS_PAYMENT_PENDING,
                 'course_id' => $course->id,
                 'course_title' => $course->title,
                 'enrolled_user_id' => $user->id,
@@ -755,20 +922,30 @@ class AdminCrmController extends Controller
             ]);
 
             // 5. Log Timeline Conversion Activity
-            $batchCodeText = $batch ? " and cohort batch {$batch->code}" : '';
+            $batchCodeText = $batch && $enrollmentActive ? " and cohort batch {$batch->code}" : ($batchDeferred ? ' (cohort placement deferred pending payment)' : '');
+            $accessText = $enrollmentActive ? 'LMS classroom access activated.' : 'LMS classroom access pending verified payment.';
+            if ($viaOverride) {
+                $accessText .= ' Admitted via admin payment override.';
+            }
             CrmActivity::create([
                 'enquiry_id' => $lead->id,
                 'user_id' => $request->user()->id,
                 'activity_type' => 'conversion',
-                'title' => "Converted to Enrolled Student ({$user->student_id})",
-                'description' => "Successfully admitted to '{$course->title}'{$batchCodeText}. LMS classroom access activated.",
+                'title' => $enrollmentActive
+                    ? "Converted to Enrolled Student ({$user->student_id})"
+                    : "Pre-admitted pending payment ({$user->student_id})",
+                'description' => "Successfully admitted to '{$course->title}'{$batchCodeText}. {$accessText}",
                 'metadata' => [
                     'user_id' => $user->id,
                     'student_id' => $user->student_id,
                     'course_id' => $course->id,
                     'course_title' => $course->title,
-                    'batch_id' => $batch?->id,
-                    'batch_code' => $batch?->code,
+                    'batch_id' => $enrollmentActive ? $batch?->id : null,
+                    'batch_code' => $enrollmentActive ? $batch?->code : null,
+                    'batch_deferred' => $batchDeferred,
+                    'enrollment_status' => $enrollment->status,
+                    'payment_verified' => $paymentVerified,
+                    'via_override' => $viaOverride,
                     'amount_paid' => $amountPaid,
                     'payment_mode' => $validated['payment_mode'] ?? null,
                     'transaction_id' => $validated['transaction_id'] ?? null,
@@ -797,13 +974,48 @@ class AdminCrmController extends Controller
                 'lead_id' => $lead->id,
                 'student_id' => $user->student_id,
                 'course_id' => $course->id,
-                'batch_id' => $batch?->id,
+                'batch_id' => $enrollmentActive ? $batch?->id : null,
+                'enrollment_status' => $enrollment->status,
+                'payment_verified' => $paymentVerified,
+                'via_override' => $viaOverride,
+                'amount_paid' => $amountPaid,
+                'payment_mode' => $validated['payment_mode'] ?? null,
             ]);
+
+            if ($viaOverride) {
+                EnrollmentAccess::logOverride(
+                    $request->user(),
+                    (int) $user->id,
+                    (int) $course->id,
+                    $previousEnrollmentStatus,
+                    $enrollment->status,
+                    (string) $overrideReason,
+                    $paymentVerified,
+                    $enrollment
+                );
+            }
 
             DB::commit();
 
+            if (! $enrollmentActive) {
+                return response()->json([
+                    'message' => "Candidate {$user->name} has been pre-admitted to {$course->title} pending verified payment. LMS access remains blocked until payment is verified.",
+                    'payment_required' => true,
+                    'enrollment_status' => $enrollment->status,
+                    'batch_deferred' => $batchDeferred,
+                    'user' => $user,
+                    'enrollment' => $enrollment,
+                    'batch' => null,
+                    'lead' => $lead->fresh(['course', 'assignedCounsellor', 'user', 'enrolledUser', 'activities.user']),
+                ], 200);
+            }
+
             return response()->json([
-                'message' => "Candidate {$user->name} has been successfully converted to an active student in {$course->title}!",
+                'message' => $viaOverride
+                    ? "Candidate {$user->name} has been admitted to {$course->title} via admin payment override."
+                    : "Candidate {$user->name} has been successfully converted to an active student in {$course->title}!",
+                'payment_verified' => $paymentVerified,
+                'via_override' => $viaOverride,
                 'user' => $user,
                 'enrollment' => $enrollment,
                 'batch' => $batch,

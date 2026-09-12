@@ -226,11 +226,13 @@ class Goal3AAdminStudentAuthFlowTest extends TestCase
             'status' => 'admission_confirmed',
         ]);
 
-        // Convert enquiry to enrolled student
+        // Convert enquiry to enrolled student (B3: admin override for admission
+        // without a verified gateway payment in this flow test).
         $enrollRes = $this->actingAs($admin, 'sanctum')->postJson("/api/admin/enquiries/{$enquiry->id}/enroll", [
             'course_id' => $course->id,
             'name' => 'Kavita Reddy',
             'email' => 'kavita.reddy@gmail.com',
+            'override_reason' => 'Registrar-approved admission for auth flow regression.',
         ]);
 
         $enrollRes->assertStatus(200)

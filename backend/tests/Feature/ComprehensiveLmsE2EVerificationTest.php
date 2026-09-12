@@ -88,6 +88,7 @@ class ComprehensiveLmsE2EVerificationTest extends TestCase
                 'user_id' => $student->id,
                 'course_id' => $course->id,
                 'status' => 'active',
+                'override_reason' => 'E2E regression cohort admission approved by registrar.',
             ]);
         $enrollRes->assertCreated();
         $enrollRes->assertJsonPath('message', 'Course successfully assigned to student.');

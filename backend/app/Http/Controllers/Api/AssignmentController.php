@@ -20,10 +20,11 @@ class AssignmentController extends Controller
 
         $assignment = $assignment->load('lesson.section');
 
-        // Check enrollment
+        // Check enrollment (B3 pay-before-classroom: only active/completed
+        // grant LMS access; pending/cancelled/dropped never do).
         $enrollment = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $assignment->course_id)
-            ->whereNotIn('status', ['dropped', 'expired'])
+            ->whereIn('status', ['active', 'completed'])
             ->first();
 
         if (! $enrollment) {
@@ -68,10 +69,11 @@ class AssignmentController extends Controller
     {
         $user = $request->user();
 
-        // Check enrollment
+        // Check enrollment (B3 pay-before-classroom: only active/completed
+        // grant LMS access; pending/cancelled/dropped never do).
         $enrollment = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $assignment->course_id)
-            ->whereNotIn('status', ['dropped', 'expired'])
+            ->whereIn('status', ['active', 'completed'])
             ->first();
 
         if (! $enrollment) {

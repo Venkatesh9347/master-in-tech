@@ -361,7 +361,7 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
 
         $enrollment = \App\Models\CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $course)
-            ->where('status', '!=', 'dropped')
+            ->whereIn('status', ['active', 'completed'])
             ->first();
 
         if (! $enrollment) {
@@ -551,11 +551,11 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
 
 /*
 |--------------------------------------------------------------------------
-| Dedicated CRM Module & Admissions Pipeline (Roles: super_admin, admin, counsellor)
+| Dedicated CRM Module & Admissions Pipeline (Roles: super_admin, admin, counsellor, telecaller, course_advisor)
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth:sanctum', 'single.session', 'crm'])->group(function () {
-    // Enquiries & Admissions Pipeline (shared by admin, super_admin, counsellor)
+    // Enquiries & Admissions Pipeline (shared by admin, super_admin, counsellor, telecaller, course_advisor)
     Route::get('/admin/enquiries/stats', [EnquiryController::class, 'stats']);
     Route::get('/admin/enquiries', [EnquiryController::class, 'index']);
     Route::get('/admin/enquiries/{enquiry}', [EnquiryController::class, 'show']);

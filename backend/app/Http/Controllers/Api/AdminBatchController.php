@@ -10,6 +10,8 @@ use App\Models\BatchTransfer;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\User;
+use App\Services\Enrollment\EnrollmentAccess;
+use App\Services\Enrollment\EnrollmentPaymentGate;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -244,9 +246,24 @@ class AdminBatchController extends Controller
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
             'notes' => 'nullable|string|max:500',
+            'override_reason' => 'nullable|string|min:10|max:1000',
         ]);
 
         $userId = (int) $validated['user_id'];
+
+        $overrideReason = EnrollmentPaymentGate::extractOverrideReason(
+            $request->user(),
+            $validated['override_reason'] ?? null
+        );
+
+        // B3 pay-before-classroom: resolve LMS access before cohort placement.
+        $gate = EnrollmentPaymentGate::resolveStatus(
+            $userId,
+            (int) $batch->course_id,
+            $request->user(),
+            $overrideReason
+        );
+        $enrollmentActive = $gate['status'] === EnrollmentPaymentGate::STATUS_ACTIVE;
 
         // Check if student is already actively in this batch
         $existing = BatchStudent::where('batch_id', $batch->id)
@@ -272,18 +289,54 @@ class AdminBatchController extends Controller
             }
         }
 
-        // 1. Ensure student is enrolled in the parent course for LMS access
-        CourseEnrollment::firstOrCreate(
-            [
+        // 1. Ensure student enrollment reflects verified payment state.
+        // Without payment/override the enrollment stays pending and cohort
+        // placement is deferred (no active batch membership without LMS access).
+        $previousEnrollment = CourseEnrollment::where('user_id', $userId)
+            ->where('course_id', $batch->course_id)
+            ->first();
+        $previousStatus = $previousEnrollment?->status;
+
+        if ($previousEnrollment && in_array($previousEnrollment->status, ['active', 'completed'], true)) {
+            $enrollmentActive = true;
+        } elseif ($previousEnrollment && $enrollmentActive) {
+            $previousEnrollment->update(['status' => 'active']);
+        } elseif (! $previousEnrollment) {
+            CourseEnrollment::create([
                 'user_id' => $userId,
                 'course_id' => $batch->course_id,
-            ],
-            [
                 'enrolled_at' => now(),
-                'status' => 'active',
+                'status' => $gate['status'],
                 'progress_percentage' => 0.00,
-            ]
-        );
+            ]);
+        }
+
+        if ($gate['via_override']) {
+            $enrollmentModel = CourseEnrollment::where('user_id', $userId)
+                ->where('course_id', $batch->course_id)
+                ->first();
+            EnrollmentAccess::logOverride(
+                $request->user(),
+                $userId,
+                (int) $batch->course_id,
+                $previousStatus,
+                $enrollmentModel?->status ?? $gate['status'],
+                (string) $overrideReason,
+                $gate['payment_verified'],
+                $enrollmentModel
+            );
+        }
+
+        if (! $enrollmentActive) {
+            AuditLog::log('assigned_batch_student_deferred', $batch, null, ['batch_id' => $batch->id, 'batch_code' => $batch->code, 'user_id' => $userId, 'reason' => 'pending_verified_payment']);
+
+            return response()->json([
+                'message' => 'Student pre-admitted pending verified payment. Cohort placement deferred until payment is verified.',
+                'payment_required' => true,
+                'enrollment_status' => $gate['status'],
+                'membership' => null,
+            ], 201);
+        }
 
         // 2. Create batch membership
         $membership = BatchStudent::create([
@@ -323,6 +376,7 @@ class AdminBatchController extends Controller
         $validated = $request->validate([
             'to_batch_id' => "required|exists:batches,id|different:{$batch->id}",
             'reason' => 'required|string|max:1000',
+            'override_reason' => 'nullable|string|min:10|max:1000',
         ]);
 
         $toBatch = Batch::findOrFail($validated['to_batch_id']);
@@ -370,7 +424,32 @@ class AdminBatchController extends Controller
             }
         }
 
-        DB::transaction(function () use ($batch, $toBatch, $user, $currentMembership, $validated) {
+        // B3 pay-before-classroom: cross-course transfers require verified
+        // payment for the target course (or an explicit admin override),
+        // unless the student already holds active access there.
+        $targetEnrollment = CourseEnrollment::where('user_id', $user->id)
+            ->where('course_id', $toBatch->course_id)
+            ->first();
+        $alreadyActiveTarget = $targetEnrollment && in_array($targetEnrollment->status, ['active', 'completed'], true);
+
+        $transferOverride = EnrollmentPaymentGate::extractOverrideReason(
+            $request->user(),
+            $validated['override_reason'] ?? null
+        );
+
+        if (! $alreadyActiveTarget
+            && ! EnrollmentPaymentGate::canActivate((int) $user->id, (int) $toBatch->course_id, $request->user(), $transferOverride)) {
+            return response()->json([
+                'message' => 'Verified payment for the destination course is required before transfer.',
+                'payment_required' => true,
+            ], 422);
+        }
+
+        $transferViaOverride = $transferOverride !== null
+            && ! $alreadyActiveTarget
+            && ! EnrollmentPaymentGate::hasVerifiedPaidPayment((int) $user->id, (int) $toBatch->course_id);
+
+        DB::transaction(function () use ($batch, $toBatch, $user, $currentMembership, $validated, $transferOverride, $transferViaOverride) {
             // 1. Mark source batch membership as 'transferred' with left_at timestamp
             $currentMembership->update([
                 'status' => 'transferred',
@@ -387,18 +466,26 @@ class AdminBatchController extends Controller
                 'notes' => 'Transferred from ' . $batch->code . '. Reason: ' . $validated['reason'],
             ]);
 
-            // 3. Ensure student is enrolled in target course if courses differ
-            CourseEnrollment::firstOrCreate(
-                [
+            // 3. Ensure student enrollment in target course reflects payment state.
+            // Already-active access is preserved; otherwise activate only with
+            // verified payment/override (guaranteed by the pre-check above).
+            $existingTarget = CourseEnrollment::where('user_id', $user->id)
+                ->where('course_id', $toBatch->course_id)
+                ->first();
+
+            if ($existingTarget && in_array($existingTarget->status, ['active', 'completed'], true)) {
+                // Preserve existing access; nothing to change.
+            } elseif ($existingTarget) {
+                $existingTarget->update(['status' => 'active']);
+            } else {
+                CourseEnrollment::create([
                     'user_id' => $user->id,
                     'course_id' => $toBatch->course_id,
-                ],
-                [
                     'enrolled_at' => now(),
                     'status' => 'active',
                     'progress_percentage' => 0.00,
-                ]
-            );
+                ]);
+            }
 
             // 4. Log complete transfer record
             BatchTransfer::create([
@@ -412,6 +499,22 @@ class AdminBatchController extends Controller
         });
 
         AuditLog::log('transferred_batch_student', $batch, ['from_batch' => $batch->code, 'student' => $user->name], ['to_batch' => $toBatch->code, 'reason' => $validated['reason']]);
+
+        if ($transferViaOverride) {
+            $targetEnrollment = CourseEnrollment::where('user_id', $user->id)
+                ->where('course_id', $toBatch->course_id)
+                ->first();
+            EnrollmentAccess::logOverride(
+                $request->user(),
+                (int) $user->id,
+                (int) $toBatch->course_id,
+                null,
+                $targetEnrollment?->status ?? 'active',
+                (string) $transferOverride,
+                false,
+                $targetEnrollment
+            );
+        }
 
         return response()->json([
             'message' => "Student {$user->name} transferred from {$batch->code} to {$toBatch->code} successfully.",
@@ -473,6 +576,7 @@ class AdminBatchController extends Controller
         $validated = $request->validate([
             'target_batch_id' => 'nullable|exists:batches,id',
             'reason' => 'nullable|string|max:1000',
+            'override_reason' => 'nullable|string|min:10|max:1000',
         ]);
 
         $targetBatchId = $validated['target_batch_id'] ?? $batch->id;
@@ -508,6 +612,31 @@ class AdminBatchController extends Controller
                 'message' => 'Student is already actively enrolled in the target batch.',
             ], 422);
         }
+
+        // B3 pay-before-classroom: rejoin requires verified payment for the
+        // target course (or an explicit admin override), unless the student
+        // already holds active access there.
+        $rejoinTarget = CourseEnrollment::where('user_id', $user->id)
+            ->where('course_id', $targetBatch->course_id)
+            ->first();
+        $alreadyActiveRejoin = $rejoinTarget && in_array($rejoinTarget->status, ['active', 'completed'], true);
+
+        $rejoinOverride = EnrollmentPaymentGate::extractOverrideReason(
+            $request->user(),
+            $validated['override_reason'] ?? null
+        );
+
+        if (! $alreadyActiveRejoin
+            && ! EnrollmentPaymentGate::canActivate((int) $user->id, (int) $targetBatch->course_id, $request->user(), $rejoinOverride)) {
+            return response()->json([
+                'message' => 'Verified payment for the target course is required before rejoin.',
+                'payment_required' => true,
+            ], 422);
+        }
+
+        $rejoinViaOverride = $rejoinOverride !== null
+            && ! $alreadyActiveRejoin
+            && ! EnrollmentPaymentGate::hasVerifiedPaidPayment((int) $user->id, (int) $targetBatch->course_id);
 
         DB::transaction(function () use ($batch, $targetBatch, $user, $validated) {
             if ($targetBatch->id === $batch->id) {
@@ -562,18 +691,25 @@ class AdminBatchController extends Controller
                 }
             }
 
-            // Ensure course enrollment
-            CourseEnrollment::firstOrCreate(
-                [
+            // Ensure course enrollment reflects payment state (pre-check above
+            // guarantees activation is allowed when reaching here).
+            $existingRejoin = CourseEnrollment::where('user_id', $user->id)
+                ->where('course_id', $targetBatch->course_id)
+                ->first();
+
+            if ($existingRejoin && in_array($existingRejoin->status, ['active', 'completed'], true)) {
+                // Preserve existing access.
+            } elseif ($existingRejoin) {
+                $existingRejoin->update(['status' => 'active']);
+            } else {
+                CourseEnrollment::create([
                     'user_id' => $user->id,
                     'course_id' => $targetBatch->course_id,
-                ],
-                [
                     'enrolled_at' => now(),
                     'status' => 'active',
                     'progress_percentage' => 0.00,
-                ]
-            );
+                ]);
+            }
 
             // Log rejoin event
             BatchTransfer::create([
@@ -587,6 +723,22 @@ class AdminBatchController extends Controller
         });
 
         AuditLog::log('rejoined_batch_student', $targetBatch, null, ['batch' => $targetBatch->code, 'student' => $user->name, 'reason' => $validated['reason'] ?? 'Rejoined']);
+
+        if ($rejoinViaOverride) {
+            $rejoinEnrollment = CourseEnrollment::where('user_id', $user->id)
+                ->where('course_id', $targetBatch->course_id)
+                ->first();
+            EnrollmentAccess::logOverride(
+                $request->user(),
+                (int) $user->id,
+                (int) $targetBatch->course_id,
+                $rejoinTarget?->status,
+                $rejoinEnrollment?->status ?? 'active',
+                (string) $rejoinOverride,
+                false,
+                $rejoinEnrollment
+            );
+        }
 
         return response()->json([
             'message' => "Student {$user->name} successfully rejoined into batch {$targetBatch->code}.",

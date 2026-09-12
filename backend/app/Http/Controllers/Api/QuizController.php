@@ -22,10 +22,11 @@ class QuizController extends Controller
         // Load quiz with questions and options
         $quiz = $quiz->load(['questions.options']);
 
-        // Check enrollment
+        // Check enrollment (B3 pay-before-classroom: only active/completed
+        // grant LMS access; pending/cancelled/dropped never do).
         $enrollment = \App\Models\CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $quiz->lesson->course_id)
-            ->whereNotIn('status', ['dropped', 'expired'])
+            ->whereIn('status', ['active', 'completed'])
             ->first();
 
         if (! $enrollment) {
@@ -101,10 +102,11 @@ class QuizController extends Controller
     {
         $user = $request->user();
 
-        // Check enrollment
+        // Check enrollment (B3 pay-before-classroom: only active/completed
+        // grant LMS access; pending/cancelled/dropped never do).
         $enrollment = \App\Models\CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $quiz->lesson->course_id)
-            ->whereNotIn('status', ['dropped', 'expired'])
+            ->whereIn('status', ['active', 'completed'])
             ->first();
 
         if (! $enrollment) {
@@ -323,10 +325,16 @@ class QuizController extends Controller
                     ->where('course_id', $attempt->course_id)
                     ->first();
 
-                if ($enrollment) {
+                if ($enrollment && in_array($enrollment->status, ['active', 'completed'], true)) {
+                    // B3: quiz progress must never reactivate a pending/
+                    // cancelled/dropped enrollment without verified payment.
                     $enrollment->update([
                         'progress_percentage' => $courseProgressPercentage,
                         'status' => $isCourseCompleted ? 'completed' : 'active',
+                    ]);
+                } elseif ($enrollment) {
+                    $enrollment->update([
+                        'progress_percentage' => $courseProgressPercentage,
                     ]);
                 }
             }

@@ -75,13 +75,14 @@ class LessonNoteController extends Controller
      */
     private function authorizeCourseAccess($user, $courseId): void
     {
-        if (in_array($user->role, ['admin', 'tutor'], true)) {
+        if ($user->isAdmin() || $user->role === 'tutor') {
             return;
         }
 
+        // B3 pay-before-classroom: only active/completed grant access.
         $isEnrolled = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $courseId)
-            ->where('status', '!=', 'dropped')
+            ->whereIn('status', ['active', 'completed'])
             ->exists();
 
         if (! $isEnrolled) {

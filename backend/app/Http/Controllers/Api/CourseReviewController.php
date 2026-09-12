@@ -47,12 +47,13 @@ class CourseReviewController extends Controller
             return response()->json(['message' => 'Course not found'], 404);
         }
 
-        // Verify user is enrolled
+        // Verify user is enrolled (B3: only active/completed grant access).
         $isEnrolled = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $course->id)
+            ->whereIn('status', ['active', 'completed'])
             ->exists();
 
-        if (! $isEnrolled && $user->role !== 'admin') {
+        if (! $isEnrolled && ! $user->isAdmin()) {
             return response()->json([
                 'message' => 'You must be enrolled in the course to write a review.',
             ], 403);

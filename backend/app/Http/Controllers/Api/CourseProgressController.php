@@ -18,10 +18,11 @@ class CourseProgressController extends Controller
     {
         $user = $request->user();
 
-        // Check active enrollment
+        // Check active enrollment (B3 pay-before-classroom: only active/
+        // completed grant LMS access; pending/cancelled/dropped never do).
         $enrollment = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $course->id)
-            ->where('status', '!=', 'dropped')
+            ->whereIn('status', ['active', 'completed'])
             ->first();
 
         if (! $enrollment) {
@@ -52,11 +53,18 @@ class CourseProgressController extends Controller
         $percentage = $totalLessons > 0 ? round(($completedCount / $totalLessons) * 100, 2) : 0;
         $isCourseCompleted = ($totalLessons > 0 && $completedCount >= $totalLessons);
 
-        // Update enrollment progress & status
-        $enrollment->update([
-            'progress_percentage' => $percentage,
-            'status' => $isCourseCompleted ? 'completed' : 'active',
-        ]);
+        // Update enrollment progress & status (B3: never reactivate a pending/
+        // cancelled/dropped enrollment via a progress read).
+        if (in_array($enrollment->status, ['active', 'completed'], true)) {
+            $enrollment->update([
+                'progress_percentage' => $percentage,
+                'status' => $isCourseCompleted ? 'completed' : 'active',
+            ]);
+        } else {
+            $enrollment->update([
+                'progress_percentage' => $percentage,
+            ]);
+        }
 
         // Determine current lesson for Continue Learning:
         // 1. Check last accessed incomplete published lesson

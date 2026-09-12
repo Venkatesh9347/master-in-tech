@@ -304,17 +304,18 @@ class LmsEnrollmentTest extends TestCase
             'status' => 'active',
         ]);
 
-        // Admin enrolls student
+        // Admin enrolls student (B3: pending without verified payment).
         $enrollRes = $this->actingAs($admin, 'sanctum')->postJson('/api/admin/enrollments', [
             'user_id' => $studentId,
             'course_id' => $course->id,
             'status' => 'active',
         ]);
-        $enrollRes->assertCreated();
+        $enrollRes->assertCreated()
+            ->assertJsonFragment(['payment_required' => true]);
         $this->assertDatabaseHas('course_enrollments', [
             'user_id' => $studentId,
             'course_id' => $course->id,
-            'status' => 'active',
+            'status' => 'pending',
         ]);
 
         // Admin assigns batch
@@ -329,10 +330,29 @@ class LmsEnrollmentTest extends TestCase
         $this->assertNotEmpty($batchId);
         $this->assertNotEmpty($batchCode);
 
+        // Batch placement is deferred while payment is pending (B3).
         $assignBatchRes = $this->actingAs($admin, 'sanctum')->postJson("/api/admin/batches/{$batchId}/students", [
             'user_id' => $studentId,
         ]);
-        $assignBatchRes->assertCreated();
+        $assignBatchRes->assertCreated()
+            ->assertJsonFragment(['payment_required' => true]);
+        $this->assertDatabaseMissing('batch_students', [
+            'batch_id' => $batchId,
+            'user_id' => $studentId,
+            'status' => 'active',
+        ]);
+
+        // Admin override activates the admission and cohort placement.
+        $enrollmentId = \App\Models\CourseEnrollment::where('user_id', $studentId)->where('course_id', $course->id)->first()->id;
+        $this->actingAs($admin, 'sanctum')->putJson("/api/admin/enrollments/{$enrollmentId}", [
+            'status' => 'active',
+            'override_reason' => 'Registrar-approved admission for regression cohort.',
+        ])->assertOk();
+
+        $assignBatchRes2 = $this->actingAs($admin, 'sanctum')->postJson("/api/admin/batches/{$batchId}/students", [
+            'user_id' => $studentId,
+        ]);
+        $assignBatchRes2->assertCreated();
         $this->assertDatabaseHas('batch_students', [
             'batch_id' => $batchId,
             'user_id' => $studentId,

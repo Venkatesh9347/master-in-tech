@@ -266,6 +266,8 @@ class AdminStudentEnrollmentTest extends TestCase
 
         Sanctum::actingAs($admin);
 
+        // B3 pay-before-classroom: without verified payment the admission stays
+        // pending and LMS remains blocked.
         $res = $this->postJson('/api/admin/enrollments', [
             'user_id' => $student->id,
             'course_id' => $course->id,
@@ -274,14 +276,34 @@ class AdminStudentEnrollmentTest extends TestCase
 
         $res->assertStatus(201)
             ->assertJsonFragment([
-                'message' => 'Course successfully assigned to student.',
-            ]);
+                'message' => 'Student pre-admitted pending verified payment. LMS access remains blocked until payment is verified.',
+            ])
+            ->assertJsonFragment(['payment_required' => true]);
 
+        $this->assertDatabaseHas('course_enrollments', [
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'pending',
+        ]);
+
+        // Pending blocks LMS access.
+        Sanctum::actingAs($student);
+        $this->getJson("/api/courses/{$course->id}/lms-progress")->assertStatus(403);
+
+        // Admin override activates the pending admission with an audit trail.
+        Sanctum::actingAs($admin);
+        $enrollmentId = \App\Models\CourseEnrollment::where('user_id', $student->id)->where('course_id', $course->id)->first()->id;
+        $resOverride = $this->putJson("/api/admin/enrollments/{$enrollmentId}", [
+            'status' => 'active',
+            'override_reason' => 'Scholarship admission approved by registrar office.',
+        ]);
+        $resOverride->assertStatus(200);
         $this->assertDatabaseHas('course_enrollments', [
             'user_id' => $student->id,
             'course_id' => $course->id,
             'status' => 'active',
         ]);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'enrollment_payment_override']);
     }
 
     public function test_duplicate_course_assignment_is_prevented_with_validation_error(): void
@@ -328,15 +350,17 @@ class AdminStudentEnrollmentTest extends TestCase
             'instructor' => 'Senior Engineer',
         ]);
 
-        // 1. Admin assigns course to student
+        // 1. Admin assigns course to student (B3: pending without payment).
         Sanctum::actingAs($admin);
         $resAssign = $this->postJson('/api/admin/enrollments', [
             'user_id' => $student->id,
             'course_id' => $course->id,
         ]);
-        $resAssign->assertStatus(201);
+        $resAssign->assertStatus(201)
+            ->assertJsonFragment(['payment_required' => true]);
 
-        // 2. Student accesses my-courses endpoint (used by Student Dashboard)
+        // 2. Student accesses my-courses endpoint (used by Student Dashboard).
+        // The pending admission is visible but does not grant LMS access.
         Sanctum::actingAs($student);
         $resStudent = $this->getJson('/api/my-courses');
         $resStudent->assertStatus(200);
@@ -345,7 +369,10 @@ class AdminStudentEnrollmentTest extends TestCase
         $this->assertCount(1, $courses);
         $this->assertEquals($course->id, $courses[0]['course_id']);
         $this->assertEquals('Fullstack Laravel & Vue Mastery', $courses[0]['course']['title']);
-        $this->assertEquals('active', $courses[0]['status']);
+        $this->assertEquals('pending', $courses[0]['status']);
+
+        // Pending blocks classroom progress.
+        $this->getJson("/api/courses/{$course->id}/lms-progress")->assertStatus(403);
     }
 
     public function test_admin_can_update_enrollment_status(): void
