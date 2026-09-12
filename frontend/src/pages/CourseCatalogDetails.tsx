@@ -27,6 +27,8 @@ export default function CourseCatalogDetails() {
   const [error, setError] = useState('')
   const [openSections, setOpenSections] = useState<Record<number, boolean>>({})
 
+  const [actionError, setActionError] = useState('')
+
   const handleStartLearning = () => {
     if (!course) return
     if (course.is_enrolled) {
@@ -34,7 +36,24 @@ export default function CourseCatalogDetails() {
       return
     }
     if (user) {
-      navigate(`/student/checkout/${course.id}`)
+      setActionError('')
+      API.post(`/courses/${course.id}/enroll`)
+        .then(() => {
+          navigate(`/student/courses/${course.id}/lessons`)
+        })
+        .catch((err: unknown) => {
+          // Self-enrollment is admin-managed (server responds 403): route to
+          // counselling enquiry. Any other failure is a real error and must
+          // be shown as such — never disguised, never navigated through.
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 403) {
+            setEnquiryOpen(true)
+          } else if (status === undefined) {
+            setActionError('Network error. Please check your connection and try again.')
+          } else {
+            setActionError(`Something went wrong (${status}). Please try again later.`)
+          }
+        })
       return
     }
     setEnquiryOpen(true)
@@ -137,7 +156,7 @@ export default function CourseCatalogDetails() {
     )
   }
 
-  const totalLessons = sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || (course.lessons_count || 12)
+  const totalLessons = sections.reduce((acc, s) => acc + (s.lessons?.length || 0), 0) || course.lessons_count || 0
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-blue-500 selection:text-white">
@@ -177,24 +196,34 @@ export default function CourseCatalogDetails() {
                 {course.description}
               </p>
 
-              {/* Stats Row */}
+              {/* Stats Row — real catalog metrics only, no fabricated fallbacks */}
               <div className="flex flex-wrap items-center gap-6 pt-3 text-xs sm:text-sm text-slate-300">
-                <div className="flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/30 px-3 py-1 rounded-xl text-amber-300">
-                  <span className="font-bold">★ {course.average_rating || 4.9}</span>
-                  <span className="text-amber-400/70">({course.reviews_count || 128} ratings)</span>
-                </div>
+                {course.average_rating ? (
+                  <div className="flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/30 px-3 py-1 rounded-xl text-amber-300">
+                    <span className="font-bold">★ {course.average_rating}</span>
+                    <span className="text-amber-400/70">({course.reviews_count ?? 0} ratings)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-3 py-1 rounded-xl text-slate-300">
+                    <span className="font-bold">New Program</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1.5">
                   <span>⏱️</span>
                   <span>{course.duration}</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span>📖</span>
-                  <span>{totalLessons} Lessons</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span>👥</span>
-                  <span>{(course.students_count || 540).toLocaleString()} Enrolled</span>
-                </div>
+                {totalLessons > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <span>📖</span>
+                    <span>{totalLessons} Lessons</span>
+                  </div>
+                )}
+                {course.students_count ? (
+                  <div className="flex items-center gap-1.5">
+                    <span>👥</span>
+                    <span>{course.students_count.toLocaleString()} Enrolled</span>
+                  </div>
+                ) : null}
               </div>
 
               {/* Instructor Byline */}
@@ -271,6 +300,11 @@ export default function CourseCatalogDetails() {
                     >
                       <span>🚀</span> Start Learning / Enroll
                     </button>
+                    {actionError && (
+                      <p className="text-[11px] text-center text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                        {actionError}
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={() => setEnquiryOpen(true)}
@@ -477,7 +511,7 @@ export default function CourseCatalogDetails() {
                                     </div>
                                   </div>
                                   <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap">
-                                    {les.duration || '10 min'}
+                                    {les.duration || '—'}
                                   </span>
                                 </div>
                               ))

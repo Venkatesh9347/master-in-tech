@@ -31,11 +31,12 @@ export default function CompanyInterviews() {
 
   // Feedback Evaluation Modal
   const [evaluatingInterview, setEvaluatingInterview] = useState<CompanyInterviewItem | null>(null)
-  const [techScore, setTechScore] = useState<number>(8)
-  const [commScore, setCommScore] = useState<number>(8)
-  const [overallScore, setOverallScore] = useState<number>(8)
+  // Fail-closed: unscored until the interviewer moves each slider.
+  const [techScore, setTechScore] = useState<number>(1)
+  const [commScore, setCommScore] = useState<number>(1)
+  const [overallScore, setOverallScore] = useState<number>(1)
   const [feedbackNotes, setFeedbackNotes] = useState('')
-  const [recommendation, setRecommendation] = useState<'select' | 'reject' | 'further_round'>('select')
+  const [recommendation, setRecommendation] = useState<'select' | 'reject' | 'further_round'>('further_round')
   const [submittingEval, setSubmittingEval] = useState(false)
 
   const [successMsg, setSuccessMsg] = useState('')
@@ -65,11 +66,11 @@ export default function CompanyInterviews() {
 
   const openEvaluationModal = (item: CompanyInterviewItem) => {
     setEvaluatingInterview(item)
-    setTechScore(item.technical_score ?? 8)
-    setCommScore(item.communication_score ?? 8)
-    setOverallScore(item.overall_score ?? 8)
+    setTechScore(item.technical_score ?? 1)
+    setCommScore(item.communication_score ?? 1)
+    setOverallScore(item.overall_score ?? 1)
     setFeedbackNotes(item.feedback || '')
-    setRecommendation(item.recommendation || 'select')
+    setRecommendation(item.recommendation || 'further_round')
   }
 
   const handleSubmitEvaluation = async (e: React.FormEvent) => {

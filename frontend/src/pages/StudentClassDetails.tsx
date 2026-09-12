@@ -320,7 +320,7 @@ export default function StudentClassDetails() {
                     </div>
 
                     <a
-                      href={session.recording_url || '#'}
+                      href={session.recording_url as string}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition flex items-center justify-center gap-1.5 shadow-sm shrink-0"

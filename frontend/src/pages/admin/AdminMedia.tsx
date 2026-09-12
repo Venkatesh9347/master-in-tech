@@ -54,6 +54,7 @@ export default function AdminMedia() {
   // Replace file state
   const [replacing, setReplacing] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
+  const [loadError, setLoadError] = useState(false)
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -62,6 +63,7 @@ export default function AdminMedia() {
 
   const fetchMedia = useCallback(() => {
     setLoading(true)
+    setLoadError(false)
     const params: Record<string, string | number> = { per_page: 48 }
     if (activeFolder !== 'all') params.folder = activeFolder
     if (search.trim()) params.search = search.trim()
@@ -76,7 +78,10 @@ export default function AdminMedia() {
           if (updated) setSelectedAsset(updated)
         }
       })
-      .catch(() => setMediaList([]))
+      .catch(() => {
+        setMediaList([])
+        setLoadError(true)
+      })
       .finally(() => setLoading(false))
   }, [activeFolder, search, selectedAsset])
 
@@ -288,10 +293,14 @@ export default function AdminMedia() {
             </div>
           ) : mediaList.length === 0 ? (
             <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
-              <span className="text-4xl block">🖼️</span>
-              <h3 className="text-sm font-bold text-slate-800">No media assets found</h3>
+              <span className="text-4xl block">{loadError ? '⚠️' : '🖼️'}</span>
+              <h3 className="text-sm font-bold text-slate-800">
+                {loadError ? 'Could not load media library' : 'No media assets found'}
+              </h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                No images exist in this category yet. Click the "+ Upload New Media" button to add your first asset.
+                {loadError
+                  ? 'We could not reach the media library. Please check your connection and try again.'
+                  : 'No images exist in this category yet. Click the "+ Upload New Media" button to add your first asset.'}
               </p>
             </div>
           ) : (

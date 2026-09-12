@@ -19,24 +19,27 @@ interface CourseReviewsProps {
 
 export default function CourseReviews({ courseId, isEnrolled = false }: CourseReviewsProps) {
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
-  const [avgRating, setAvgRating] = useState(5.0);
+  const [avgRating, setAvgRating] = useState<number | null>(null);
   const [reviewCount, setReviewCount] = useState(0);
   const [selectedRating, setSelectedRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [error, setError] = useState('');
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
-    API.get<{ average_rating: number; review_count: number; reviews: ReviewItem[] }>(
+    API.get<{ average_rating: number | null; review_count: number; reviews: ReviewItem[] }>(
       `/courses/${courseId}/reviews`
     )
       .then((res) => {
         setReviews(res.data.reviews || []);
-        setAvgRating(res.data.average_rating || 5.0);
+        setAvgRating(typeof res.data.average_rating === 'number' ? res.data.average_rating : null);
         setReviewCount(res.data.review_count || 0);
       })
-      .catch(() => {});
+      .catch(() => {
+        setLoadFailed(true);
+      });
   }, [courseId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,16 +79,24 @@ export default function CourseReviews({ courseId, isEnrolled = false }: CourseRe
         </div>
 
         <div className="flex items-center gap-4 bg-amber-50/80 border border-amber-200 px-5 py-3 rounded-2xl">
-          <span className="text-3xl font-black text-amber-900">{avgRating}</span>
-          <div>
-            <div className="flex text-amber-500 text-base">
-              {'★'.repeat(Math.round(avgRating))}
-              {'☆'.repeat(5 - Math.round(avgRating))}
-            </div>
-            <p className="text-xs text-amber-800 font-semibold mt-0.5">
-              {reviewCount} {reviewCount === 1 ? 'Rating' : 'Ratings'}
+          {avgRating !== null ? (
+            <>
+              <span className="text-3xl font-black text-amber-900">{avgRating}</span>
+              <div>
+                <div className="flex text-amber-500 text-base">
+                  {'★'.repeat(Math.round(avgRating))}
+                  {'☆'.repeat(5 - Math.round(avgRating))}
+                </div>
+                <p className="text-xs text-amber-800 font-semibold mt-0.5">
+                  {reviewCount} {reviewCount === 1 ? 'Rating' : 'Ratings'}
+                </p>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-amber-800 font-semibold">
+              {loadFailed ? 'Ratings unavailable right now.' : 'No ratings yet — be the first reviewer.'}
             </p>
-          </div>
+          )}
         </div>
       </div>
 

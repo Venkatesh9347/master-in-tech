@@ -39,7 +39,8 @@ export default function Navbar() {
         }
       })
       .catch(() => {
-        // Safe default: enabled
+        // Link stays visible; the Placements page itself fail-closes to
+        // maintenance when settings are unreachable.
       })
   }, [])
 
@@ -83,23 +84,31 @@ export default function Navbar() {
       return
     }
 
-    Promise.all([
-      API.get('/my-courses').catch(() => ({ data: [] })),
-      API.get('/my-events').catch(() => ({ data: [] })),
-    ]).then(([coursesRes, eventsRes]) => {
-      const rawEnroll = coursesRes.data as unknown
+    Promise.allSettled([
+      API.get('/my-courses'),
+      API.get('/my-events'),
+    ]).then((results) => {
+      const [coursesRes, eventsRes] = results
+      const rawEnroll = coursesRes.status === 'fulfilled' ? coursesRes.value.data as unknown : null
       const enrollments = Array.isArray(rawEnroll)
         ? rawEnroll
-        : Array.isArray((rawEnroll as { data?: unknown[] })?.data)
+        : Array.isArray((rawEnroll as { data?: unknown[] } | null)?.data)
         ? (rawEnroll as { data: unknown[] }).data
         : []
 
-      const rawEvents = eventsRes.data as unknown
+      const rawEvents = eventsRes.status === 'fulfilled' ? eventsRes.value.data as unknown : null
       const myEvents = Array.isArray(rawEvents)
         ? rawEvents
-        : Array.isArray((rawEvents as { data?: unknown[] })?.data)
+        : Array.isArray((rawEvents as { data?: unknown[] } | null)?.data)
         ? (rawEvents as { data: unknown[] }).data
         : []
+
+      // If both feeds failed, show nothing rather than a fake Welcome —
+      // an outage must never masquerade as an empty inbox.
+      if (coursesRes.status === 'rejected' && eventsRes.status === 'rejected') {
+        setNotifications([])
+        return
+      }
 
       const items: NotificationItem[] = []
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import API from '../../services/api';
 import type { Quiz, QuizAttempt } from '../../types/lms';
 import QuizResultModal from './QuizResultModal';
@@ -25,6 +25,15 @@ export default function QuizPlayer({ quiz, courseId: _courseId, onComplete }: Qu
   const [starting, setStarting] = useState(false);
   const [result, setResult] = useState<QuizSubmissionResult | null>(null);
   const [error, setError] = useState('');
+  // onComplete (lesson completion POST) must fire exactly once per passed
+  // attempt — both the submit handler and the result modal can trigger it.
+  const completedRef = useRef(false);
+  const fireCompleteOnce = useCallback(() => {
+    if (!completedRef.current) {
+      completedRef.current = true;
+      onComplete();
+    }
+  }, [onComplete]);
 
   const handleSubmit = useCallback(async () => {
     if (!attempt || submitting) return;
@@ -55,7 +64,7 @@ export default function QuizPlayer({ quiz, courseId: _courseId, onComplete }: Qu
       );
       setResult(res.data);
       if (res.data.passed) {
-        onComplete();
+        fireCompleteOnce();
       }
     } catch (err: unknown) {
       const response = err as { response?: { data?: { message?: string } } };
@@ -63,11 +72,12 @@ export default function QuizPlayer({ quiz, courseId: _courseId, onComplete }: Qu
     } finally {
       setSubmitting(false);
     }
-  }, [attempt, submitting, selectedAnswers, quiz.questions, onComplete]);
+  }, [attempt, submitting, selectedAnswers, quiz.questions, fireCompleteOnce]);
 
   const handleStartQuiz = async () => {
     setStarting(true);
     setError('');
+    completedRef.current = false;
     try {
       const res = await API.post<{ attempt: QuizAttempt }>(`/quizzes/${quiz.id}/start`);
       const newAttempt = res.data.attempt || res.data;
@@ -270,11 +280,11 @@ export default function QuizPlayer({ quiz, courseId: _courseId, onComplete }: Qu
           passingScore={result.passing_score}
           passed={result.passed}
           onRetry={handleStartQuiz}
-          onContinue={() => {
-            setResult(null);
-            setAttempt(null);
-            onComplete();
-          }}
+            onContinue={() => {
+              setResult(null);
+              setAttempt(null);
+              fireCompleteOnce();
+            }}
         />
       )}
     </div>

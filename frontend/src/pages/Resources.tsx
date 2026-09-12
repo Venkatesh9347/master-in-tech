@@ -15,54 +15,12 @@ interface ResourceItem {
   url_or_file?: string | null
 }
 
-const FALLBACK_RESOURCES: ResourceItem[] = [
-  {
-    title: 'Full Stack & AI Developer Roadmap',
-    description: 'Step-by-step visual career guide from fundamentals to senior system design.',
-    icon: '🗺️',
-    tag: 'Career Roadmap',
-    type: 'Guide',
-  },
-  {
-    title: 'Top 100 Technical Interview Questions',
-    description: 'Curated data structures, algorithms, React, and Node.js interview questions with solutions.',
-    icon: '💡',
-    tag: 'Interview Prep',
-    type: 'Cheatsheet',
-  },
-  {
-    title: 'Docker, Kubernetes & Cloud Architecture Cheat Sheet',
-    description: 'Quick command reference, manifest templates, and production best practices.',
-    icon: '☁️',
-    tag: 'DevOps Tooling',
-    type: 'Cheatsheet',
-  },
-  {
-    title: 'Python & Generative AI Starter Notebooks',
-    description: 'Hands-on Jupyter notebooks for LLM prompt engineering, embeddings, and vector databases.',
-    icon: '🤖',
-    tag: 'AI & ML',
-    type: 'Code Repo',
-  },
-  {
-    title: 'SAP FICO Configuration & Workflow Guide',
-    description: 'Comprehensive enterprise accounting ledger setup and transaction code reference.',
-    icon: '🏢',
-    tag: 'Enterprise ERP',
-    type: 'Documentation',
-  },
-  {
-    title: 'Career Switch Case Studies & Resume Templates',
-    description: 'Real resumes and career transition strategies used by our successful alumni.',
-    icon: '📄',
-    tag: 'Career Toolkit',
-    type: 'Template',
-  },
-]
-
 export default function Resources() {
-  const [resources, setResources] = useState<ResourceItem[]>(FALLBACK_RESOURCES)
+  // CMS-owned resources only. No hardcoded guides: invented titles must
+  // never render as a real knowledge base.
+  const [resources, setResources] = useState<ResourceItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     API.get<ResourceItem[]>('/public/resources')
@@ -72,7 +30,7 @@ export default function Resources() {
         }
       })
       .catch(() => {
-        // Fallback remains active
+        setLoadError(true)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -100,6 +58,20 @@ export default function Resources() {
         {loading && (
           <div className="text-center text-xs font-bold text-slate-400 mb-6">
             Loading knowledge resources...
+          </div>
+        )}
+
+        {!loading && resources.length === 0 && (
+          <div className="text-center bg-white p-10 rounded-3xl border border-slate-200 shadow-sm max-w-md mx-auto">
+            <span className="text-3xl mb-3 block">📚</span>
+            <h2 className="text-base font-bold text-slate-900 mb-2">
+              {loadError ? 'Resources unavailable right now' : 'No resources published yet'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {loadError
+                ? 'We could not load the knowledge base. Please check your connection and try again.'
+                : 'Our team is preparing learning resources. Please check back soon.'}
+            </p>
           </div>
         )}
 

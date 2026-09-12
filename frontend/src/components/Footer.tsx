@@ -62,9 +62,9 @@ export default function Footer() {
   const siteName = settings.site_name || 'MasterInTech'
   const footerText =
     settings.footer_text ||
-    'Empowering engineers and career changers worldwide with hands-on, mentor-led programs in AI, Cloud, Full Stack, Data, and Enterprise Systems.'
+    'Mentor-led technology programs with hands-on curriculum and career guidance.'
   const copyrightText = settings.copyright_text || `© ${new Date().getFullYear()} ${siteName}. All rights reserved.`
-  const badgeText = settings.graduates_badge_text || 'Over 50,000+ graduates globally'
+  const badgeText = settings.graduates_badge_text || ''
 
   return (
     <footer className="bg-slate-950 text-slate-400 border-t border-slate-900 pt-16 pb-12">
@@ -132,10 +132,12 @@ export default function Footer() {
               )}
             </div>
 
-            <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-900/50 py-1.5 px-3 rounded-full w-fit">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              {badgeText}
-            </div>
+            {badgeText && (
+              <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-900/50 py-1.5 px-3 rounded-full w-fit">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                {badgeText}
+              </div>
+            )}
           </div>
 
           {/* Quick Learning Links */}

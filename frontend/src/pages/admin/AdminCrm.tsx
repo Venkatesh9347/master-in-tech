@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import API from '../../services/api'
+import { useAuth } from '../../context/useAuth'
 import type { Course } from '../../types/course'
 
 export type LeadStatus =
@@ -166,6 +167,7 @@ const priorityBadgeStyles: Record<string, { bg: string; label: string; icon: str
 }
 
 export default function AdminCrm() {
+  const { user } = useAuth()
   // Main Tab: 'leads_roster' | 'follow_ups_desk'
   const [activeTab, setActiveTab] = useState<'leads_roster' | 'follow_ups_desk'>('leads_roster')
 
@@ -407,6 +409,32 @@ export default function AdminCrm() {
     } catch (err: unknown) {
       const resp = err as { response?: { data?: { message?: string } } }
       setErrorMsg(resp.response?.data?.message || 'Failed to save lead.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Handle Claim Lead (assign unassigned lead to self)
+  const handleClaimLead = async () => {
+    if (!selectedLead || !user) return
+    setSaving(true)
+    setErrorMsg('')
+    try {
+      await API.put(`/admin/crm/leads/${selectedLead.id}`, {
+        assigned_counsellor_id: user.id,
+      })
+      setSuccessMsg(`✓ Lead claimed — now assigned to you.`)
+      fetchLeads()
+      fetchStats()
+      fetchLeadDetail(selectedLead.id)
+      setTimeout(() => setSuccessMsg(''), 5000)
+    } catch (err: unknown) {
+      const resp = err as { response?: { status?: number; data?: { message?: string } } }
+      setErrorMsg(
+        resp.response?.status === 403
+          ? 'You do not have permission to claim this lead.'
+          : resp.response?.data?.message || 'Failed to claim lead.'
+      )
     } finally {
       setSaving(false)
     }
@@ -1331,6 +1359,16 @@ export default function AdminCrm() {
                 <div>
                   <span className="text-[10px] font-bold uppercase text-slate-500 block">Assigned Counsellor</span>
                   <span className="text-slate-200 font-semibold">{selectedLead.assignedCounsellor?.name || selectedLead.assigned_agent || 'Unassigned'}</span>
+                  {!selectedLead.assigned_counsellor_id && user && (
+                    <button
+                      type="button"
+                      onClick={handleClaimLead}
+                      disabled={saving}
+                      className="ml-2 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-purple-600 hover:bg-purple-500 text-white transition disabled:opacity-50"
+                    >
+                      Claim for me
+                    </button>
+                  )}
                 </div>
                 <div>
                   <span className="text-[10px] font-bold uppercase text-slate-500 block">Paid Amount</span>

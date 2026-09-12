@@ -18,59 +18,12 @@ interface FaqGroup {
   items: { q: string; a: string }[]
 }
 
-const FALLBACK_FAQS: FaqGroup[] = [
-  {
-    category: 'Programs & Learning Experience',
-    items: [
-      {
-        q: 'How are Master In Tech programs structured?',
-        a: 'Our programs combine on-demand structured technical modules with weekly live mentor-led masterclasses, hands-on quizzes, and production-grade capstone coding projects.',
-      },
-      {
-        q: 'Do I need prior programming experience to enroll?',
-        a: 'Beginner courses require zero prior background. Intermediate and advanced tracks list explicit technical prerequisites on their syllabus pages.',
-      },
-      {
-        q: 'What is the weekly time commitment required?',
-        a: 'Most students dedicate between 6 to 10 hours per week, allowing you to comfortably balance learning alongside full-time work or college studies.',
-      },
-      {
-        q: 'Do I have lifetime access to course recordings and updates?',
-        a: 'Yes, once enrolled, you retain permanent lifetime access to the curriculum, code repositories, resources, and future material updates.',
-      },
-    ],
-  },
-  {
-    category: 'Certifications & Career Desk',
-    items: [
-      {
-        q: 'How does certificate verification work?',
-        a: 'Upon achieving 100% completion on all lessons, quizzes, and assignments, our system issues a cryptographically unique certificate code (e.g. MIT-2026-ABC12345) verifiable publicly at /verify-certificate.',
-      },
-      {
-        q: 'What career support is provided to students?',
-        a: 'Students in professional bootcamps receive 1-on-1 resume reviews, mock technical interview sessions with senior tech leads, and direct referrals to our network of 100+ hiring partners.',
-      },
-    ],
-  },
-  {
-    category: 'Admissions & Demo Classes',
-    items: [
-      {
-        q: 'How do I schedule a free live demo & counseling session?',
-        a: 'You can book a free live demo directly from any course page. Our academic counselors will schedule a personalized syllabus walkthrough and career counseling session.',
-      },
-      {
-        q: 'How does the admission and onboarding process work?',
-        a: 'After attending your free live demo or submitting an enquiry, our admissions advisory team will guide you through learning prerequisites, career roadmaps, and confirm your LMS enrollment.',
-      },
-    ],
-  },
-]
-
 export default function FAQ() {
-  const [faqGroups, setFaqGroups] = useState<FaqGroup[]>(FALLBACK_FAQS)
+  // CMS-owned answers only. No hardcoded fallback: invented Q&A with
+  // unverified claims must never render as the knowledge desk.
+  const [faqGroups, setFaqGroups] = useState<FaqGroup[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     API.get<FaqItem[]>('/public/faqs')
@@ -95,7 +48,7 @@ export default function FAQ() {
         }
       })
       .catch(() => {
-        // Fallback remains active
+        setLoadError(true)
       })
       .finally(() => setLoading(false))
   }, [])
@@ -123,6 +76,20 @@ export default function FAQ() {
         {loading && (
           <div className="text-center text-xs font-bold text-slate-400">
             Loading questions & answers...
+          </div>
+        )}
+
+        {!loading && faqGroups.length === 0 && (
+          <div className="text-center bg-white p-10 rounded-3xl border border-slate-200 shadow-sm max-w-md mx-auto">
+            <span className="text-3xl mb-3 block">❓</span>
+            <h2 className="text-base font-bold text-slate-900 mb-2">
+              {loadError ? 'Answers unavailable right now' : 'No questions published yet'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {loadError
+                ? 'We could not load the knowledge desk. Please check your connection or contact our advisor desk below.'
+                : 'Our team is preparing answers. Please check back soon or contact our advisor desk below.'}
+            </p>
           </div>
         )}
 

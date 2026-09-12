@@ -98,6 +98,9 @@ export default function Placements() {
   const [placementEnabled, setPlacementEnabled] = useState(true)
   const [jobApplicationsEnabled, setJobApplicationsEnabled] = useState(true)
   const [mockInterviewRequired, setMockInterviewRequired] = useState(true)
+  // Fail-closed: if the settings endpoint is unreachable we must not assume
+  // the portal is open — show maintenance instead of an empty/mocked portal.
+  const [settingsUnreachable, setSettingsUnreachable] = useState(false)
 
   // My Applications State
   const [myApplications, setMyApplications] = useState<PlacementApplicationItem[]>([])
@@ -137,15 +140,18 @@ export default function Placements() {
         setPlacementEnabled(res.data.placement_enabled ?? res.data.placementEnabled ?? true)
         setJobApplicationsEnabled(res.data.job_applications_enabled ?? res.data.jobApplicationsEnabled ?? true)
         setMockInterviewRequired(res.data.mock_interview_required ?? res.data.mockInterviewRequired ?? true)
+        setSettingsUnreachable(false)
       }
     } catch {
-      // Non-blocking
+      setSettingsUnreachable(true)
     }
   }, [])
 
   // 1. Fetch Published Job Opportunities
+  const [opportunitiesError, setOpportunitiesError] = useState(false)
   const fetchOpportunities = useCallback(async () => {
     setLoadingOpportunities(true)
+    setOpportunitiesError(false)
     try {
       const params = new URLSearchParams()
       if (search.trim()) params.append('search', search.trim())
@@ -158,7 +164,7 @@ export default function Placements() {
       const items = Array.isArray(res.data) ? res.data : res.data?.data || []
       setOpportunities(items)
     } catch {
-      // Non-blocking
+      setOpportunitiesError(true)
     } finally {
       setLoadingOpportunities(false)
     }
@@ -336,7 +342,7 @@ export default function Placements() {
 
       {/* Main Content Area */}
       <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
-        {!placementEnabled && (!user || (user.role !== 'admin' && user.role !== 'super_admin')) ? (
+        {(!placementEnabled || settingsUnreachable) && (!user || (user.role !== 'admin' && user.role !== 'super_admin')) ? (
           <div className="bg-slate-950/80 backdrop-blur border border-slate-800 rounded-3xl p-12 text-center text-slate-300 shadow-xl space-y-4 max-w-2xl mx-auto my-8">
             <span className="text-5xl block">🔒</span>
             <h2 className="text-xl font-black text-white">Placement Portal Maintenance</h2>
@@ -427,10 +433,14 @@ export default function Placements() {
               </div>
             ) : opportunities.length === 0 ? (
               <div className="bg-slate-950/80 backdrop-blur border border-slate-800 rounded-3xl p-16 text-center text-slate-500 shadow-xl space-y-3">
-                <span className="text-4xl">📭</span>
-                <h3 className="font-extrabold text-base text-slate-300">No Job Drives Found</h3>
+                <span className="text-4xl">{opportunitiesError ? '⚠️' : '📭'}</span>
+                <h3 className="font-extrabold text-base text-slate-300">
+                  {opportunitiesError ? 'Could Not Load Job Drives' : 'No Job Drives Found'}
+                </h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  No published job listings match your current filters. Check back soon for upcoming corporate drives.
+                  {opportunitiesError
+                    ? 'We could not reach the placement board. Please check your connection and try again.'
+                    : 'No published job listings match your current filters. Check back soon for upcoming corporate drives.'}
                 </p>
               </div>
             ) : (
