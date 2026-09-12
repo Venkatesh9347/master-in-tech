@@ -11,6 +11,8 @@ use App\Models\CourseEnrollment;
 use App\Models\Enquiry;
 use App\Models\EnquiryNote;
 use App\Models\User;
+use App\Services\Enrollment\EnrollmentAccess;
+use App\Services\Enrollment\EnrollmentPaymentGate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -260,6 +262,25 @@ class EnquiryController extends Controller
             'note' => 'nullable|string',
         ]);
 
+        // B3-4 legacy parity: scoped staff share the new-CRM reassignment and
+        // admission-state rules. They may only claim/release leads for
+        // themselves and may not confirm admission via the legacy path
+        // (admission flows through payment-gated convert/enroll).
+        if ($request->user() && $request->user()->hasScopedCrmAccess()) {
+            if (array_key_exists('assigned_agent', $validated) && $validated['assigned_agent'] !== null) {
+                $target = trim((string) $validated['assigned_agent']);
+                $ownName = trim((string) $request->user()->name);
+                if ($target !== '' && $target !== $ownName) {
+                    abort(403, 'You can only assign leads to yourself.');
+                }
+            }
+
+            if (array_key_exists('status', $validated)
+                && in_array($validated['status'], [Enquiry::STATUS_ADMISSION_CONFIRMED, Enquiry::STATUS_ENROLLED, Enquiry::STATUS_CONVERTED], true)) {
+                abort(403, 'Only administrators can confirm admission via this path.');
+            }
+        }
+
         $oldStatus = $enquiry->status;
 
         if (! empty($validated['course_id']) && $validated['course_id'] != $enquiry->course_id) {
@@ -333,7 +354,14 @@ class EnquiryController extends Controller
             'email' => 'nullable|email|max:255',
             'password' => 'nullable|string|min:8',
             'batch_id' => 'nullable|exists:batches,id',
+            'override_reason' => 'nullable|string|min:10|max:1000',
         ]);
+
+        // B3-2: scoped CRM staff can never use a payment override.
+        $overrideReason = EnrollmentPaymentGate::extractOverrideReason(
+            $request->user(),
+            $validated['override_reason'] ?? null
+        );
 
         $courseId = $validated['course_id'] ?? $enquiry->course_id;
 
@@ -363,22 +391,52 @@ class EnquiryController extends Controller
 
             $user = $this->provisionEnrolledStudent($validated, $enquiry, $course, $studentEmail, $studentName, $studentPassword);
 
-            $enrollment = CourseEnrollment::firstOrCreate(
-                [
+            // B3 pay-before-classroom: active access requires verified payment
+            // for this exact user + course, or an explicit admin override.
+            $gate = EnrollmentPaymentGate::resolveStatus(
+                (int) $user->id,
+                (int) $course->id,
+                $request->user(),
+                $overrideReason
+            );
+            $viaOverride = $gate['via_override'];
+            $paymentVerified = $gate['payment_verified'];
+
+            $existingEnrollment = CourseEnrollment::where('user_id', $user->id)
+                ->where('course_id', $course->id)
+                ->first();
+            $previousEnrollmentStatus = $existingEnrollment?->status;
+
+            if ($existingEnrollment && in_array($existingEnrollment->status, ['active', 'completed'], true)) {
+                $enrollment = $existingEnrollment;
+                $viaOverride = false;
+            } elseif ($existingEnrollment) {
+                if ($gate['status'] === EnrollmentPaymentGate::STATUS_ACTIVE) {
+                    $existingEnrollment->update(['status' => 'active']);
+                    $enrollment = $existingEnrollment->fresh();
+                } else {
+                    $enrollment = $existingEnrollment;
+                }
+            } else {
+                $enrollment = CourseEnrollment::create([
                     'user_id' => $user->id,
                     'course_id' => $course->id,
-                ],
-                [
                     'enrolled_at' => now(),
-                    'status' => 'active',
-                ]
-            );
+                    'status' => $gate['status'],
+                ]);
+            }
 
-            $this->assignEnquiryBatch($request, $validated, $course, $user);
+            $enrollmentActive = $enrollment->status === EnrollmentPaymentGate::STATUS_ACTIVE;
 
-            // Update Enquiry lead status to ENROLLED
+            // Cohort placement only with active LMS access; otherwise deferred.
+            if ($enrollmentActive) {
+                $this->assignEnquiryBatch($request, $validated, $course, $user);
+            }
+
+            // Update Enquiry lead status: enrolled only with active access,
+            // otherwise payment_pending (admitted, awaiting verified payment).
             $enquiry->update([
-                'status' => Enquiry::STATUS_ENROLLED,
+                'status' => $enrollmentActive ? Enquiry::STATUS_ENROLLED : Enquiry::STATUS_PAYMENT_PENDING,
                 'course_id' => $course->id,
                 'course_title' => $course->title,
                 'enrolled_user_id' => $user->id,
@@ -390,8 +448,23 @@ class EnquiryController extends Controller
                 'enquiry_id' => $enquiry->id,
                 'user_id' => $request->user()->id,
                 'user_name' => $request->user()->name,
-                'note' => "Student officially enrolled & granted LMS classroom access for '{$course->title}' by Administrator {$request->user()->name}.",
+                'note' => $enrollmentActive
+                    ? "Student officially enrolled & granted LMS classroom access for '{$course->title}' by Administrator {$request->user()->name}."
+                    : "Student pre-admitted to '{$course->title}' by {$request->user()->name}; LMS access pending verified payment.",
             ]);
+
+            if ($viaOverride) {
+                EnrollmentAccess::logOverride(
+                    $request->user(),
+                    (int) $user->id,
+                    (int) $course->id,
+                    $previousEnrollmentStatus,
+                    $enrollment->status,
+                    (string) $overrideReason,
+                    $paymentVerified,
+                    $enrollment
+                );
+            }
 
             DB::commit();
         } catch (\Exception $e) {
@@ -402,8 +475,21 @@ class EnquiryController extends Controller
             ], 500);
         }
 
+        if ($enrollment->status !== EnrollmentPaymentGate::STATUS_ACTIVE) {
+            return response()->json([
+                'message' => "Student {$user->name} has been pre-admitted to {$course->title} pending verified payment. LMS access remains blocked until payment is verified.",
+                'payment_required' => true,
+                'enrollment_status' => $enrollment->status,
+                'enquiry' => $enquiry->fresh(['user', 'course', 'notes', 'enrolledUser']),
+                'user' => $user,
+                'enrollment' => $enrollment,
+            ], 200);
+        }
+
         return response()->json([
             'message' => "Student {$user->name} has been enrolled in {$course->title} with active LMS access.",
+            'payment_verified' => $paymentVerified ?? false,
+            'via_override' => $viaOverride ?? false,
             'enquiry' => $enquiry->fresh(['user', 'course', 'notes', 'enrolledUser']),
             'user' => $user,
             'enrollment' => $enrollment,
@@ -427,8 +513,11 @@ class EnquiryController extends Controller
             $user->student_id = 'STU-'.(1000 + $user->id);
         }
 
-        // Ensure user has student role and active status
-        if ($user->role !== 'admin' && $user->role !== 'tutor') {
+        // B3-4: preserve existing staff roles. Never demote admin/super_admin,
+        // tutor/faculty, counsellor/telecaller/course_advisor (or
+        // company/recruiter) into student.
+        $staffRoles = ['admin', 'super_admin', 'tutor', 'faculty', 'counsellor', 'telecaller', 'course_advisor', 'company', 'recruiter'];
+        if (! in_array($user->role, $staffRoles, true)) {
             $user->role = 'student';
             $user->status = 'active';
         }

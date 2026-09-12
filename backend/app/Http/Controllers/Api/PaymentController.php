@@ -118,6 +118,14 @@ class PaymentController extends Controller
                 default => 422,
             };
 
+            // B3-15: safe structured logging (no signatures/secrets).
+            \Illuminate\Support\Facades\Log::warning('payment.confirm.rejected', [
+                'reason' => $reason,
+                'order_id' => $validated['order_id'] ?? null,
+                'payment_id' => $validated['payment_id'] ?? null,
+                'user_id' => (int) $request->user()->id,
+            ]);
+
             return response()->json([
                 'message' => 'Payment could not be confirmed.',
                 'error' => $reason,

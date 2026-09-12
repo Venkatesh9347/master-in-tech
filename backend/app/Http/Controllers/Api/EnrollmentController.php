@@ -108,10 +108,12 @@ class EnrollmentController extends Controller
             $enrollment->last_accessed_lesson = $lastAccessedLessons->get($enrollment->course_id) ?? null;
             $enrollment->is_course_completed = $isCompleted;
 
-            if ($enrollment->progress_percentage != $percentage || ($isCompleted && $enrollment->status !== 'completed')) {
+            if ($enrollment->progress_percentage != $percentage || ($isCompleted && $enrollment->status === 'active')) {
+                // B3: my-courses progress sync must never reactivate a pending/
+                // cancelled/dropped enrollment without verified payment.
                 $enrollment->update([
                     'progress_percentage' => $percentage,
-                    'status' => $isCompleted ? 'completed' : $enrollment->status,
+                    'status' => $isCompleted && $enrollment->status === 'active' ? 'completed' : $enrollment->status,
                 ]);
             }
         }

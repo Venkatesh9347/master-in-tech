@@ -53,7 +53,9 @@ class LiveClassController extends Controller
         $user = $request->user();
 
         if ($user->role === 'student' || empty($user->role)) {
+            // B3 pay-before-classroom: only active/completed enrollments list classes.
             $enrolledCourseIds = CourseEnrollment::where('user_id', $user->id)
+                ->whereIn('status', ['active', 'completed'])
                 ->pluck('course_id');
 
             $classes = LiveClass::whereIn('course_id', $enrolledCourseIds)
@@ -626,16 +628,18 @@ class LiveClassController extends Controller
 
     private function authorizeCourseAccess(User $user, Course $course): void
     {
-        if ($user->role === 'admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
-        if ($user->role === 'tutor' && $course->instructor_id === $user->id) {
+        if ($user->role === 'tutor' && (int) $course->instructor_id === (int) $user->id) {
             return;
         }
 
+        // B3 pay-before-classroom: only active/completed grant live access.
         $isEnrolled = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $course->id)
+            ->whereIn('status', ['active', 'completed'])
             ->exists();
 
         if (! $isEnrolled) {
@@ -645,11 +649,11 @@ class LiveClassController extends Controller
 
     private function authorizeTutorOwnership(User $user, Course $course): void
     {
-        if ($user->role === 'admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
-        if ($user->role === 'tutor' && $course->instructor_id === $user->id) {
+        if ($user->role === 'tutor' && (int) $course->instructor_id === (int) $user->id) {
             return;
         }
 

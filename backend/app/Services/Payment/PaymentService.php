@@ -49,19 +49,54 @@ class PaymentService
     }
 
     /**
+     * B3-14: production fail-closed guard. Production must never silently
+     * operate with the stub provider or missing Razorpay credentials. Local
+     * and test environments are unaffected. Messages never expose secrets.
+     *
+     * @throws \App\Services\Payment\Exceptions\PaymentNotConfiguredException
+     */
+    public function ensureProductionPaymentConfigured(): void
+    {
+        if (! app()->environment('production')) {
+            return;
+        }
+
+        $provider = (string) config('payment.default_provider', 'stub');
+
+        if ($provider !== 'razorpay') {
+            throw new \App\Services\Payment\Exceptions\PaymentNotConfiguredException(
+                'Payments are not configured for production.'
+            );
+        }
+
+        if ((string) config('services.razorpay.key_id') === ''
+            || (string) config('services.razorpay.key_secret') === ''
+            || (string) config('services.razorpay.webhook_secret') === '') {
+            throw new \App\Services\Payment\Exceptions\PaymentNotConfiguredException(
+                'Payments are not configured for production.'
+            );
+        }
+    }
+
+    /**
      * Create a payment order for an amount in paise/cents.
      *
-     * When an idempotency key is supplied and a transaction already exists for
-     * that (provider, key), the existing order is returned untouched and the
-     * gateway is NOT called again — preventing duplicate charges.
+     * Idempotency: same-price retries reuse the existing transaction and the
+     * gateway is NOT called again. Refunded terminals and stale-price
+     * non-terminals advance to a versioned key (`{base}_v2`, …).
      *
      * @param  int  $amountPaise  Amount in minor units (paise/cents).
      * @param  array{idempotency_key?: string, description?: string, customer?: array, notes?: array}  $options
      */
     public function createOrder(int $amountPaise, array $options = []): PaymentOrder
     {
+        $this->ensureProductionPaymentConfigured();
+
         $providerName = $this->providerName();
-        $key = $options['idempotency_key'] ?? PaymentTransaction::newIdempotencyKey();
+        $baseKey = $options['idempotency_key'] ?? PaymentTransaction::newIdempotencyKey();
+        $currency = (string) ($options['currency'] ?? config('payment.currency', 'INR'));
+
+        $key = $this->resolveOrderKey($providerName, $baseKey, $amountPaise, $currency);
 
         $existing = $this->findByKey($providerName, $key);
         if ($existing !== null) {
@@ -72,7 +107,7 @@ class PaymentService
             'idempotency_key' => $key,
         ]));
 
-        $this->persist(new PaymentTransaction([
+        $saved = $this->persist(new PaymentTransaction([
             'provider' => $order->provider,
             'order_id' => $order->orderId,
             'payment_id' => $order->paymentId,
@@ -86,7 +121,56 @@ class PaymentService
             'metadata' => $options['notes'] ?? [],
         ]), $providerName, $key);
 
+        // B3-10: on a unique-constraint race the loser returns the winner's
+        // persisted order, never its own orphan gateway order.
+        if ($saved->order_id !== $order->orderId) {
+            return $this->orderFromTransaction($saved, reused: true);
+        }
+
         return $order;
+    }
+
+    /**
+     * Resolve the idempotency key for a new order request.
+     *
+     * Same-price retries reuse the base key. Refunded terminals and
+     * stale-price non-terminals advance to the next free versioned key so the
+     * old row is preserved and never resurrected or silently repriced.
+     */
+    private function resolveOrderKey(string $provider, string $baseKey, int $amountPaise, string $currency): string
+    {
+        $existing = $this->findByKey($provider, $baseKey);
+
+        if ($existing === null) {
+            return $baseKey;
+        }
+
+        $sameAmount = (int) $existing->amount_paise === (int) $amountPaise
+            && strtoupper((string) $existing->currency) === strtoupper($currency);
+
+        // Paid rows are reused (already have access; never double-charge).
+        // Non-terminal rows with the same amount are reused (legit retry).
+        if ($existing->status === 'paid' || ($sameAmount && $existing->status !== 'refunded')) {
+            return $baseKey;
+        }
+
+        for ($version = 2; $version <= 25; $version++) {
+            $candidate = $baseKey.'_v'.$version;
+            $row = $this->findByKey($provider, $candidate);
+
+            if ($row === null) {
+                return $candidate;
+            }
+
+            $rowSame = (int) $row->amount_paise === (int) $amountPaise
+                && strtoupper((string) $row->currency) === strtoupper($currency);
+
+            if ($row->status === 'paid' || ($rowSame && $row->status !== 'refunded')) {
+                return $candidate;
+            }
+        }
+
+        return $baseKey.'_v'.time();
     }
 
     /*
@@ -107,6 +191,8 @@ class PaymentService
      */
     public function authoritativeConfirm(string $orderId, string $paymentId, int $actorUserId, ?string $signature = null): PaymentTransaction
     {
+        $this->ensureProductionPaymentConfigured();
+
         $providerName = $this->providerName();
 
         if ($providerName === 'razorpay' && ! $this->provider()->verifyPaymentSignature($orderId, $paymentId, (string) $signature)) {
@@ -145,6 +231,7 @@ class PaymentService
         $this->associatePaymentId($transaction, $paymentId);
 
         return $this->applyPaymentEvent($paymentId, 'captured', [
+            'provider' => $providerName,
             'confirmed_by' => $actorUserId,
             'confirmed_at' => now()->toISOString(),
         ]) ?? $transaction;
@@ -201,9 +288,14 @@ class PaymentService
         }
 
         // For authorized/failed transitions, still verify when the entity
-        // carries order info so stale/mismatched events are ignored.
+        // carries order info so stale/mismatched events are ignored. Events
+        // without order linkage keep the historical behavior (still recorded
+        // as authorized/failed; they never grant access).
         if (in_array($status, ['authorized', 'failed'], true)) {
-            $this->verifyEntityAgainstTransaction($transaction, $entity);
+            $entityOrderId = (string) ($entity['order_id'] ?? '');
+            if ($entityOrderId !== '' && $this->verifyEntityAgainstTransaction($transaction, $entity) !== null) {
+                return null;
+            }
         }
 
         // Associate payment id when the provider gives us a new (previously
@@ -221,6 +313,7 @@ class PaymentService
         }
 
         return $this->applyPaymentEvent($paymentId, $status, [
+            'provider' => $provider,
             'event' => $entity['event'] ?? null,
             'webhook_received_at' => now()->toISOString(),
         ]);
@@ -242,35 +335,57 @@ class PaymentService
      */
     public function applyPaymentEvent(string $paymentId, string $status, array $context = []): ?PaymentTransaction
     {
-        $transaction = PaymentTransaction::where('payment_id', $paymentId)->first();
+        // B3-9: prefer the provider-scoped lookup so identical payment IDs
+        // from different providers can never cross-contaminate.
+        $provider = isset($context['provider']) && is_string($context['provider']) && $context['provider'] !== ''
+            ? $context['provider']
+            : null;
+
+        $transaction = $provider !== null
+            ? $this->findByProviderAndPayment($provider, $paymentId)
+            : PaymentTransaction::where('payment_id', $paymentId)->first();
+
+        if ($transaction === null && $provider !== null) {
+            $transaction = PaymentTransaction::where('payment_id', $paymentId)->first();
+        }
 
         if ($transaction === null) {
             return null;
         }
 
-        $newStatus = match ($status) {
-            'captured', 'paid' => 'paid',
-            'authorized' => 'authorized',
-            'failed', 'cancelled' => 'failed',
-            'refunded' => 'refunded',
-            default => $transaction->status,
-        };
+        $transactionId = (int) $transaction->id;
 
-        // Terminal states are append-only with one forward exception: a paid
-        // row may move to refunded, but refunded rows never change again and
-        // paid rows never downgrade to anything else.
-        $isDowngrade = $newStatus !== $transaction->status
-            && ! ($transaction->status === 'paid' && $newStatus === 'refunded');
-        if (in_array($transaction->status, ['paid', 'refunded'], true) && $isDowngrade) {
-            return $transaction;
-        }
+        return DB::transaction(function () use ($transactionId, $paymentId, $status, $context) {
+            // B3-9: row-level lock makes paid/refunded races last-writer-safe
+            // under the terminal-state rules below (no TOCTOU downgrade).
+            $transaction = PaymentTransaction::where('id', $transactionId)->lockForUpdate()->first();
 
-        // Idempotent: already at same non-paid status → no change.
-        if ($transaction->status === $newStatus) {
-            return $transaction;
-        }
+            if ($transaction === null) {
+                return null;
+            }
 
-        return DB::transaction(function () use ($transaction, $newStatus, $context) {
+            $newStatus = match ($status) {
+                'captured', 'paid' => 'paid',
+                'authorized' => 'authorized',
+                'failed', 'cancelled' => 'failed',
+                'refunded' => 'refunded',
+                default => $transaction->status,
+            };
+
+            // Terminal states are append-only with one forward exception: a paid
+            // row may move to refunded, but refunded rows never change again and
+            // paid rows never downgrade to anything else.
+            $isDowngrade = $newStatus !== $transaction->status
+                && ! ($transaction->status === 'paid' && $newStatus === 'refunded');
+            if (in_array($transaction->status, ['paid', 'refunded'], true) && $isDowngrade) {
+                return $transaction;
+            }
+
+            // Idempotent: already at same status → no change.
+            if ($transaction->status === $newStatus) {
+                return $transaction;
+            }
+
             $old = $transaction->toArray();
 
             $transaction->fill([
@@ -307,6 +422,13 @@ class PaymentService
      */
     public function recordWebhookEvent(string $provider, ?string $providerEventId, string $eventType, array $payload): array
     {
+        // B3-8: deliveries without a provider event ID get a deterministic
+        // fallback key (no secrets hashed) so identical redeliveries dedupe
+        // instead of creating unlimited ledger rows.
+        if ($providerEventId === null || $providerEventId === '') {
+            $providerEventId = self::fallbackWebhookEventId($provider, $eventType, $payload);
+        }
+
         if ($providerEventId === null || $providerEventId === '') {
             $event = PaymentWebhookEvent::create([
                 'provider' => $provider,
@@ -340,6 +462,39 @@ class PaymentService
 
             return ['event' => $existing, 'duplicate' => true];
         }
+    }
+
+    /**
+     * Deterministic fallback deduplication key for deliveries without a
+     * provider event ID. Built only from non-secret routing identifiers
+     * (entity/payment/order linkage, type, amount, currency, status) so
+     * identical redeliveries map to one ledger row without hashing secrets
+     * or storing extra sensitive material.
+     */
+    public static function fallbackWebhookEventId(string $provider, string $eventType, array $payload): ?string
+    {
+        $entity = $payload['payload']['payment']['entity']
+            ?? $payload['payload']['order']['entity']
+            ?? $payload['payload']['refund']['entity']
+            ?? null;
+
+        if (! is_array($entity)) {
+            return null;
+        }
+
+        $paymentId = (string) ($entity['payment_id'] ?? $entity['id'] ?? '');
+        $orderId = (string) ($entity['order_id'] ?? '');
+        $amount = isset($entity['amount']) && is_numeric($entity['amount']) ? (string) (int) $entity['amount'] : '';
+        $currency = strtoupper((string) ($entity['currency'] ?? ''));
+        $entityStatus = strtolower((string) ($entity['status'] ?? ''));
+
+        if ($paymentId === '' && $orderId === '') {
+            return null;
+        }
+
+        $fingerprint = implode('|', [$provider, $eventType, $paymentId, $orderId, $amount, $currency, $entityStatus]);
+
+        return 'noid_'.substr(hash('sha256', $fingerprint), 0, 32);
     }
 
     /**
@@ -382,6 +537,11 @@ class PaymentService
 
     public function verifyWebhookSignature(string $payload, string $signature): bool
     {
+        // B3-14: production never accepts stub verification semantics.
+        if (app()->environment('production') && (string) config('payment.default_provider', 'stub') !== 'razorpay') {
+            return false;
+        }
+
         return $this->provider()->verifyWebhookSignature($payload, $signature);
     }
 
@@ -472,19 +632,48 @@ class PaymentService
 
     /**
      * Insert the transaction, tolerating a unique-constraint race from two
-     * concurrent identical requests. The loser re-fetches the committed row so
-     * both callers agree on one transaction (at-most-once).
+     * concurrent identical requests. The loser re-fetches and returns the
+     * committed winner so both callers agree on one transaction (at-most-once).
      */
-    private function persist(PaymentTransaction $tx, string $provider, string $key): void
+    private function persist(PaymentTransaction $tx, string $provider, string $key): PaymentTransaction
     {
         try {
             $tx->save();
+
+            return $tx->fresh() ?? $tx;
         } catch (QueryException $e) {
             if (! $this->isUniqueViolation($e)) {
                 throw $e;
             }
             // Concurrent duplicate: another request already committed this key.
+            // Return the winner instead of an orphan gateway order.
+            $winner = $this->findByKey($provider, $key);
+
+            if ($winner === null) {
+                $winner = static::findByOrderFallback($provider, $tx);
+            }
+
+            if ($winner !== null) {
+                return $winner;
+            }
+
+            throw $e;
         }
+    }
+
+    private static function findByOrderFallback(string $provider, PaymentTransaction $tx): ?PaymentTransaction
+    {
+        if (! empty($tx->order_id)) {
+            $row = PaymentTransaction::where('provider', $provider)
+                ->where('order_id', $tx->order_id)
+                ->first();
+
+            if ($row !== null) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     private function isUniqueViolation(QueryException $e): bool

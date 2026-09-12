@@ -117,12 +117,15 @@ class Goal3StudentLearningExperienceTest extends TestCase
                 'course_id' => $course->id,
                 'status' => 'active',
             ])
-            ->assertStatus(201);
+            ->assertStatus(201)
+            ->assertJsonFragment(['payment_required' => true]);
 
+        // B3 pay-before-classroom: admission without verified payment stays
+        // pending with LMS blocked (duplicate guard still applies below).
         $this->assertDatabaseHas('course_enrollments', [
             'user_id' => $student->id,
             'course_id' => $course->id,
-            'status' => 'active',
+            'status' => 'pending',
         ]);
 
         $this->actingAs($admin, 'sanctum')

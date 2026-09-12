@@ -12,6 +12,8 @@ use App\Models\CourseEnrollment;
 use App\Models\Lesson;
 use App\Models\LessonProgress;
 use App\Models\User;
+use App\Services\Enrollment\EnrollmentAccess;
+use App\Services\Enrollment\EnrollmentPaymentGate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -145,7 +147,14 @@ class AdminEnrollmentController extends Controller
             'course_id' => 'required|exists:courses,id',
             'status' => 'nullable|string|in:active,completed,pending,cancelled',
             'batch_id' => 'nullable|exists:batches,id',
+            'override_reason' => 'nullable|string|min:10|max:1000',
         ]);
+
+        // B3-2: only administrators may supply an override reason.
+        $overrideReason = EnrollmentPaymentGate::extractOverrideReason(
+            $request->user(),
+            $validated['override_reason'] ?? null
+        );
 
         $userId = $validated['user_id'] ?? null;
 
@@ -180,7 +189,38 @@ class AdminEnrollmentController extends Controller
         }
 
         $courseId = (int) $validated['course_id'];
-        $status = $validated['status'] ?? 'active';
+        $requestedStatus = $validated['status'] ?? 'active';
+
+        // B3 pay-before-classroom: active/completed require verified payment
+        // for this exact user + course, or an explicit admin override.
+        // Without either, the enrollment is created pending and LMS access
+        // remains blocked. Pending/cancelled requests are honored as-is.
+        $gate = EnrollmentPaymentGate::resolveStatus(
+            (int) $userId,
+            $courseId,
+            $request->user(),
+            $overrideReason
+        );
+
+        if (in_array($requestedStatus, ['active', 'completed'], true)
+            && $gate['status'] !== EnrollmentPaymentGate::STATUS_ACTIVE) {
+            $status = EnrollmentPaymentGate::STATUS_PENDING;
+            $viaOverride = false;
+            $paymentVerified = false;
+            $paymentRequired = true;
+        } elseif (in_array($requestedStatus, ['active', 'completed'], true)) {
+            $status = $requestedStatus === 'completed' ? 'completed' : 'active';
+            $viaOverride = $gate['via_override'];
+            $paymentVerified = $gate['payment_verified'];
+            $paymentRequired = false;
+            // Completed without a verified payment is only reachable via an
+            // explicit override; resolveStatus already enforces that.
+        } else {
+            $status = $requestedStatus;
+            $viaOverride = false;
+            $paymentVerified = $gate['payment_verified'];
+            $paymentRequired = false;
+        }
 
         // Check if student is already enrolled in this course
         $existing = CourseEnrollment::where('user_id', $userId)
@@ -252,6 +292,19 @@ class AdminEnrollmentController extends Controller
 
             AuditLog::log('created_enrollment', $enrollment, null, $enrollment->toArray());
 
+            if ($viaOverride) {
+                EnrollmentAccess::logOverride(
+                    $request->user(),
+                    (int) $userId,
+                    $courseId,
+                    null,
+                    $enrollment->status,
+                    (string) $overrideReason,
+                    $paymentVerified,
+                    $enrollment
+                );
+            }
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
@@ -261,8 +314,18 @@ class AdminEnrollmentController extends Controller
             ], 500);
         }
 
+        if (! empty($paymentRequired)) {
+            return response()->json([
+                'message' => 'Student pre-admitted pending verified payment. LMS access remains blocked until payment is verified.',
+                'payment_required' => true,
+                'enrollment' => $enrollment,
+            ], 201);
+        }
+
         return response()->json([
             'message' => 'Course successfully assigned to student.',
+            'payment_verified' => $paymentVerified,
+            'via_override' => $viaOverride,
             'enrollment' => $enrollment,
         ], 201);
     }
@@ -276,10 +339,49 @@ class AdminEnrollmentController extends Controller
 
         $validated = $request->validate([
             'status' => 'required|string|in:active,completed,pending,cancelled',
+            'override_reason' => 'nullable|string|min:10|max:1000',
         ]);
 
+        $target = $validated['status'];
+
+        // B3: activating (or completing) requires verified payment or an
+        // explicit admin override. Deactivating to pending/cancelled is safe.
+        if (in_array($target, ['active', 'completed'], true)
+            && ! in_array($enrollment->status, ['active', 'completed'], true)) {
+            $overrideReason = EnrollmentPaymentGate::extractOverrideReason(
+                $request->user(),
+                $validated['override_reason'] ?? null
+            );
+
+            if (! EnrollmentPaymentGate::canActivate(
+                (int) $enrollment->user_id,
+                (int) $enrollment->course_id,
+                $request->user(),
+                $overrideReason
+            )) {
+                return response()->json([
+                    'message' => 'Verified payment is required before this enrollment can be activated.',
+                    'payment_required' => true,
+                    'enrollment' => $enrollment,
+                ], 422);
+            }
+
+            if ($overrideReason !== null) {
+                EnrollmentAccess::logOverride(
+                    $request->user(),
+                    (int) $enrollment->user_id,
+                    (int) $enrollment->course_id,
+                    $enrollment->status,
+                    $target,
+                    $overrideReason,
+                    EnrollmentPaymentGate::hasVerifiedPaidPayment((int) $enrollment->user_id, (int) $enrollment->course_id),
+                    $enrollment
+                );
+            }
+        }
+
         $enrollment->update([
-            'status' => $validated['status'],
+            'status' => $target,
         ]);
 
         $enrollment->load([

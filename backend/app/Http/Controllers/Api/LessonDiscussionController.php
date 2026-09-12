@@ -111,7 +111,7 @@ class LessonDiscussionController extends Controller
      */
     private function authorizeCourseAccess($user, Course $course): void
     {
-        if ($user->role === 'admin') {
+        if ($user->isAdmin()) {
             return;
         }
 
@@ -119,9 +119,10 @@ class LessonDiscussionController extends Controller
             return;
         }
 
+        // B3 pay-before-classroom: only active/completed grant access.
         $isEnrolled = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $course->id)
-            ->where('status', '!=', 'dropped')
+            ->whereIn('status', ['active', 'completed'])
             ->exists();
 
         if (! $isEnrolled) {

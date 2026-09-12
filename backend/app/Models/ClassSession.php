@@ -465,8 +465,10 @@ class ClassSession extends Model
             return true;
         }
 
+        // B3 pay-before-classroom: only active/completed grant join access.
         $isCourseEnrolled = CourseEnrollment::where('user_id', $user->id)
             ->where('course_id', $this->course_id)
+            ->whereIn('status', ['active', 'completed'])
             ->exists();
 
         if (! $isCourseEnrolled) {

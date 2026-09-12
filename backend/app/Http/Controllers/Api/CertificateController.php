@@ -44,8 +44,10 @@ class CertificateController extends Controller
         // Verify enrollment and completion inside a transaction with a lock so
         // concurrent requests cannot mint duplicate certificates (M2).
         return DB::transaction(function () use ($user, $course) {
+            // B3 pay-before-classroom: only active/completed enrollments qualify.
             $enrollment = CourseEnrollment::where('user_id', $user->id)
                 ->where('course_id', $course->id)
+                ->whereIn('status', ['active', 'completed'])
                 ->lockForUpdate()
                 ->first();
 

@@ -188,26 +188,45 @@ class AdmissionsPipelineTest extends TestCase
             'status' => 'admission_confirmed',
         ]);
 
-        // Enroll Student action
+        // Enroll Student action (B3 pay-before-classroom: no verified payment
+        // yet, so the admission stays pending and LMS remains blocked).
         $resEnroll = $this->postJson("/api/admin/enquiries/{$enquiry->id}/enroll", [
             'course_id' => $course->id,
             'password' => 'steveSecret123',
         ]);
 
         $resEnroll->assertStatus(200)
-            ->assertJsonFragment(['status' => 'enrolled']);
+            ->assertJsonFragment(['status' => 'payment_pending'])
+            ->assertJsonFragment(['payment_required' => true]);
 
         // Verify User was provisioned with student role
         $student = User::where('email', 'steve099@gmail.com')->first();
         $this->assertNotNull($student);
         $this->assertEquals('student', $student->role);
 
-        // Verify Course Enrollment was created
+        // Verify Course Enrollment was created pending (no LMS access).
         $enrollment = CourseEnrollment::where('user_id', $student->id)
             ->where('course_id', $course->id)
             ->first();
         $this->assertNotNull($enrollment);
-        $this->assertEquals('active', $enrollment->status);
+        $this->assertEquals('pending', $enrollment->status);
+
+        // Verify Student cannot yet access classroom (pending blocks LMS).
+        Sanctum::actingAs($student);
+        $resBlocked = $this->getJson("/api/courses/{$course->id}/lms-progress");
+        $resBlocked->assertStatus(403);
+
+        // Emergency admin override activates LMS access with a full audit trail.
+        Sanctum::actingAs($admin);
+        $resOverride = $this->postJson("/api/admin/enquiries/{$enquiry->id}/enroll", [
+            'course_id' => $course->id,
+            'override_reason' => 'Scholarship admission approved by registrar office.',
+        ]);
+        $resOverride->assertStatus(200);
+        $this->assertEquals('active', CourseEnrollment::where('user_id', $student->id)->where('course_id', $course->id)->first()->status);
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'enrollment_payment_override',
+        ]);
 
         // Verify Student can now access classroom
         Sanctum::actingAs($student);
@@ -339,18 +358,33 @@ class AdmissionsPipelineTest extends TestCase
         // Verify NOT enrolled yet
         $this->assertNull(Enquiry::find($enquiryId)->enrolled_user_id);
 
-        // 4. ADMIN ENROLLMENT ACTION
+        // 4. ADMIN ENROLLMENT ACTION (B3: pending without verified payment).
         $resEnroll = $this->postJson("/api/admin/enquiries/{$enquiryId}/enroll", [
             'course_id' => $course->id,
             'password' => 'steveSecure123',
         ]);
-        $resEnroll->assertStatus(200);
-        $this->assertEquals('enrolled', Enquiry::find($enquiryId)->status);
+        $resEnroll->assertStatus(200)
+            ->assertJsonFragment(['payment_required' => true]);
+        $this->assertEquals('payment_pending', Enquiry::find($enquiryId)->status);
 
         // Verify Student user provisioned
         $student = User::where('email', 'steve099@gmail.com')->first();
         $this->assertNotNull($student);
         $this->assertEquals('student', $student->role);
+        $this->assertEquals('pending', CourseEnrollment::where('user_id', $student->id)->where('course_id', $course->id)->first()->status);
+
+        // Pending blocks LMS access.
+        Sanctum::actingAs($student);
+        $this->getJson("/api/courses/{$course->id}/lms-progress")->assertStatus(403);
+        Sanctum::actingAs($admin);
+
+        // Admin override activates the admission (audited).
+        $resOverride = $this->postJson("/api/admin/enquiries/{$enquiryId}/enroll", [
+            'course_id' => $course->id,
+            'override_reason' => 'Registrar-approved emergency admission for e2e cohort.',
+        ]);
+        $resOverride->assertStatus(200);
+        $this->assertEquals('enrolled', Enquiry::find($enquiryId)->status);
 
         // 5. DUPLICATE ADMISSION ATTEMPT SAFETY
         Sanctum::actingAs($admin);

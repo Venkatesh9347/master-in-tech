@@ -455,7 +455,9 @@ class CrmModuleTest extends TestCase
 
         Sanctum::actingAs($admin);
 
-        // Execute CRM -> LMS Conversion
+        // Execute CRM -> LMS Conversion (B3: CRM amounts alone never grant
+        // active access; an explicit admin override is required without a
+        // verified PaymentTransaction).
         $resConvert = $this->postJson("/api/admin/crm/leads/{$lead->id}/convert", [
             'course_id' => $course->id,
             'batch_id' => $batch->id,
@@ -464,10 +466,12 @@ class CrmModuleTest extends TestCase
             'amount_paid' => 35000,
             'payment_mode' => 'netbanking',
             'transaction_id' => 'HDFC12345678',
+            'override_reason' => 'Fees verified offline by finance desk, receipt HDFC12345678.',
             'notes' => 'Admission confirmed with full fees paid.',
         ]);
 
-        $resConvert->assertStatus(200);
+        $resConvert->assertStatus(200)
+            ->assertJsonFragment(['via_override' => true]);
 
         // 1. Verify student user account provisioned
         $this->assertDatabaseHas('users', [
@@ -538,23 +542,28 @@ class CrmModuleTest extends TestCase
 
         Sanctum::actingAs($admin);
 
-        // Execute conversion for existing student
+        // Execute conversion for existing student (B3: no verified payment and
+        // no override, so the admission stays pending with LMS blocked).
         $res = $this->postJson("/api/admin/crm/leads/{$lead->id}/convert", [
             'course_id' => $course->id,
             'email' => 'existing.learner@example.com',
         ]);
 
-        $res->assertStatus(200);
+        $res->assertStatus(200)
+            ->assertJsonFragment(['payment_required' => true]);
 
         // Verify NO duplicate user was created
         $this->assertEquals(1, User::where('email', 'existing.learner@example.com')->count());
 
-        // Verify enrollment linked to existing student ID
+        // Verify enrollment linked to existing student ID as pending (no LMS).
         $this->assertDatabaseHas('course_enrollments', [
             'user_id' => $existingStudent->id,
             'course_id' => $course->id,
-            'status' => 'active',
+            'status' => 'pending',
         ]);
+
+        Sanctum::actingAs($existingStudent);
+        $this->getJson("/api/courses/{$course->id}/lms-progress")->assertStatus(403);
     }
 
     public function test_single_active_session_enforcement_on_crm_endpoints(): void

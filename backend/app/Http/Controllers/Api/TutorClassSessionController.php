@@ -172,7 +172,7 @@ class TutorClassSessionController extends Controller
             'attendances.user:id,name,email',
         ])->findOrFail($id);
 
-        if ($session->tutor_id !== $user->id && $user->role !== 'admin') {
+        if ((int) $session->tutor_id !== (int) $user->id && ! $user->isAdmin()) {
             return response()->json([
                 'message' => 'Unauthorized. This class session is not assigned to you.',
             ], 403);
@@ -246,7 +246,7 @@ class TutorClassSessionController extends Controller
         $user = $request->user();
         $session = ClassSession::findOrFail($id);
 
-        if ($session->tutor_id !== $user->id && $user->role !== 'admin') {
+        if ((int) $session->tutor_id !== (int) $user->id && ! $user->isAdmin()) {
             return response()->json([
                 'message' => 'Unauthorized. You are not the assigned tutor for this class session.',
             ], 403);
@@ -281,7 +281,7 @@ class TutorClassSessionController extends Controller
         $user = $request->user();
         $session = ClassSession::findOrFail($id);
 
-        if ($session->tutor_id !== $user->id && $user->role !== 'admin') {
+        if ((int) $session->tutor_id !== (int) $user->id && ! $user->isAdmin()) {
             return response()->json([
                 'message' => 'Unauthorized. You cannot upload materials for a session not assigned to you.',
             ], 403);

@@ -233,6 +233,7 @@ class AdminBatchManagementTest extends TestCase
         $res = $this->postJson("/api/admin/batches/{$batch->id}/students", [
             'user_id' => $student->id,
             'notes' => 'Direct batch enrollment by counselor',
+            'override_reason' => 'Finance-verified offline fees receipt for batch admission.',
         ]);
 
         $res->assertStatus(201)
@@ -284,12 +285,19 @@ class AdminBatchManagementTest extends TestCase
             'status' => 'upcoming',
         ]);
 
-        // Student initially active in Batch A
+        // Student initially active in Batch A with verified LMS access.
         $membershipA = BatchStudent::create([
             'batch_id' => $batchA->id,
             'user_id' => $student->id,
             'status' => 'active',
             'joined_at' => now()->subDays(10),
+        ]);
+
+        \App\Models\CourseEnrollment::create([
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+            'enrolled_at' => now()->subDays(10),
         ]);
 
         Sanctum::actingAs($admin);
@@ -353,6 +361,13 @@ class AdminBatchManagementTest extends TestCase
             'user_id' => $student->id,
             'status' => 'active',
             'joined_at' => now()->subDays(20),
+        ]);
+
+        \App\Models\CourseEnrollment::create([
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+            'enrolled_at' => now()->subDays(20),
         ]);
 
         Sanctum::actingAs($admin);
@@ -454,10 +469,11 @@ class AdminBatchManagementTest extends TestCase
 
         Sanctum::actingAs($admin);
 
-        // 1. Initial enrollment succeeds
+        // 1. Initial enrollment succeeds (B3: admin override for verified admission)
         $res1 = $this->postJson("/api/admin/batches/{$batch->id}/students", [
             'user_id' => $student->id,
             'notes' => 'First admission',
+            'override_reason' => 'Finance-verified offline fees receipt for batch admission.',
         ]);
         $res1->assertStatus(201);
 
@@ -570,12 +586,19 @@ class AdminBatchManagementTest extends TestCase
             'status' => 'upcoming',
         ]);
 
-        // Student starts active in Batch A
+        // Student starts active in Batch A with verified LMS access.
         BatchStudent::create([
             'batch_id' => $batchA->id,
             'user_id' => $student->id,
             'status' => 'active',
             'joined_at' => now()->subDays(5),
+        ]);
+
+        \App\Models\CourseEnrollment::create([
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+            'enrolled_at' => now()->subDays(5),
         ]);
 
         Sanctum::actingAs($admin);

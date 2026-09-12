@@ -44,10 +44,10 @@ class LessonController extends Controller
         $user = $request->user();
 
         // Check active enrollment and publication status for student access
-        if ($user->role !== 'admin' && $course->instructor_id !== $user->id) {
+        if (! $user->isAdmin() && (int) $course->instructor_id !== (int) $user->id) {
             $enrolled = $course->enrollments()
                 ->where('user_id', $user->id)
-                ->where('status', '!=', 'dropped')
+                ->whereIn('status', ['active', 'completed'])
                 ->exists();
 
             if (! $enrolled) {
@@ -115,10 +115,10 @@ class LessonController extends Controller
 
         $user = $request->user();
 
-        if ($user->role !== 'admin' && $course->instructor_id !== $user->id) {
+        if (! $user->isAdmin() && (int) $course->instructor_id !== (int) $user->id) {
             $enrolled = $course->enrollments()
                 ->where('user_id', $user->id)
-                ->where('status', '!=', 'dropped')
+                ->whereIn('status', ['active', 'completed'])
                 ->exists();
 
             if (! $enrolled) {
@@ -178,10 +178,10 @@ class LessonController extends Controller
 
         $user = $request->user();
 
-        if ($user->role !== 'admin' && $course->instructor_id !== $user->id) {
+        if (! $user->isAdmin() && (int) $course->instructor_id !== (int) $user->id) {
             $enrolled = $course->enrollments()
                 ->where('user_id', $user->id)
-                ->where('status', '!=', 'dropped')
+                ->whereIn('status', ['active', 'completed'])
                 ->exists();
 
             if (! $enrolled) {
@@ -274,10 +274,16 @@ class LessonController extends Controller
                 ->where('course_id', $course->id)
                 ->first();
 
-            if ($enrollment) {
+            if ($enrollment && in_array($enrollment->status, ['active', 'completed'], true)) {
                 $enrollment->update([
                     'progress_percentage' => $courseProgressPercentage,
                     'status' => $isCourseCompleted ? 'completed' : 'active',
+                ]);
+            } elseif ($enrollment) {
+                // B3: progress sync must never reactivate a pending/
+                // cancelled/dropped enrollment without verified payment.
+                $enrollment->update([
+                    'progress_percentage' => $courseProgressPercentage,
                 ]);
             }
 
@@ -314,10 +320,10 @@ class LessonController extends Controller
 
         $user = $request->user();
 
-        if ($user->role !== 'admin' && $course->instructor_id !== $user->id) {
+        if (! $user->isAdmin() && (int) $course->instructor_id !== (int) $user->id) {
             $enrolled = $course->enrollments()
                 ->where('user_id', $user->id)
-                ->where('status', '!=', 'dropped')
+                ->whereIn('status', ['active', 'completed'])
                 ->exists();
 
             if (! $enrolled) {
@@ -649,8 +655,10 @@ class LessonController extends Controller
             abort(401, 'Unauthenticated.');
         }
 
-        if ($user->role !== 'admin' && $course->instructor_id !== $user->id) {
-            abort(403, 'Unauthorized. You can only manage curriculum for your own courses.');
+        if (! $user || ! $user->isAdmin()) {
+            if (! $user || (int) $course->instructor_id !== (int) $user->id) {
+                abort(403, 'Unauthorized. You can only manage curriculum for your own courses.');
+            }
         }
     }
 }

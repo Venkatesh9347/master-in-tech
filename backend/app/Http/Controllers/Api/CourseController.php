@@ -142,9 +142,10 @@ class CourseController extends Controller
             $isInstructor = $user && (int) $course->instructor_id === (int) $user->id;
 
             if ($user && ! $isArchived) {
+                // B3: only active/completed count as enrolled for hidden content.
                 $enrollment = CourseEnrollment::where('user_id', $user->id)
                     ->where('course_id', $course->id)
-                    ->where('status', '!=', 'dropped')
+                    ->whereIn('status', ['active', 'completed'])
                     ->first();
                 $isEnrolled = (bool) $enrollment;
             }
@@ -158,9 +159,10 @@ class CourseController extends Controller
         $enrollment = null;
 
         if ($user) {
+            // B3: is_enrolled reflects LMS access (active/completed only).
             $enrollment = CourseEnrollment::where('user_id', $user->id)
                 ->where('course_id', $course->id)
-                ->where('status', '!=', 'dropped')
+                ->whereIn('status', ['active', 'completed'])
                 ->first();
             $isEnrolled = (bool) $enrollment;
         }

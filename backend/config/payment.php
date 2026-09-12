@@ -34,4 +34,23 @@ return [
     */
     'currency' => env('PAYMENT_CURRENCY', 'INR'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Refund policy (B3-16, operational — preserved, not automatic)
+    |--------------------------------------------------------------------------
+    |
+    | A provider refund moves the PaymentTransaction to `refunded` (terminal;
+    | never resurrected, never downgraded). The student's CourseEnrollment
+    | deliberately REMAINS active: revoking classroom access after a refund is
+    | an explicit admin decision, not an automatic webhook side effect.
+    |
+    | Documented revocation procedure for refunded access:
+    |  1. Finance confirms the refund in the Razorpay dashboard / ledger.
+    |  2. An admin sets the CourseEnrollment to cancelled/dropped via
+    |     PUT /api/admin/enrollments/{id} (audited as updated_enrollment).
+    |  3. If cohort removal is needed, use the batch remove/discontinue
+    |     endpoints (audited batch history is preserved).
+    |
+    */
+
 ];

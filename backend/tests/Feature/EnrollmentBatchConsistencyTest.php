@@ -59,11 +59,13 @@ class EnrollmentBatchConsistencyTest extends TestCase
         $batch = $this->batch($course);
         Sanctum::actingAs($admin);
 
+        // B3: cohort placement requires verified payment or admin override.
         $res = $this->postJson('/api/admin/enrollments', [
             'user_id' => $student->id,
             'course_id' => $course->id,
             'status' => 'active',
             'batch_id' => $batch->id,
+            'override_reason' => 'Finance-verified offline fees receipt for cohort admission.',
         ]);
 
         $res->assertStatus(201);
@@ -135,6 +137,7 @@ class EnrollmentBatchConsistencyTest extends TestCase
         $res = $this->postJson("/api/admin/enquiries/{$enquiry->id}/enroll", [
             'course_id' => $course->id,
             'batch_id' => $batch->id,
+            'override_reason' => 'Registrar-approved emergency admission for cohort placement.',
         ]);
 
         $res->assertStatus(200);
@@ -170,6 +173,7 @@ class EnrollmentBatchConsistencyTest extends TestCase
             'course_id' => $course->id,
             'status' => 'active',
             'batch_id' => $batch->id,
+            'override_reason' => 'Finance-verified offline fees receipt for cohort admission.',
         ])->assertStatus(201);
 
         $this->assertEquals(

@@ -210,7 +210,7 @@ class SectionController extends Controller
             abort(401, 'Unauthenticated.');
         }
 
-        if ($user->role !== 'admin' && $course->instructor_id !== $user->id) {
+        if (! $user->isAdmin() && (int) $course->instructor_id !== (int) $user->id) {
             abort(403, 'Unauthorized. You can only manage curriculum for your own courses.');
         }
     }
