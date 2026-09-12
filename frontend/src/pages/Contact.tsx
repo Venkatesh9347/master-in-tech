@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import API from '../services/api'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 
@@ -6,11 +7,13 @@ export default function Contact() {
   const [form, setForm] = useState({
     name: '',
     email: '',
+    phone: '',
     subject: '',
     message: '',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -19,10 +22,37 @@ export default function Contact() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
-    setTimeout(() => {
-      setIsSubmitting(false)
-      setSubmitted(true)
-    }, 800)
+    setSubmitError('')
+    // Persist as a CRM enquiry so the message actually reaches the team.
+    // The subject is prefixed transparently — never silently dropped.
+    const message = form.subject.trim()
+      ? `[${form.subject.trim()}] ${form.message.trim()}`
+      : form.message.trim()
+    API.post('/enquiries', {
+      name: form.name.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      message,
+    })
+      .then(() => {
+        setSubmitted(true)
+      })
+      .catch((err: unknown) => {
+        const response = (err as { response?: { status?: number; data?: { message?: string; errors?: Record<string, string[]> } } })?.response
+        const firstFieldError = response?.data?.errors
+          ? Object.values(response.data.errors).flat()[0]
+          : undefined
+        setSubmitError(
+          firstFieldError ||
+            response?.data?.message ||
+            (response?.status === undefined
+              ? 'Network error. Please check your connection and try again.'
+              : 'Unable to send your message right now. Please try again later.')
+        )
+      })
+      .finally(() => {
+        setIsSubmitting(false)
+      })
   }
 
   return (
@@ -105,7 +135,7 @@ export default function Contact() {
                   type="button"
                   onClick={() => {
                     setSubmitted(false)
-                    setForm({ name: '', email: '', subject: '', message: '' })
+                    setForm({ name: '', email: '', phone: '', subject: '', message: '' })
                   }}
                   className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700"
                 >
@@ -148,6 +178,21 @@ export default function Contact() {
 
                 <div>
                   <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">
+                    Mobile Number
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={form.phone}
+                    onChange={handleChange}
+                    required
+                    placeholder="e.g. 9876543210"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">
                     Subject / Program of Interest
                   </label>
                   <input
@@ -175,6 +220,12 @@ export default function Contact() {
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-600 outline-none"
                   />
                 </div>
+
+                {submitError && (
+                  <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                    {submitError}
+                  </p>
+                )}
 
                 <button
                   type="submit"

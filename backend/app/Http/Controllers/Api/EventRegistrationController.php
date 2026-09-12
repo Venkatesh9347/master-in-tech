@@ -37,6 +37,11 @@ class EventRegistrationController extends Controller
             return response()->json(['message' => 'Cannot register for this event'], 400);
         }
 
+        // Draft/unpublished events are not open for registration.
+        if ($event->status !== 'published') {
+            return response()->json(['message' => 'Registrations are not open for this event'], 400);
+        }
+
         // Create registration
         $registration = EventRegistration::create([
             'event_id' => $event->id,
@@ -66,8 +71,15 @@ class EventRegistrationController extends Controller
             ->where('user_id', $user->id)
             ->firstOrFail();
 
+        // Idempotent: repeat cancels must not drive the counter negative.
+        if ($registration->status === 'cancelled') {
+            return response()->json(['message' => 'Registration already cancelled']);
+        }
+
         $registration->update(['status' => 'cancelled']);
-        $event->decrement('registered_count');
+        if ((int) $event->registered_count > 0) {
+            $event->decrement('registered_count');
+        }
 
         return response()->json(['message' => 'Registration cancelled']);
     }

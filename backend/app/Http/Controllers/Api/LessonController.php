@@ -611,6 +611,51 @@ class LessonController extends Controller
     }
 
     /**
+     * Explicitly publish a lesson. Idempotent: safe to retry.
+     */
+    public function publish(Request $request, Course $course, Section $section, Lesson $lesson)
+    {
+        return $this->setLessonPublished($request, $course, $section, $lesson, true);
+    }
+
+    /**
+     * Explicitly unpublish a lesson. Idempotent: safe to retry.
+     */
+    public function unpublish(Request $request, Course $course, Section $section, Lesson $lesson)
+    {
+        return $this->setLessonPublished($request, $course, $section, $lesson, false);
+    }
+
+    private function setLessonPublished(Request $request, Course $course, Section $section, Lesson $lesson, bool $published)
+    {
+        $this->authorizeCourseAccess($request, $course);
+
+        if ($section->course_id !== $course->id) {
+            abort(404, 'Section not found for this course.');
+        }
+
+        if ($lesson->section_id !== $section->id) {
+            abort(404, 'Lesson not found for this section.');
+        }
+
+        $wasPublished = (bool) $lesson->is_published;
+        if ($wasPublished !== $published) {
+            $lesson->update(['is_published' => $published]);
+            \App\Models\AuditLog::log(
+                $published ? 'published_lesson' : 'unpublished_lesson',
+                $lesson,
+                ['is_published' => $wasPublished],
+                ['is_published' => $published]
+            );
+        }
+
+        return response()->json([
+            'message' => $published ? 'Lesson published successfully.' : 'Lesson unpublished (draft).',
+            'lesson' => $lesson->fresh()->load(['quiz.questions.options', 'assignment', 'resources']),
+        ]);
+    }
+
+    /**
      * Delete a lesson (admin or course instructor) with delete safety.
      */
     public function destroy(Request $request, Course $course, Section $section, Lesson $lesson)

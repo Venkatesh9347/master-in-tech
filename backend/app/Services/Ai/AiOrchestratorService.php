@@ -115,10 +115,17 @@ class AiOrchestratorService
 
         $historyLimit = (int) config('ai.max_history_messages', 40);
 
+        // Most recent messages first, then restore chronological order so the
+        // provider always sees the latest context (not the oldest).
+        // reorder() drops the relation's default ASC ordering, which would
+        // otherwise dominate and pin the window to the oldest messages.
         $history = $conversation->messages()
-            ->orderBy('id')
+            ->reorder()
+            ->orderByDesc('id')
             ->when($historyLimit > 0, fn ($query) => $query->limit($historyLimit))
-            ->get();
+            ->get()
+            ->reverse()
+            ->values();
 
         foreach ($history as $message) {
             if (in_array($message->role, ['user', 'assistant'], true)) {

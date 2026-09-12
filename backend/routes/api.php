@@ -466,8 +466,8 @@ Route::middleware(['auth:sanctum', 'single.session', 'tutor'])->group(function (
     Route::post('/courses/{course}/sections/{section}/lessons', [LessonController::class, 'store']);
     Route::put('/courses/{course}/sections/{section}/lessons/{lesson}', [LessonController::class, 'update']);
     Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/toggle-publish', [LessonController::class, 'togglePublish']);
-    Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/publish', [LessonController::class, 'togglePublish']);
-    Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/unpublish', [LessonController::class, 'togglePublish']);
+    Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/publish', [LessonController::class, 'publish']);
+    Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/unpublish', [LessonController::class, 'unpublish']);
     Route::delete('/courses/{course}/sections/{section}/lessons/{lesson}', [LessonController::class, 'destroy']);
 });
 

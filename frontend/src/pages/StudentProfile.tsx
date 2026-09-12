@@ -18,6 +18,7 @@ interface EnrollmentItem {
 export default function StudentProfile() {
   const { user } = useAuth()
   const [enrollments, setEnrollments] = useState<EnrollmentItem[]>([])
+  const [enrollmentsError, setEnrollmentsError] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // Edit Profile Form State — initialized from the authenticated user
@@ -55,7 +56,10 @@ export default function StudentProfile() {
       .then((res) => {
         setEnrollments(Array.isArray(res.data) ? res.data : [])
       })
-      .catch(() => {})
+      .catch(() => {
+        // Never render 0/0/0 stats on failure — flag it instead.
+        setEnrollmentsError(true)
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -97,12 +101,17 @@ export default function StudentProfile() {
     try {
       let res
       if (avatarFile) {
+        // PHP/Laravel cannot parse multipart bodies on PUT: spoof the
+        // method over POST so the avatar file + fields actually arrive.
         const formData = new FormData()
+        formData.append('_method', 'PUT')
         Object.entries(payload).forEach(([key, value]) => {
           formData.append(key, String(value))
         })
         formData.append('avatar', avatarFile)
-        res = await API.put('/profile', formData)
+        res = await API.post('/profile', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
       } else {
         res = await API.put('/profile', payload)
       }
@@ -172,6 +181,11 @@ export default function StudentProfile() {
         </section>
 
         {/* Learning Statistics Row */}
+        {enrollmentsError ? (
+          <div className="p-4 bg-amber-50 text-amber-800 text-xs font-bold rounded-2xl border border-amber-200 text-center">
+            ⚠️ Could not load your learning statistics. Please check your connection and refresh.
+          </div>
+        ) : (
         <section className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs text-center">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Enrolled Courses</p>
@@ -190,6 +204,7 @@ export default function StudentProfile() {
             <p className="text-2xl font-black text-amber-600 mt-1">{completedCourses.length}</p>
           </div>
         </section>
+        )}
 
         {/* Main 2-Column: Edit Form + Enrolled Programs */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
