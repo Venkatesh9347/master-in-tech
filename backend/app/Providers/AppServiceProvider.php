@@ -21,8 +21,9 @@ class AppServiceProvider extends ServiceProvider
             return match ($provider) {
                 'stub' => new \App\Services\Ai\Providers\StubLlmProvider(),
                 'openai' => new \App\Services\Ai\Providers\OpenAiProvider(),
+                'ollama' => new \App\Services\Ai\Providers\OllamaProvider(),
                 default => throw new \RuntimeException(
-                    "Unsupported AI_PROVIDER [{$provider}]. Supported providers: \"stub\", \"openai\"."
+                    "Unsupported AI_PROVIDER [{$provider}]. Supported providers: \"stub\", \"openai\", \"ollama\"."
                 ),
             };
         });
@@ -109,6 +110,19 @@ class AppServiceProvider extends ServiceProvider
             $userId = $request->user()?->id ?? 'guest';
 
             return Limit::perMinute($testingBurst ?? 20)->by('payment-order|'.$userId);
+        });
+
+        // Token-authorized HLS manifests/segments/keys (per IP; legit
+        // playback needs ~10-15 req/min, scrapers hit far harder).
+        RateLimiter::for('video-stream', function (Request $request) use ($testingBurst) {
+            return Limit::perMinute($testingBurst ?? 60)->by('video-stream|'.$request->ip());
+        });
+
+        // Call recording file upload/download (per user; audio files)
+        RateLimiter::for('crm-recordings', function (Request $request) use ($testingBurst) {
+            $userId = $request->user()?->id ?? 'guest';
+
+            return Limit::perMinute($testingBurst ?? 20)->by('crm-recordings|'.$userId);
         });
     }
 }

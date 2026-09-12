@@ -8,7 +8,20 @@ use Illuminate\Support\Str;
 
 class PaymentTransaction extends Model
 {
-    protected $guarded = [];
+    protected $fillable = [
+        'provider',
+        'order_id',
+        'payment_id',
+        'idempotency_key',
+        'user_id',
+        'course_id',
+        'amount_paise',
+        'currency',
+        'status',
+        'description',
+        'metadata',
+        'paid_at',
+    ];
 
     protected $casts = [
         'amount_paise' => 'integer',

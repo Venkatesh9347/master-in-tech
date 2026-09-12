@@ -68,6 +68,30 @@ class DatabaseSeeder extends Seeder
         );
         $student->forceFill(['role' => 'student'])->save();
 
+        // CRM frontline staff: 4 telecallers + 2 course advisors.
+        // Roles are scoped (own + unassigned leads) by Enquiry::scopeVisibleTo.
+        foreach (range(1, 4) as $i) {
+            $telecaller = User::updateOrCreate(
+                ['email' => "telecaller{$i}@example.com"],
+                [
+                    'name' => "Telecaller {$i}",
+                    'password' => $defaultPassword,
+                ]
+            );
+            $telecaller->forceFill(['role' => 'telecaller'])->save();
+        }
+
+        foreach (range(1, 2) as $i) {
+            $advisor = User::updateOrCreate(
+                ['email' => "advisor{$i}@example.com"],
+                [
+                    'name' => "Course Advisor {$i}",
+                    'password' => $defaultPassword,
+                ]
+            );
+            $advisor->forceFill(['role' => 'course_advisor'])->save();
+        }
+
         $this->call(CourseSeeder::class);
         $this->call(CourseCatalogSeeder::class);
         $this->call(LmsSeeder::class);

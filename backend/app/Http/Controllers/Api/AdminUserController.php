@@ -51,7 +51,7 @@ class AdminUserController extends Controller
     {
         $query = User::query()->withCount(['enrollments', 'taughtCourses']);
 
-        if ($request->has('role') && in_array($request->role, ['student', 'tutor', 'faculty', 'admin'], true)) {
+        if ($request->has('role') && in_array($request->role, ['student', 'tutor', 'faculty', 'admin', 'super_admin', 'counsellor', 'telecaller', 'course_advisor'], true)) {
             $query->where('role', $request->role);
         }
 
@@ -98,7 +98,7 @@ class AdminUserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'nullable|string|min:6',
-            'role' => 'required|string|in:student,tutor,admin',
+            'role' => 'required|string|in:student,tutor,counsellor,telecaller,course_advisor,admin,super_admin',
             'student_id' => 'nullable|string|max:50|unique:users,student_id',
             'status' => 'nullable|string|in:active,pending,disabled',
             'phone' => 'nullable|string|max:30',
@@ -108,6 +108,8 @@ class AdminUserController extends Controller
             'expertise' => 'nullable|string|max:255',
             'bio' => 'nullable|string|max:2000',
         ]);
+
+        $this->denyUnlessSuperAdminGrantAllowed($request, $validated['role']);
 
         $password = ! empty($validated['password'])
             ? Hash::make($validated['password'])
@@ -174,7 +176,7 @@ class AdminUserController extends Controller
             'email' => "sometimes|required|string|email|max:255|unique:users,email,{$user->id}",
             'student_id' => "nullable|string|max:50|unique:users,student_id,{$user->id}",
             'status' => 'nullable|string|in:active,pending,disabled',
-            'role' => 'sometimes|required|string|in:student,tutor,admin',
+            'role' => 'sometimes|required|string|in:student,tutor,counsellor,telecaller,course_advisor,admin,super_admin',
             'phone' => 'nullable|string|max:30',
             'headline' => 'nullable|string|max:255',
             'expertise' => 'nullable|string|max:255',
@@ -210,8 +212,10 @@ class AdminUserController extends Controller
     public function updateRole(Request $request, User $user)
     {
         $validated = $request->validate([
-            'role' => 'required|in:student,tutor,admin',
+            'role' => 'required|in:student,tutor,counsellor,telecaller,course_advisor,admin,super_admin',
         ]);
+
+        $this->denyUnlessSuperAdminGrantAllowed($request, $validated['role']);
 
         // HIGH-7: explicit policy-controlled role update bypasses mass assignment.
         $user->forceFill(['role' => $validated['role']])->save();
@@ -236,6 +240,16 @@ class AdminUserController extends Controller
         return response()->json([
             'message' => 'User account removed successfully.',
         ]);
+    }
+
+    /**
+     * Only a super_admin may grant the super_admin role (privilege-escalation guard).
+     */
+    private function denyUnlessSuperAdminGrantAllowed(Request $request, string $targetRole): void
+    {
+        if ($targetRole === 'super_admin' && ($request->user()?->role !== 'super_admin')) {
+            abort(403, 'Only a super administrator can grant the super_admin role.');
+        }
     }
 
     /**

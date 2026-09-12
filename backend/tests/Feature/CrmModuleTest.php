@@ -335,7 +335,7 @@ class CrmModuleTest extends TestCase
             'title' => 'Discussion on curriculum syllabus',
         ]);
 
-        // 2. Log partial payment event
+        // 2. Scoped staff cannot forge payment truth via metadata amounts.
         $resPayment = $this->postJson("/api/admin/crm/leads/{$lead->id}/activities", [
             'activity_type' => 'payment_event',
             'title' => 'Received registration fee token',
@@ -347,7 +347,24 @@ class CrmModuleTest extends TestCase
             ],
         ]);
 
-        $resPayment->assertStatus(201);
+        $resPayment->assertStatus(403);
+
+        // Ledger untouched by the forged event.
+        $leadFresh = $lead->fresh();
+        $this->assertEquals(0, (float) $leadFresh->amount_paid);
+
+        // 3. Admins retain the payment-recording path.
+        Sanctum::actingAs(User::factory()->create(['role' => 'admin']));
+        $this->postJson("/api/admin/crm/leads/{$lead->id}/activities", [
+            'activity_type' => 'payment_event',
+            'title' => 'Received registration fee token',
+            'description' => 'Initial token payment received via UPI.',
+            'metadata' => [
+                'amount' => 5000,
+                'mode' => 'upi',
+                'transaction_id' => 'UPI987654321',
+            ],
+        ])->assertStatus(201);
 
         // Verify lead payment status and amount updated automatically
         $leadFresh = $lead->fresh();

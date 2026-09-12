@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AssignmentSubmission extends Model
 {
@@ -15,6 +16,8 @@ class AssignmentSubmission extends Model
         'submission_text',
         'file_url',
         'submitted_at',
+        'is_late',
+        'revision_number',
         'score',
         'feedback',
         'status',
@@ -25,6 +28,8 @@ class AssignmentSubmission extends Model
         return [
             'submitted_at' => 'datetime',
             'score' => 'decimal:2',
+            'is_late' => 'boolean',
+            'revision_number' => 'integer',
         ];
     }
 
@@ -46,5 +51,11 @@ class AssignmentSubmission extends Model
     public function course(): BelongsTo
     {
         return $this->belongsTo(Course::class);
+    }
+
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(AssignmentSubmissionRevision::class, 'assignment_submission_id')
+            ->orderBy('revision_number');
     }
 }

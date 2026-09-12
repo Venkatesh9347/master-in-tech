@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\AdminTutorPermissionController;
 use App\Http\Controllers\Api\AdminUserController;
 use App\Http\Controllers\Api\AssignmentController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CallRecordingController;
 use App\Http\Controllers\Api\CertificateController;
 use App\Http\Controllers\Api\ClassroomChatController;
 use App\Http\Controllers\Api\ClassroomInteractionController;
@@ -576,6 +577,18 @@ Route::middleware(['auth:sanctum', 'single.session', 'crm'])->group(function () 
         Route::post('/leads/{lead}/activities', [AdminCrmController::class, 'activities']);
         Route::post('/leads/{lead}/follow-ups', [AdminCrmController::class, 'storeFollowUp']);
         Route::post('/leads/{lead}/convert', [AdminCrmController::class, 'convert']);
+
+        // Provider-independent call recordings (private storage, authorized
+        // playback only — never public URLs).
+        Route::get('/call-recordings', [CallRecordingController::class, 'index']);
+        Route::post('/call-recordings', [CallRecordingController::class, 'store']);
+        Route::get('/call-recordings/{recording}', [CallRecordingController::class, 'show']);
+        Route::put('/call-recordings/{recording}', [CallRecordingController::class, 'update']);
+        Route::post('/call-recordings/{recording}/upload', [CallRecordingController::class, 'upload'])
+            ->middleware('throttle:crm-recordings');
+        Route::get('/call-recordings/{recording}/download', [CallRecordingController::class, 'download'])
+            ->middleware('throttle:crm-recordings');
+        Route::delete('/call-recordings/{recording}', [CallRecordingController::class, 'destroy']);
     });
 });
 
@@ -786,9 +799,12 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
 /*
 |--------------------------------------------------------------------------
 | Encrypted Adaptive Video Streaming & Key Distribution (Token Authorized)
+|
+| Throttled per IP: legitimate HLS playback needs ~10-15 req/min; the cap
+| only bites scrapers hammering manifests/segments.
 |--------------------------------------------------------------------------
 */
-Route::prefix('video-stream/{assetId}')->group(function () {
+Route::prefix('video-stream/{assetId}')->middleware('throttle:video-stream')->group(function () {
     Route::get('/master.m3u8', [VideoPlaybackController::class, 'getMasterPlaylist']);
     Route::get('/key', [VideoPlaybackController::class, 'getKey']);
     Route::get('/segments/{segment}', [VideoPlaybackController::class, 'getSegment']);

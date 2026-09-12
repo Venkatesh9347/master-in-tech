@@ -12,6 +12,7 @@ use App\Models\Enquiry;
 use App\Models\EnquiryNote;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class EnquiryController extends Controller
@@ -164,7 +165,7 @@ class EnquiryController extends Controller
             'course:id,title,category',
             'notes',
             'enrolledUser:id,name,email',
-        ]);
+        ])->visibleTo($request->user());
 
         if ($request->filled('status') && $request->status !== 'all') {
             $query->where('status', $request->status);
@@ -206,23 +207,24 @@ class EnquiryController extends Controller
     }
 
     /**
-     * Pipeline Metrics (Admin only).
+     * Pipeline Metrics (scoped for CRM staff).
      */
-    public function stats()
+    public function stats(Request $request)
     {
-        $total = Enquiry::count();
+        $leads = Enquiry::visibleTo($request->user());
+        $total = (clone $leads)->count();
         $counts = [
             'total' => $total,
-            'new' => Enquiry::where('status', Enquiry::STATUS_NEW)->count(),
-            'contacted' => Enquiry::where('status', Enquiry::STATUS_CONTACTED)->count(),
-            'demo_scheduled' => Enquiry::where('status', Enquiry::STATUS_DEMO_SCHEDULED)->count(),
-            'demo_completed' => Enquiry::where('status', Enquiry::STATUS_DEMO_COMPLETED)->count(),
-            'interested' => Enquiry::where('status', Enquiry::STATUS_INTERESTED)->count(),
-            'follow_up' => Enquiry::where('status', Enquiry::STATUS_FOLLOW_UP)->count(),
-            'admission_confirmed' => Enquiry::where('status', Enquiry::STATUS_ADMISSION_CONFIRMED)->count(),
-            'enrolled' => Enquiry::where('status', Enquiry::STATUS_ENROLLED)->count(),
-            'not_interested' => Enquiry::where('status', Enquiry::STATUS_NOT_INTERESTED)->count(),
-            'no_response' => Enquiry::where('status', Enquiry::STATUS_NO_RESPONSE)->count(),
+            'new' => (clone $leads)->where('status', Enquiry::STATUS_NEW)->count(),
+            'contacted' => (clone $leads)->where('status', Enquiry::STATUS_CONTACTED)->count(),
+            'demo_scheduled' => (clone $leads)->where('status', Enquiry::STATUS_DEMO_SCHEDULED)->count(),
+            'demo_completed' => (clone $leads)->where('status', Enquiry::STATUS_DEMO_COMPLETED)->count(),
+            'interested' => (clone $leads)->where('status', Enquiry::STATUS_INTERESTED)->count(),
+            'follow_up' => (clone $leads)->where('status', Enquiry::STATUS_FOLLOW_UP)->count(),
+            'admission_confirmed' => (clone $leads)->where('status', Enquiry::STATUS_ADMISSION_CONFIRMED)->count(),
+            'enrolled' => (clone $leads)->where('status', Enquiry::STATUS_ENROLLED)->count(),
+            'not_interested' => (clone $leads)->where('status', Enquiry::STATUS_NOT_INTERESTED)->count(),
+            'no_response' => (clone $leads)->where('status', Enquiry::STATUS_NO_RESPONSE)->count(),
         ];
 
         return response()->json($counts);
@@ -231,8 +233,9 @@ class EnquiryController extends Controller
     /**
      * Show single enquiry details with notes (Admin only).
      */
-    public function show(Enquiry $enquiry)
+    public function show(Request $request, Enquiry $enquiry)
     {
+        $this->denyUnlessLeadVisible($request, $enquiry);
         $enquiry->load(['user:id,name,email,role,phone', 'course', 'notes', 'enrolledUser']);
 
         return response()->json($enquiry);
@@ -243,6 +246,7 @@ class EnquiryController extends Controller
      */
     public function update(Request $request, Enquiry $enquiry)
     {
+        $this->denyUnlessLeadVisible($request, $enquiry);
         $validStatuses = implode(',', Enquiry::PIPELINE_STATUSES);
 
         $validated = $request->validate([
@@ -298,6 +302,7 @@ class EnquiryController extends Controller
      */
     public function addNote(Request $request, Enquiry $enquiry)
     {
+        $this->denyUnlessLeadVisible($request, $enquiry);
         $validated = $request->validate([
             'note' => 'required|string|max:2000',
         ]);
@@ -321,6 +326,7 @@ class EnquiryController extends Controller
      */
     public function enroll(Request $request, Enquiry $enquiry)
     {
+        $this->denyUnlessLeadVisible($request, $enquiry);
         $validated = $request->validate([
             'course_id' => 'nullable|exists:courses,id',
             'name' => 'nullable|string|max:255',
@@ -349,6 +355,63 @@ class EnquiryController extends Controller
             $studentPassword = $providedPassword;
         }
 
+        // Find or provision student account (Google / mobile OTP is the student login path).
+        // The whole admission write set commits atomically: a failure after
+        // user provisioning must not leave a half-enrolled student behind.
+        try {
+            DB::beginTransaction();
+
+            $user = $this->provisionEnrolledStudent($validated, $enquiry, $course, $studentEmail, $studentName, $studentPassword);
+
+            $enrollment = CourseEnrollment::firstOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'course_id' => $course->id,
+                ],
+                [
+                    'enrolled_at' => now(),
+                    'status' => 'active',
+                ]
+            );
+
+            $this->assignEnquiryBatch($request, $validated, $course, $user);
+
+            // Update Enquiry lead status to ENROLLED
+            $enquiry->update([
+                'status' => Enquiry::STATUS_ENROLLED,
+                'course_id' => $course->id,
+                'course_title' => $course->title,
+                'enrolled_user_id' => $user->id,
+                'enrolled_at' => now(),
+            ]);
+
+            // Log automatic audit follow-up note
+            EnquiryNote::create([
+                'enquiry_id' => $enquiry->id,
+                'user_id' => $request->user()->id,
+                'user_name' => $request->user()->name,
+                'note' => "Student officially enrolled & granted LMS classroom access for '{$course->title}' by Administrator {$request->user()->name}.",
+            ]);
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Failed to enroll student: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        return response()->json([
+            'message' => "Student {$user->name} has been enrolled in {$course->title} with active LMS access.",
+            'enquiry' => $enquiry->fresh(['user', 'course', 'notes', 'enrolledUser']),
+            'user' => $user,
+            'enrollment' => $enrollment,
+        ], 200);
+    }
+
+    private function provisionEnrolledStudent(array $validated, Enquiry $enquiry, Course $course, string $studentEmail, string $studentName, string $studentPassword): User
+    {
         // Find or provision student account (Google / mobile OTP is the student login path)
         $user = User::firstOrCreate(
             ['email' => $studentEmail],
@@ -371,77 +434,50 @@ class EnquiryController extends Controller
         }
         $user->save();
 
-        // Create or activate enrollment
-        $enrollment = CourseEnrollment::firstOrCreate(
-            [
-                'user_id' => $user->id,
-                'course_id' => $course->id,
-            ],
-            [
-                'enrolled_at' => now(),
-                'status' => 'active',
-            ]
-        );
+        return $user;
+    }
 
+    private function assignEnquiryBatch(Request $request, array $validated, Course $course, User $user): void
+    {
         // Optionally assign the student to a cohort batch (audited), consistent
         // with the CRM conversion flow. Batch history is never deleted.
-        if (! empty($validated['batch_id'])) {
-            $batch = Batch::find($validated['batch_id']);
-            if ($batch && (int) $batch->course_id === $course->id) {
-                $existingBatchStudent = BatchStudent::where('batch_id', $batch->id)
-                    ->where('user_id', $user->id)
-                    ->first();
-
-                if (! $existingBatchStudent) {
-                    BatchStudent::create([
-                        'batch_id' => $batch->id,
-                        'user_id' => $user->id,
-                        'status' => 'active',
-                        'joined_at' => now(),
-                        'notes' => 'Assigned during enquiry-to-enrollment conversion',
-                    ]);
-
-                    BatchTransfer::create([
-                        'user_id' => $user->id,
-                        'from_batch_id' => null,
-                        'to_batch_id' => $batch->id,
-                        'action_type' => 'enrolled',
-                        'reason' => 'Enquiry lead enrolled with cohort assignment',
-                        'performed_by' => $request->user()->id,
-                    ]);
-                } elseif ($existingBatchStudent->status !== 'active') {
-                    $existingBatchStudent->update([
-                        'status' => 'active',
-                        'left_at' => null,
-                        'discontinued_at' => null,
-                    ]);
-                }
-            }
+        if (empty($validated['batch_id'])) {
+            return;
         }
 
-        // Update Enquiry lead status to ENROLLED
-        $enquiry->update([
-            'status' => Enquiry::STATUS_ENROLLED,
-            'course_id' => $course->id,
-            'course_title' => $course->title,
-            'enrolled_user_id' => $user->id,
-            'enrolled_at' => now(),
-        ]);
+        $batch = Batch::find($validated['batch_id']);
+        if (! $batch || (int) $batch->course_id !== $course->id) {
+            return;
+        }
 
-        // Log automatic audit follow-up note
-        EnquiryNote::create([
-            'enquiry_id' => $enquiry->id,
-            'user_id' => $request->user()->id,
-            'user_name' => $request->user()->name,
-            'note' => "Student officially enrolled & granted LMS classroom access for '{$course->title}' by Administrator {$request->user()->name}.",
-        ]);
+        $existingBatchStudent = BatchStudent::where('batch_id', $batch->id)
+            ->where('user_id', $user->id)
+            ->first();
 
-        return response()->json([
-            'message' => "Student {$user->name} has been enrolled in {$course->title} with active LMS access.",
-            'enquiry' => $enquiry->fresh(['user', 'course', 'notes', 'enrolledUser']),
-            'user' => $user,
-            'enrollment' => $enrollment,
-        ], 200);
+        if (! $existingBatchStudent) {
+            BatchStudent::create([
+                'batch_id' => $batch->id,
+                'user_id' => $user->id,
+                'status' => 'active',
+                'joined_at' => now(),
+                'notes' => 'Assigned during enquiry-to-enrollment conversion',
+            ]);
+
+            BatchTransfer::create([
+                'user_id' => $user->id,
+                'from_batch_id' => null,
+                'to_batch_id' => $batch->id,
+                'action_type' => 'enrolled',
+                'reason' => 'Enquiry lead enrolled with cohort assignment',
+                'performed_by' => $request->user()->id,
+            ]);
+        } elseif ($existingBatchStudent->status !== 'active') {
+            $existingBatchStudent->update([
+                'status' => 'active',
+                'left_at' => null,
+                'discontinued_at' => null,
+            ]);
+        }
     }
 
     private function getAuthenticatedUser(Request $request)
@@ -478,5 +514,15 @@ class EnquiryController extends Controller
         }
 
         return [null, $courseTitle];
+    }
+
+    /**
+     * Record-level gate: scoped CRM staff may only touch own + unassigned leads.
+     */
+    private function denyUnlessLeadVisible(Request $request, Enquiry $lead): void
+    {
+        if (! $lead->isVisibleTo($request->user())) {
+            abort(403, 'You do not have access to this lead.');
+        }
     }
 }

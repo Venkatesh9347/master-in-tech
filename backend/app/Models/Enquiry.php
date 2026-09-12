@@ -211,6 +211,34 @@ class Enquiry extends Model
         return $query;
     }
 
+    /**
+     * Record-level visibility: scoped CRM staff (counsellor, telecaller,
+     * course_advisor) see only leads assigned to them plus unassigned leads
+     * awaiting pickup. Admins/super_admin see the full pipeline.
+     */
+    public function scopeVisibleTo(Builder $query, ?User $user): Builder
+    {
+        if ($user && $user->hasScopedCrmAccess()) {
+            return $query->where(function ($w) use ($user) {
+                $w->where('assigned_counsellor_id', $user->id)
+                    ->orWhereNull('assigned_counsellor_id');
+            });
+        }
+        return $query;
+    }
+
+    /**
+     * Single-record counterpart of scopeVisibleTo for bound models.
+     */
+    public function isVisibleTo(?User $user): bool
+    {
+        if (! $user || ! $user->hasScopedCrmAccess()) {
+            return true;
+        }
+        return $this->assigned_counsellor_id === null
+            || (int) $this->assigned_counsellor_id === (int) $user->id;
+    }
+
     public function scopeDueFollowUps(Builder $query): Builder
     {
         return $query->whereNotNull('next_follow_up_date')

@@ -370,15 +370,19 @@ Without a reachable mailer, OTP/notification emails fail (and queued
 
 ## 17. AI configuration
 
-Supported `AI_PROVIDER` values — **exactly two**:
+Supported `AI_PROVIDER` values — **exactly three**:
 
 - `stub` — offline placeholder (default, no credentials).
 - `openai` — requires `OPENAI_API_KEY` (`OPENAI_BASE_URL` and `OPENAI_MODEL`
   select endpoint/model; `OPENAI_TIMEOUT` tunes client timeouts).
+- `ollama` — self-hosted local daemon, no API key (`OLLAMA_BASE_URL`
+  default `http://127.0.0.1:11434`, `OLLAMA_MODEL` default `llama3.1`,
+  `OLLAMA_TIMEOUT` default 120s). Optional: nothing in the application
+  requires Ollama to be installed; an unreachable daemon fails gracefully
+  with a 503-style provider error, never a crash.
 
-Any other value (including a not-yet-implemented `ollama`) **fails loudly** at
-service resolution — it never silently falls back to another provider, so a
-typo cannot silently re-route traffic.
+Any other value **fails loudly** at service resolution — it never silently
+falls back to another provider, so a typo cannot silently re-route traffic.
 
 ---
 
@@ -598,7 +602,8 @@ fresh one.
 - [ ] `LIVEKIT_URL` + `LIVEKIT_API_KEY`/`API_SECRET` set; webhook configured
 - [ ] `PAYMENT_PROVIDER=razorpay` and Razorpay webhook secret configured
 - [ ] Mailer credentials set (`MAIL_*`)
-- [ ] `AI_PROVIDER` is `stub` or `openai` with `OPENAI_API_KEY`
+- [ ] `AI_PROVIDER` is `stub`, `openai` with `OPENAI_API_KEY`, or `ollama`
+  with a reachable daemon (`OLLAMA_BASE_URL`)
 - [ ] `CORS_ALLOWED_ORIGINS`, `SANCTUM_STATEFUL_DOMAINS` = real hosts
 - [ ] `TRUSTED_PROXIES` = the TLS-hop IPs (and `SECURITY_HSTS_FORCE=true`)
 - [ ] Frontend built with `VITE_API_URL=https://api.yourdomain.com/api`
@@ -606,4 +611,35 @@ fresh one.
 - [ ] SPA rewrite in place on the static host
 - [ ] `GET /api/health` → 200 + `database.status: ok` from the LB’s domain
 - [ ] Seeders untouched in prod (`SEED_ALLOW_PRODUCTION` unset/false)
+
+---
+
+## 29. Video DRM posture & limitations
+
+What is implemented today:
+
+- Private source storage, short-lived HMAC playback authorization
+  (`VIDEO_TOKEN_TTL`), enrollment-gated manifests/segments/keys, AES-128 HLS
+  (`local_hls`/`s3` drivers), per-IP throttling on `video-stream/*`, playback
+  sessions with audit trail, and user-bound watermark overlay data.
+- A driver abstraction (`VideoDriverInterface` + `VideoSecurityManager`) so a
+  licensed DRM/license provider (e.g. Mux DRM, Axinom, BuyDRM, PallyCon) can be
+  added as a new driver without redesigning LMS authorization. The `mux`
+  driver entry point exists for this purpose.
+
+What is explicitly NOT claimed:
+
+- **Widevine, PlayReady and FairPlay cannot be implemented as completely
+  free/open-source DRM.** They require licensed certificate/commercial
+  license-server infrastructure. Any future "DRM" milestone must budget for a
+  commercial provider or per-platform licensing.
+- **Browser DRM cannot guarantee prevention of screen recording or camera
+  capture.** EME/CENC raise the bar (no trivial URL/segment download), but an
+  determined viewer can always re-record rendered output. Treat DRM as
+  deterrence + traceability (watermarks, session binding, concurrency
+  detection), never as absolute copy prevention.
+- Open/self-hosted stepping stones toward DRM-readiness: FFmpeg + Shaka
+  Packager (CMAF/CENC packaging), MPEG-DASH via Shaka Player with EME
+  Clear Key **for development/testing only** — Clear Key is not production
+  protection since the key travels to the browser in the clear.
 - [ ] No `.env*`/keys committed (`git status` clean of secrets)

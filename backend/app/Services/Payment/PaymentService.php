@@ -4,11 +4,13 @@ namespace App\Services\Payment;
 
 use App\Models\CourseEnrollment;
 use App\Models\PaymentTransaction;
+use App\Models\PaymentWebhookEvent;
 use App\Services\Payment\Data\PaymentOrder;
 use App\Services\Payment\Exceptions\PaymentVerificationException;
 use App\Services\Payment\Providers\RazorpayProvider;
 use App\Services\Payment\Providers\StubPaymentProvider;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Payment orchestration layer.
@@ -234,6 +236,9 @@ class PaymentService
      * Apply an incoming provider payment status to a transaction.
      * Idempotent: re-applying the same non-paid status is a no-op.
      * Never downgrades a transaction that is already marked paid.
+     *
+     * The status write and the enrollment activation commit atomically so a
+     * crash can never leave a paid row without access (or vice versa).
      */
     public function applyPaymentEvent(string $paymentId, string $status, array $context = []): ?PaymentTransaction
     {
@@ -247,11 +252,16 @@ class PaymentService
             'captured', 'paid' => 'paid',
             'authorized' => 'authorized',
             'failed', 'cancelled' => 'failed',
+            'refunded' => 'refunded',
             default => $transaction->status,
         };
 
-        // Never downgrade from paid to anything else.
-        if ($transaction->status === 'paid' && $newStatus !== 'paid') {
+        // Terminal states are append-only with one forward exception: a paid
+        // row may move to refunded, but refunded rows never change again and
+        // paid rows never downgrade to anything else.
+        $isDowngrade = $newStatus !== $transaction->status
+            && ! ($transaction->status === 'paid' && $newStatus === 'refunded');
+        if (in_array($transaction->status, ['paid', 'refunded'], true) && $isDowngrade) {
             return $transaction;
         }
 
@@ -260,25 +270,89 @@ class PaymentService
             return $transaction;
         }
 
-        $transaction->fill([
-            'status' => $newStatus,
-            'metadata' => array_merge((array) $transaction->metadata, $context),
-        ]);
+        return DB::transaction(function () use ($transaction, $newStatus, $context) {
+            $old = $transaction->toArray();
 
-        if ($newStatus === 'paid') {
-            $transaction->paid_at = $transaction->paid_at ?? now();
+            $transaction->fill([
+                'status' => $newStatus,
+                'metadata' => array_merge((array) $transaction->metadata, $context),
+            ]);
+
+            if ($newStatus === 'paid') {
+                $transaction->paid_at = $transaction->paid_at ?? now();
+            }
+
+            $transaction->save();
+            \App\Models\AuditLog::log('payment_' . $newStatus, $transaction, $old, $transaction->fresh()->toArray());
+
+            // A verified paid transition grants course access. Runs exactly once per
+            // (user, course): the unique index dedupes concurrent webhook/confirm
+            // races, and the "already paid" early return prevents re-activation.
+            // A refund intentionally does NOT revoke access here — dropping an
+            // enrollment is an admin decision recorded separately.
+            if ($newStatus === 'paid') {
+                $this->activateEnrollment($transaction);
+            }
+
+            return $transaction;
+        });
+    }
+
+    /**
+     * Record a verified webhook delivery in the persistent event ledger.
+     *
+     * @return array{event: PaymentWebhookEvent, duplicate: bool} Duplicate
+     *         deliveries (provider retries) return the original row so the
+     *         caller can acknowledge without reprocessing.
+     */
+    public function recordWebhookEvent(string $provider, ?string $providerEventId, string $eventType, array $payload): array
+    {
+        if ($providerEventId === null || $providerEventId === '') {
+            $event = PaymentWebhookEvent::create([
+                'provider' => $provider,
+                'provider_event_id' => null,
+                'event_type' => $eventType,
+                'payload' => $payload,
+                'status' => PaymentWebhookEvent::STATUS_RECEIVED,
+            ]);
+
+            return ['event' => $event, 'duplicate' => false];
         }
 
-        $transaction->save();
+        try {
+            $event = PaymentWebhookEvent::create([
+                'provider' => $provider,
+                'provider_event_id' => $providerEventId,
+                'event_type' => $eventType,
+                'payload' => $payload,
+                'status' => PaymentWebhookEvent::STATUS_RECEIVED,
+            ]);
 
-        // A verified paid transition grants course access. Runs exactly once per
-        // (user, course): the unique index dedupes concurrent webhook/confirm
-        // races, and the "already paid" early return prevents re-activation.
-        if ($newStatus === 'paid') {
-            $this->activateEnrollment($transaction);
+            return ['event' => $event, 'duplicate' => false];
+        } catch (QueryException $e) {
+            if (! $this->isUniqueViolation($e)) {
+                throw $e;
+            }
+
+            $existing = PaymentWebhookEvent::where('provider', $provider)
+                ->where('provider_event_id', $providerEventId)
+                ->firstOrFail();
+
+            return ['event' => $existing, 'duplicate' => true];
         }
+    }
 
-        return $transaction;
+    /**
+     * Record a provider refund against a transaction.
+     *
+     * Terminal and append-only like paid: once refunded, later events cannot
+     * resurrect the row. Enrollment access is deliberately left untouched —
+     * revoking access after a refund is an admin decision, not an automatic
+     * webhook side effect.
+     */
+    public function recordRefund(string $paymentId, array $context = []): ?PaymentTransaction
+    {
+        return $this->applyPaymentEvent($paymentId, 'refunded', $context);
     }
 
     /**

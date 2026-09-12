@@ -32,13 +32,14 @@ class PublicApiController extends Controller
             ->get();
 
         $featuredCourses = Course::where('is_published', true)
+            ->where('status', '!=', 'archived')
             ->orderBy('priority', 'asc')
             ->take(14)
             ->get();
 
         $learningPaths = LearningPath::where('is_published', true)
             ->with(['courses' => function ($q) {
-                $q->where('is_published', true);
+                $q->where('is_published', true)->where('status', '!=', 'archived');
             }])
             ->orderBy('display_order', 'asc')
             ->take(6)
@@ -101,7 +102,7 @@ class PublicApiController extends Controller
      */
     public function courses(Request $request)
     {
-        $query = Course::where('is_published', true);
+        $query = Course::where('is_published', true)->where('status', '!=', 'archived');
 
         if ($request->filled('category') && $request->category !== 'All') {
             $query->where('category', $request->category);
@@ -136,6 +137,7 @@ class PublicApiController extends Controller
     public function course(string $idOrSlug)
     {
         $course = Course::where('is_published', true)
+            ->where('status', '!=', 'archived')
             ->where(function ($q) use ($idOrSlug) {
                 if (is_numeric($idOrSlug)) {
                     $q->where('id', (int) $idOrSlug);

@@ -7,13 +7,15 @@ return [
     | Default LLM Provider
     |--------------------------------------------------------------------------
     |
-    | Supported: "openai", "stub"
+    | Supported: "openai", "ollama", "stub"
     | Use "stub" for local development without API credentials.
+    | Use "ollama" for a self-hosted local model daemon (optional — the
+    | application never requires Ollama to be installed; an unreachable
+    | daemon fails gracefully with a 503, never a crash).
     |
     | Selecting any other value fails loudly at service resolution time (an
-    | exception is thrown instead of silently falling back), so a typo or an
-    | unsupported provider (e.g. a not-yet-implemented "ollama") can never
-    | silently route traffic somewhere unexpected.
+    | exception is thrown instead of silently falling back), so a typo can
+    | never silently route traffic somewhere unexpected.
     |
     */
     'default_provider' => env('AI_PROVIDER', 'stub'),
@@ -48,6 +50,11 @@ return [
             'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
             'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
             'timeout' => (int) env('OPENAI_TIMEOUT', 60),
+        ],
+        'ollama' => [
+            'base_url' => env('OLLAMA_BASE_URL', 'http://127.0.0.1:11434'),
+            'model' => env('OLLAMA_MODEL', 'llama3.1'),
+            'timeout' => (int) env('OLLAMA_TIMEOUT', 120),
         ],
     ],
 

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Services\Ai\Contracts\LlmProviderInterface;
+use App\Services\Ai\Providers\OllamaProvider;
 use App\Services\Ai\Providers\OpenAiProvider;
 use App\Services\Ai\Providers\StubLlmProvider;
 use Tests\TestCase;
@@ -23,12 +24,19 @@ class AiProviderConfigurationTest extends TestCase
         $this->assertInstanceOf(OpenAiProvider::class, app(LlmProviderInterface::class));
     }
 
-    public function test_unsupported_provider_fails_loudly(): void
+    public function test_ollama_provider_is_bound_when_configured(): void
     {
         config(['ai.default_provider' => 'ollama']);
 
+        $this->assertInstanceOf(OllamaProvider::class, app(LlmProviderInterface::class));
+    }
+
+    public function test_unsupported_provider_fails_loudly(): void
+    {
+        config(['ai.default_provider' => 'watson']);
+
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('ollama');
+        $this->expectExceptionMessage('watson');
 
         app(LlmProviderInterface::class);
     }

@@ -77,12 +77,17 @@ class LiveKitWebhookController extends Controller
      */
     private function resolveSessionByRoom(string $roomName): ?ClassSession
     {
-        // Our internal room format: masterintech-session-{session_id}
+        // Our internal room format: masterintech-session-{session_id}.
+        // A parsed id that resolves to nothing must NOT short-circuit the
+        // stored-name fallback below (room names are stable; ids are not).
         $prefix = 'masterintech-session-';
         if (Str::startsWith($roomName, $prefix)) {
             $id = (int) Str::after($roomName, $prefix);
             if ($id > 0) {
-                return ClassSession::find($id);
+                $found = ClassSession::find($id);
+                if ($found) {
+                    return $found;
+                }
             }
         }
 
@@ -189,6 +194,11 @@ class LiveKitWebhookController extends Controller
             'status' => 'live',
             'started_at' => $session->started_at ?? now(),
         ]);
+
+        \App\Models\AuditLog::log('livekit_room_started', $session, null, [
+            'session_id' => $session->id,
+            'room' => $session->livekit_room_name,
+        ]);
     }
 
     private function handleRoomFinished(ClassSession $session): void
@@ -214,6 +224,11 @@ class LiveKitWebhookController extends Controller
             'livekit_status' => 'ended',
             'status' => 'completed',
             'ended_at' => $session->ended_at ?? $now,
+        ]);
+
+        \App\Models\AuditLog::log('livekit_room_finished', $session, null, [
+            'session_id' => $session->id,
+            'room' => $session->livekit_room_name,
         ]);
     }
 

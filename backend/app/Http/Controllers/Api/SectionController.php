@@ -17,7 +17,14 @@ class SectionController extends Controller
     {
         $courseModel = $course instanceof Course ? $course : Course::where('id', $course)->orWhere('slug', $course)->firstOrFail();
         $user = $request->user();
-        $isManager = $user && ($user->role === 'admin' || $courseModel->instructor_id === $user->id);
+        $isManager = $user && (in_array($user->role, ['admin', 'super_admin'], true) || (int) $courseModel->instructor_id === (int) $user->id);
+
+        // SEC-001 parity: an unpublished or archived course exposes no
+        // curriculum to non-managers (previously leaked published sections,
+        // lessons, quizzes and resources for hidden courses).
+        if (! $isManager && (! $courseModel->is_published || ($courseModel->status ?? null) === 'archived')) {
+            return response()->json(['message' => 'Course not found'], 404);
+        }
 
         $sectionsQuery = $courseModel->sections()->orderBy('sort_order');
         if (! $isManager) {

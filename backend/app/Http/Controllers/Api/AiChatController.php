@@ -26,7 +26,7 @@ class AiChatController extends Controller
         } catch (AiProviderException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
-                'code' => $e->code,
+                'code' => $e->errorCode,
             ], $e->status);
         }
 

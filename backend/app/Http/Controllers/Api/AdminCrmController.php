@@ -22,25 +22,29 @@ class AdminCrmController extends Controller
 {
     /**
      * Get aggregated CRM Dashboard KPI Metrics.
+     * Scoped CRM staff receive own + unassigned metrics only.
      */
     public function stats(Request $request)
     {
         $today = Carbon::today();
+        $user = $request->user();
+        $leads = fn () => Enquiry::visibleTo($user);
+        $followUps = fn () => CrmFollowUp::whereHas('enquiry', fn ($q) => $q->visibleTo($user));
 
-        $totalLeads = Enquiry::count();
-        $newLeads = Enquiry::where('status', Enquiry::STATUS_NEW)->count();
-        $contacted = Enquiry::where('status', Enquiry::STATUS_CONTACTED)->count();
-        $interested = Enquiry::where('status', Enquiry::STATUS_INTERESTED)->count();
-        $demos = Enquiry::whereIn('status', [Enquiry::STATUS_DEMO_SCHEDULED, Enquiry::STATUS_DEMO_COMPLETED])->count();
-        $paymentPending = Enquiry::where('status', Enquiry::STATUS_PAYMENT_PENDING)->count();
-        $converted = Enquiry::whereIn('status', [Enquiry::STATUS_CONVERTED, Enquiry::STATUS_ENROLLED, Enquiry::STATUS_ADMISSION_CONFIRMED])->count();
-        $lost = Enquiry::whereIn('status', [Enquiry::STATUS_LOST, Enquiry::STATUS_NOT_INTERESTED, Enquiry::STATUS_CLOSED])->count();
+        $totalLeads = $leads()->count();
+        $newLeads = $leads()->where('status', Enquiry::STATUS_NEW)->count();
+        $contacted = $leads()->where('status', Enquiry::STATUS_CONTACTED)->count();
+        $interested = $leads()->where('status', Enquiry::STATUS_INTERESTED)->count();
+        $demos = $leads()->whereIn('status', [Enquiry::STATUS_DEMO_SCHEDULED, Enquiry::STATUS_DEMO_COMPLETED])->count();
+        $paymentPending = $leads()->where('status', Enquiry::STATUS_PAYMENT_PENDING)->count();
+        $converted = $leads()->whereIn('status', [Enquiry::STATUS_CONVERTED, Enquiry::STATUS_ENROLLED, Enquiry::STATUS_ADMISSION_CONFIRMED])->count();
+        $lost = $leads()->whereIn('status', [Enquiry::STATUS_LOST, Enquiry::STATUS_NOT_INTERESTED, Enquiry::STATUS_CLOSED])->count();
 
         // Follow-up KPI breakdown
-        $overdueFollowUps = CrmFollowUp::pending()->where('scheduled_at', '<', $today)->count();
-        $todaysFollowUps = CrmFollowUp::pending()->whereDate('scheduled_at', $today)->count();
-        $upcomingFollowUps = CrmFollowUp::pending()->where('scheduled_at', '>', Carbon::tomorrow()->startOfDay())->count();
-        $completedFollowUps = CrmFollowUp::where('status', CrmFollowUp::STATUS_COMPLETED)->count();
+        $overdueFollowUps = $followUps()->pending()->where('scheduled_at', '<', $today)->count();
+        $todaysFollowUps = $followUps()->pending()->whereDate('scheduled_at', $today)->count();
+        $upcomingFollowUps = $followUps()->pending()->where('scheduled_at', '>', Carbon::tomorrow()->startOfDay())->count();
+        $completedFollowUps = $followUps()->where('status', CrmFollowUp::STATUS_COMPLETED)->count();
 
         // Follow-ups due total (overdue + today)
         $followUpsDue = $overdueFollowUps + $todaysFollowUps;
@@ -49,12 +53,12 @@ class AdminCrmController extends Controller
         $conversionRate = $totalLeads > 0 ? round(($converted / $totalLeads) * 100, 1) : 0.0;
 
         // Source breakdown
-        $sourceBreakdown = Enquiry::select('source', DB::raw('count(*) as total'))
+        $sourceBreakdown = $leads()->select('source', DB::raw('count(*) as total'))
             ->groupBy('source')
             ->pluck('total', 'source');
 
         // Priority breakdown
-        $priorityBreakdown = Enquiry::select('priority', DB::raw('count(*) as total'))
+        $priorityBreakdown = $leads()->select('priority', DB::raw('count(*) as total'))
             ->groupBy('priority')
             ->pluck('total', 'priority');
 
@@ -90,6 +94,9 @@ class AdminCrmController extends Controller
             'enrolledUser:id,name,email,student_id',
             'latestFollowUp',
         ])->withCount(['activities', 'followUps']);
+
+        // Record-level scoping: scoped staff only ever list own + unassigned.
+        $query->visibleTo($request->user());
 
         if ($request->filled('search')) {
             $query->search($request->search);
@@ -181,11 +188,15 @@ class AdminCrmController extends Controller
             ->first();
 
         if ($existing) {
-            return response()->json([
+            $response = [
                 'message' => 'An active lead already exists for this candidate.',
-                'lead' => $existing->load(['course', 'assignedCounsellor', 'latestFollowUp']),
                 'already_exists' => true,
-            ], 422);
+            ];
+            // Never leak another staff member's lead through duplicate probing.
+            if ($existing->isVisibleTo($request->user())) {
+                $response['lead'] = $existing->load(['course', 'assignedCounsellor', 'latestFollowUp']);
+            }
+            return response()->json($response, 422);
         }
 
         $courseTitle = $validated['course_title'] ?? null;
@@ -194,6 +205,7 @@ class AdminCrmController extends Controller
         }
 
         $counsellorId = $validated['assigned_counsellor_id'] ?? null;
+        $this->denyUnlessReassignAllowed($request, null, $counsellorId);
         $counsellorName = $counsellorId ? User::find($counsellorId)?->name : ($request->user()->name ?? 'Administrator');
 
         $lead = Enquiry::create([
@@ -273,8 +285,9 @@ class AdminCrmController extends Controller
     /**
      * Show single lead details with full timeline and follow-ups.
      */
-    public function show(Enquiry $lead)
+    public function show(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $lead->load([
             'course:id,title,code,category,price,slug,thumbnail,instructor',
             'assignedCounsellor:id,name,email,avatar,role,phone',
@@ -294,6 +307,7 @@ class AdminCrmController extends Controller
      */
     public function update(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $old = $lead->toArray();
 
         $validated = $request->validate([
@@ -325,6 +339,17 @@ class AdminCrmController extends Controller
         $oldStatus = $lead->status;
         $oldPriority = $lead->priority;
         $oldCounsellorId = $lead->assigned_counsellor_id;
+
+        if (array_key_exists('assigned_counsellor_id', $validated)) {
+            $this->denyUnlessReassignAllowed($request, $lead, $validated['assigned_counsellor_id']);
+        }
+
+        // Payment truth guard: only admins record financial truth on leads.
+        // Scoped staff may work the pipeline but can never set amounts/status.
+        $this->denyUnlessPaymentTruthAllowed($request, $validated);
+        if ($request->user()->hasScopedCrmAccess()) {
+            unset($validated['amount_paid'], $validated['payment_status']);
+        }
 
         // If course changed, update title
         if (! empty($validated['course_id']) && $validated['course_id'] != $lead->course_id) {
@@ -393,6 +418,7 @@ class AdminCrmController extends Controller
      */
     public function destroy(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $old = $lead->toArray();
         $name = $lead->name;
         $lead->delete();
@@ -409,6 +435,7 @@ class AdminCrmController extends Controller
      */
     public function activities(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $validated = $request->validate([
             'activity_type' => 'required|string|in:note,call,follow_up,demo_scheduled,demo_completed,payment_event,status_change',
             'title' => 'required|string|max:255',
@@ -425,17 +452,22 @@ class AdminCrmController extends Controller
             'metadata' => $validated['metadata'] ?? null,
         ]);
 
-        // If activity is a payment event, update lead amount_paid & payment_status
+        // If activity is a payment event, update lead amount_paid & payment_status.
+        // Payment truth guard: only admins mutate financial truth. Scoped staff
+        // may log the claim on the timeline, but it never touches the ledger.
         if ($validated['activity_type'] === 'payment_event' && isset($validated['metadata']['amount'])) {
-            $amount = (float) $validated['metadata']['amount'];
-            $newTotal = (float) $lead->amount_paid + $amount;
-            $lead->amount_paid = $newTotal;
-            if ($lead->expected_revenue && $newTotal >= (float) $lead->expected_revenue) {
-                $lead->payment_status = 'paid';
-            } elseif ($newTotal > 0) {
-                $lead->payment_status = 'partial';
+            $this->denyUnlessPaymentTruthAllowed($request, $validated);
+            if (! $request->user()->hasScopedCrmAccess()) {
+                $amount = (float) $validated['metadata']['amount'];
+                $newTotal = (float) $lead->amount_paid + $amount;
+                $lead->amount_paid = $newTotal;
+                if ($lead->expected_revenue && $newTotal >= (float) $lead->expected_revenue) {
+                    $lead->payment_status = 'paid';
+                } elseif ($newTotal > 0) {
+                    $lead->payment_status = 'partial';
+                }
+                $lead->save();
             }
-            $lead->save();
         }
 
         $activity->load('user:id,name,email,avatar');
@@ -456,7 +488,7 @@ class AdminCrmController extends Controller
             'enquiry:id,name,email,phone,course_id,course_title,status,priority,city',
             'assignedTo:id,name,email,avatar',
             'createdBy:id,name,email',
-        ]);
+        ])->whereHas('enquiry', fn ($q) => $q->visibleTo($request->user()));
 
         $today = Carbon::today();
         $filter = $request->input('filter', 'pending');
@@ -487,6 +519,7 @@ class AdminCrmController extends Controller
      */
     public function storeFollowUp(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $validated = $request->validate([
             'scheduled_at' => 'required|date',
             'title' => 'required|string|max:255',
@@ -540,6 +573,9 @@ class AdminCrmController extends Controller
      */
     public function updateFollowUp(Request $request, CrmFollowUp $followUp)
     {
+        if ($followUp->enquiry && ! $followUp->enquiry->isVisibleTo($request->user())) {
+            abort(403, 'You do not have access to this lead.');
+        }
         $validated = $request->validate([
             'status' => 'required|string|in:completed,cancelled,pending',
             'outcome' => 'nullable|string|max:2000',
@@ -585,6 +621,7 @@ class AdminCrmController extends Controller
      */
     public function convert(Request $request, Enquiry $lead)
     {
+        $this->denyUnlessLeadVisible($request, $lead);
         $validated = $request->validate([
             'course_id' => 'required|exists:courses,id',
             'batch_id' => 'nullable|exists:batches,id',
@@ -607,6 +644,18 @@ class AdminCrmController extends Controller
         $batch = $batchId ? Batch::findOrFail($batchId) : null;
 
         $amountPaid = isset($validated['amount_paid']) ? (float) $validated['amount_paid'] : (float) $lead->amount_paid;
+
+        // Payment-truth guard: financial truth comes only from admins or the
+        // gateway ledger. Scoped staff convert admissions but record no money.
+        $isFinanceActor = ! $request->user()->hasScopedCrmAccess();
+        if (! $isFinanceActor && isset($validated['amount_paid'])) {
+            return response()->json([
+                'message' => 'Only administrators can record payment amounts.',
+            ], 403);
+        }
+        if (! $isFinanceActor) {
+            $amountPaid = (float) $lead->amount_paid;
+        }
 
         DB::beginTransaction();
         try {
@@ -726,8 +775,10 @@ class AdminCrmController extends Controller
                 ],
             ]);
 
-            // If payment was made at conversion, log payment event
-            if ($amountPaid > 0) {
+            // If payment was made at conversion, log payment event.
+            // Admin-recorded amounts only — scoped staff conversions never
+            // mint financial truth.
+            if ($isFinanceActor && $amountPaid > 0) {
                 CrmActivity::create([
                     'enquiry_id' => $lead->id,
                     'user_id' => $request->user()->id,
@@ -771,11 +822,68 @@ class AdminCrmController extends Controller
      */
     public function counsellors()
     {
-        $counsellors = User::whereIn('role', ['admin', 'super_admin', 'counsellor'])
+        $counsellors = User::whereIn('role', ['admin', 'super_admin', 'counsellor', 'telecaller', 'course_advisor'])
             ->select('id', 'name', 'email', 'role', 'avatar', 'phone')
             ->orderBy('name', 'asc')
             ->get();
 
         return response()->json($counsellors);
+    }
+
+    /**
+     * Record-level gate: scoped CRM staff may only touch own + unassigned leads.
+     */
+    private function denyUnlessLeadVisible(Request $request, Enquiry $lead): void
+    {
+        if (! $lead->isVisibleTo($request->user())) {
+            abort(403, 'You do not have access to this lead.');
+        }
+    }
+
+    /**
+     * Ownership guard for (re)assignment: scoped staff may claim unassigned
+     * leads for themselves (or release their own back to the pool) but may
+     * never assign leads to other staff. Admins are unrestricted.
+     */
+    private function denyUnlessReassignAllowed(Request $request, ?Enquiry $lead, mixed $targetId): void
+    {
+        $user = $request->user();
+        if (! $user || ! $user->hasScopedCrmAccess()) {
+            return;
+        }
+
+        $targetOk = $targetId === null || (int) $targetId === (int) $user->id;
+        $sourceOk = $lead === null
+            || $lead->assigned_counsellor_id === null
+            || (int) $lead->assigned_counsellor_id === (int) $user->id;
+
+        if (! ($targetOk && $sourceOk)) {
+            abort(403, 'You can only claim unassigned leads for yourself.');
+        }
+    }
+
+    /**
+     * Payment-truth guard: only admins record financial truth on leads.
+     * Called when a payload carries amount/payment fields; scoped staff get 403.
+     */
+    private function denyUnlessPaymentTruthAllowed(Request $request, array $validated): void
+    {
+        $user = $request->user();
+        if (! $user || ! $user->hasScopedCrmAccess()) {
+            return;
+        }
+
+        $financialKeys = ['amount_paid', 'payment_status'];
+        if ($user->hasScopedCrmAccess()) {
+            foreach ($financialKeys as $key) {
+                if (array_key_exists($key, $validated) && $validated[$key] !== null) {
+                    abort(403, 'Only administrators can record payment amounts or status.');
+                }
+            }
+            if (($validated['activity_type'] ?? null) === 'payment_event'
+                && isset($validated['metadata']['amount'])) {
+                abort(403, 'Only administrators can record payment events with amounts.');
+            }
+        }
     }
 }

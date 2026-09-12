@@ -192,7 +192,7 @@ class CertificateController extends Controller
         $user = $request->user();
 
         $isOwner = (int) $certificate->user_id === (int) $user->id;
-        $isAdmin = $user->role === 'admin';
+        $isAdmin = in_array($user->role, ['admin', 'super_admin'], true);
 
         if (! $isOwner && ! $isAdmin) {
             return response()->json(['message' => 'You do not have access to this certificate.'], 403);

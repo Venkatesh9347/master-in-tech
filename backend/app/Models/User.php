@@ -283,6 +283,21 @@ class User extends Authenticatable
         return $this->role === 'counsellor';
     }
 
+    public function isTelecaller(): bool
+    {
+        return $this->role === 'telecaller';
+    }
+
+    public function isCourseAdvisor(): bool
+    {
+        return $this->role === 'course_advisor';
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->role === 'super_admin';
+    }
+
     public function isCompany(): bool
     {
         return $this->role === 'company' || $this->role === 'recruiter';
@@ -295,7 +310,16 @@ class User extends Authenticatable
 
     public function canAccessCrm(): bool
     {
-        return in_array($this->role, ['super_admin', 'admin', 'counsellor'], true);
+        return in_array($this->role, ['super_admin', 'admin', 'counsellor', 'telecaller', 'course_advisor'], true);
+    }
+
+    /**
+     * CRM staff roles with record-scoped (own + unassigned) lead visibility.
+     * Admins/super_admin see the full pipeline.
+     */
+    public function hasScopedCrmAccess(): bool
+    {
+        return in_array($this->role, ['counsellor', 'telecaller', 'course_advisor'], true);
     }
 
     public function assignedLeads()

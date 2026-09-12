@@ -92,16 +92,27 @@ class AssignmentController extends Controller
         // M18 (PD-01): hard-block submissions after the due date. Deadlines are
         // compared in the business timezone so a course scheduled in IST (etc.)
         // does not drift because of the server/session UTC timezone.
+        // A configurable grace window (default 0 = preserve the hard block)
+        // accepts slightly-late work flagged is_late=true; see config/assignments.php.
+        $isLate = false;
         if ($assignment->due_date) {
             $now = Carbon::now(config('app.business_timezone'));
             $due = $assignment->due_date->copy()->setTimezone(config('app.business_timezone'));
 
             if ($now->gt($due)) {
-                return response()->json([
-                    'message' => 'The submission deadline for this assignment has passed.',
-                    'past_due' => true,
-                    'due_date' => $assignment->due_date->toISOString(),
-                ], 403);
+                $graceMinutes = (int) config('assignments.late_grace_minutes', 0);
+                // Explicit timestamp math (Carbon diffs may be signed).
+                $lateByMinutes = (int) floor(max(0, $now->getTimestamp() - $due->getTimestamp()) / 60);
+
+                if ($lateByMinutes > $graceMinutes) {
+                    return response()->json([
+                        'message' => 'The submission deadline for this assignment has passed.',
+                        'past_due' => true,
+                        'due_date' => $assignment->due_date->toISOString(),
+                    ], 403);
+                }
+
+                $isLate = true;
             }
         }
 
@@ -130,11 +141,28 @@ class AssignmentController extends Controller
         }
 
         if ($existing) {
-            // Update existing submission
+            // Snapshot the superseded revision immutably before overwriting,
+            // then bump the revision counter. Grading evidence is preserved
+            // in the revision row even if the live row is later re-graded.
+            \App\Models\AssignmentSubmissionRevision::create([
+                'assignment_submission_id' => $existing->id,
+                'revision_number' => (int) ($existing->revision_number ?? 1),
+                'submission_text' => $existing->submission_text,
+                'file_url' => $existing->file_url,
+                'status' => $existing->status,
+                'score' => $existing->score,
+                'feedback' => $existing->feedback,
+                'submitted_at' => $existing->submitted_at,
+                'created_by' => $user->id,
+            ]);
+
+            // Update existing submission (first submitted_at is preserved).
             $existing->update([
                 'submission_text' => $validated['submission_text'] ?? $existing->submission_text,
                 'file_url' => $validated['file_url'] ?? $existing->file_url,
                 'submitted_at' => $existing->submitted_at ?? now(),
+                'is_late' => $isLate || (bool) $existing->is_late,
+                'revision_number' => (int) ($existing->revision_number ?? 1) + 1,
                 'status' => 'submitted',
             ]);
 
@@ -175,6 +203,8 @@ class AssignmentController extends Controller
             'submission_text' => $validated['submission_text'] ?? null,
             'file_url' => $validated['file_url'] ?? null,
             'submitted_at' => now(),
+            'is_late' => $isLate,
+            'revision_number' => 1,
             'status' => 'submitted',
         ]);
 

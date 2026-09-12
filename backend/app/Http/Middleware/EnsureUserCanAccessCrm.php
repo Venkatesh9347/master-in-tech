@@ -17,7 +17,7 @@ class EnsureUserCanAccessCrm
     {
         $user = $request->user();
 
-        if (! $user || ! in_array($user->role, ['admin', 'super_admin', 'counsellor'], true)) {
+        if (! $user || ! $user->canAccessCrm()) {
             return response()->json([
                 'message' => 'Unauthorized. CRM and Admissions access required.',
             ], 403);
