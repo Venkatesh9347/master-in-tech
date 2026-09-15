@@ -1,9 +1,20 @@
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useEffect } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 
 export default function CounsellorRoute() {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      navigate("/login", { replace: true, state: { from: location } });
+    } else if (!user.role || !["admin", "super_admin", "counsellor"].includes(user.role)) {
+      navigate(user.role === "tutor" || user.role === "faculty" ? "/tutor" : "/student", { replace: true });
+    }
+  }, [user, loading, navigate, location]);
 
   if (loading) {
     return (
@@ -16,13 +27,8 @@ export default function CounsellorRoute() {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
-
-  if (!user.role || !["admin", "super_admin", "counsellor"].includes(user.role)) {
-    return <Navigate to={user.role === "tutor" || user.role === "faculty" ? "/tutor" : "/student"} replace />;
-  }
+  if (!user) return null;
+  if (!user.role || !["admin", "super_admin", "counsellor"].includes(user.role)) return null;
 
   return <Outlet />;
 }

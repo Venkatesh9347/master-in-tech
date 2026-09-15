@@ -35,10 +35,13 @@ vi.mock("axios", () => ({
 import API, {
   classifyApiError,
   isAuthError,
+  isAuthFlowUrl,
   isExemptUrl,
   isNetworkError,
+  isPublicCatalogRead,
   isServerError,
   isSessionRevoked,
+  shouldSkipAuthHeader,
 } from "../api";
 
 const error = (overrides: Record<string, unknown>) =>
@@ -130,6 +133,73 @@ describe("api request interceptor", () => {
 
     expect(headers.Authorization).toBeUndefined();
   });
+
+  it("skips the header for anonymous public catalog reads even with a token", () => {
+    localStorage.setItem("access_token", "stale-token");
+
+    for (const url of ["/courses", "/course-categories", "/events", "/public/settings"]) {
+      const config: Record<string, unknown> = { method: "get", url, headers: {} };
+      const next = requestHandler()(config);
+      const headers = next.headers as Record<string, unknown>;
+
+      expect(headers.Authorization).toBeUndefined();
+    }
+  });
+
+  it("strips a stale header on retry configs for public reads", () => {
+    const config: Record<string, unknown> = {
+      method: "get",
+      url: "/courses",
+      headers: { Authorization: "Bearer stale-token" },
+    };
+    const next = requestHandler()(config);
+    const headers = next.headers as Record<string, unknown>;
+
+    expect(headers.Authorization).toBeUndefined();
+  });
+
+  it("keeps the token for authenticated endpoints that merely contain public segments", () => {
+    localStorage.setItem("access_token", "token-123");
+
+    const authenticatedCalls: Record<string, unknown>[] = [
+      { method: "get", url: "/tutor/courses", headers: {} },
+      { method: "get", url: "/courses/1/sections", headers: {} },
+      { method: "post", url: "/courses/1/enroll", headers: {} },
+      { method: "get", url: "/courses/1", headers: {} },
+      { method: "post", url: "/events/1/register", headers: {} },
+      { method: "get", url: "/placements/my-applications", headers: {} },
+      { method: "get", url: "/admin/enquiries/stats", headers: {} },
+      { method: "get", url: "/user", headers: {} },
+    ];
+
+    for (const config of authenticatedCalls) {
+      const next = requestHandler()(config);
+      const headers = next.headers as Record<string, unknown>;
+
+      expect(headers.Authorization).toBe("Bearer token-123");
+    }
+  });
+
+  it("classifies public-catalog reads vs auth flows precisely", () => {
+    expect(isAuthFlowUrl("/login")).toBe(true);
+    expect(isAuthFlowUrl("/auth/google")).toBe(true);
+    expect(isAuthFlowUrl("/courses")).toBe(false);
+    expect(isAuthFlowUrl("/tutor/courses")).toBe(false);
+
+    expect(isPublicCatalogRead({ method: "get", url: "/courses" })).toBe(true);
+    expect(isPublicCatalogRead({ method: "get", url: "/course-categories" })).toBe(true);
+    expect(isPublicCatalogRead({ method: "get", url: "/tutor/courses" })).toBe(false);
+    expect(isPublicCatalogRead({ method: "post", url: "/courses/1/enroll" })).toBe(false);
+    expect(isPublicCatalogRead({ method: "get", url: "/courses/1/sections" })).toBe(false);
+    expect(isPublicCatalogRead({ method: "post", url: "/events/1/register" })).toBe(false);
+    expect(isPublicCatalogRead({ method: "get", url: "/placements/my-applications" })).toBe(false);
+
+    expect(shouldSkipAuthHeader({ method: "post", url: "/login" })).toBe(true);
+    expect(shouldSkipAuthHeader({ method: "get", url: "/courses" })).toBe(true);
+    expect(shouldSkipAuthHeader({ method: "get", url: "/tutor/courses" })).toBe(false);
+    expect(shouldSkipAuthHeader({ method: "post", url: "/enquiries" })).toBe(true);
+    expect(shouldSkipAuthHeader({ method: "get", url: "/admin/enquiries/stats" })).toBe(false);
+  });
 });
 
 describe("api response interceptor (R5 token-safety)", () => {
@@ -214,6 +284,18 @@ describe("api response interceptor (R5 token-safety)", () => {
 
     await expect(handler()(err)).rejects.toBe(err);
     expect(localStorage.getItem("access_token")).toBe("token-123");
+  });
+
+  it("clears the token for a 401 on authenticated course endpoints (e.g. /tutor/courses)", async () => {
+    localStorage.setItem("access_token", "token-123");
+    window.history.pushState({}, "", "/login");
+    const err = error({
+      config: { method: "get", url: "/tutor/courses", _retried: true },
+      response: { status: 401, data: { message: "Unauthenticated." } },
+    });
+
+    await expect(handler()(err)).rejects.toBe(err);
+    expect(localStorage.getItem("access_token")).toBeNull();
   });
 
   it("retries an idempotent GET once on network failure", async () => {

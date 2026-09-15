@@ -1,9 +1,24 @@
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useEffect } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 
 export default function AdminRoute() {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      navigate("/login", { replace: true, state: { from: location } });
+    } else if (user.role === "tutor" || user.role === "faculty") {
+      navigate("/tutor", { replace: true });
+    } else if (user.role === "counsellor") {
+      navigate("/admin/crm", { replace: true });
+    } else if (user.role !== "admin" && user.role !== "super_admin") {
+      navigate("/student", { replace: true });
+    }
+  }, [user, loading, navigate, location]);
 
   if (loading) {
     return (
@@ -16,21 +31,10 @@ export default function AdminRoute() {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
-
-  if (user.role === "tutor" || user.role === "faculty") {
-    return <Navigate to="/tutor" replace />;
-  }
-
-  if (user.role === "counsellor") {
-    return <Navigate to="/admin/crm" replace />;
-  }
-
-  if (user.role !== "admin" && user.role !== "super_admin") {
-    return <Navigate to="/student" replace />;
-  }
+  if (!user) return null;
+  if (user.role === "tutor" || user.role === "faculty") return null;
+  if (user.role === "counsellor") return null;
+  if (user.role !== "admin" && user.role !== "super_admin") return null;
 
   return <Outlet />;
 }

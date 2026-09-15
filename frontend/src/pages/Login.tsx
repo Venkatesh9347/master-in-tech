@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import Navbar from '../components/Navbar';
@@ -11,7 +11,7 @@ import type { User, GoogleAuthPendingSession } from '../context/auth-context';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, initiateGoogleAuth, initiateMobileAuth } = useAuth();
+  const { user: authUser, loading: authLoading, login, initiateGoogleAuth, initiateMobileAuth } = useAuth();
 
   const [studentAuthMode, setStudentAuthMode] = useState<'google' | 'mobile'>('google');
   const [mobileNumber, setMobileNumber] = useState('');
@@ -82,7 +82,7 @@ export default function Login() {
     }
   }, [location.search, location.pathname, navigate, initiateGoogleAuth]);
 
-  const handlePostAuthRedirect = (loggedInUser: User) => {
+  const handlePostAuthRedirect = useCallback((loggedInUser: User) => {
     const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname;
     if (from) {
       if (from.startsWith('/admin') && (loggedInUser.role === 'admin' || loggedInUser.role === 'super_admin')) {
@@ -110,7 +110,16 @@ export default function Login() {
     } else {
       navigate('/student', { replace: true });
     }
-  };
+  }, [navigate, location.state]);
+
+  // Deterministic state-driven redirect: when auth state becomes authenticated, navigate based on role.
+  // This avoids the race where imperative navigate() is called before AuthContext has committed user state.
+  useEffect(() => {
+    if (authLoading) return;
+    if (authUser && !pendingOtpSession) {
+      handlePostAuthRedirect(authUser);
+    }
+  }, [authUser, authLoading, pendingOtpSession, handlePostAuthRedirect]);
 
   const handleGoogleSuccess = (session: GoogleAuthPendingSession) => {
     setError('');
@@ -141,9 +150,9 @@ export default function Login() {
     }
   };
 
-  const handleOtpVerified = (verifiedUser: User) => {
+  const handleOtpVerified = (_verifiedUser?: User) => {
     setPendingOtpSession(null);
-    handlePostAuthRedirect(verifiedUser);
+    // Navigation is handled deterministically by the authUser useEffect above.
   };
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
@@ -152,8 +161,8 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const loggedInUser = await login(email.trim(), password);
-      handlePostAuthRedirect(loggedInUser);
+      await login(email.trim(), password);
+      // Navigation is handled deterministically by the authUser useEffect above.
     } catch (err: unknown) {
       const response = err as { response?: { data?: { message?: string } } };
       setError(response.response?.data?.message || 'Unable to log in with those credentials.');

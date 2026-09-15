@@ -1,8 +1,25 @@
-import { Navigate, Outlet } from "react-router-dom";
+import { useEffect } from "react";
+import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 
 export default function StudentRoute() {
   const { user, loading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      navigate("/login", { replace: true });
+    } else if (user.role === "admin" || user.role === "super_admin") {
+      navigate("/admin", { replace: true });
+    } else if (user.role === "tutor" || user.role === "faculty") {
+      navigate("/tutor", { replace: true });
+    } else if (user.role === "company" || user.role === "recruiter") {
+      navigate("/company", { replace: true });
+    } else if (user.role !== "student") {
+      navigate("/login", { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   if (loading) {
     return (
@@ -15,25 +32,11 @@ export default function StudentRoute() {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (user.role === "admin" || user.role === "super_admin") {
-    return <Navigate to="/admin" replace />;
-  }
-
-  if (user.role === "tutor" || user.role === "faculty") {
-    return <Navigate to="/tutor" replace />;
-  }
-
-  if (user.role === "company" || user.role === "recruiter") {
-    return <Navigate to="/company" replace />;
-  }
-
-  if (user.role !== "student") {
-    return <Navigate to="/login" replace />;
-  }
+  if (!user) return null;
+  if (user.role === "admin" || user.role === "super_admin") return null;
+  if (user.role === "tutor" || user.role === "faculty") return null;
+  if (user.role === "company" || user.role === "recruiter") return null;
+  if (user.role !== "student") return null;
 
   return <Outlet />;
 }

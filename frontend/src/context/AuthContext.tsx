@@ -173,12 +173,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     stopHeartbeat();
-    try {
-      await API.post("/logout");
-    } finally {
-      localStorage.removeItem("access_token");
-      setUser(null);
-    }
+    // Fire-and-forget server logout; do not block UI on network. The local
+    // session is cleared immediately so route guards see the correct state.
+    API.post("/logout").catch(() => {});
+    localStorage.removeItem("access_token");
+    setUser(null);
   }, [stopHeartbeat]);
 
   return (

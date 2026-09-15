@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { User } from "../auth-context";
 
@@ -48,9 +48,14 @@ const authError = {
 function Probe() {
   const value = useContext(AuthContext);
   return (
-    <span data-testid="state">
-      {(value?.user?.email ?? "guest") + "|" + (value?.loading ? "loading" : "ready")}
-    </span>
+    <>
+      <span data-testid="state">
+        {(value?.user?.email ?? "guest") + "|" + (value?.loading ? "loading" : "ready")}
+      </span>
+      <button type="button" onClick={() => void value?.logout()}>
+        sign-out
+      </button>
+    </>
   );
 }
 
@@ -135,6 +140,36 @@ describe("AuthProvider boot", () => {
 
     expect((await screen.findByTestId("state")).textContent).toBe("guest|ready");
     expect(mocks.apiInstance.get).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthProvider logout", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    mocks.apiInstance.get.mockReset();
+    mocks.apiInstance.post.mockReset();
+  });
+
+  it("returns to unauthenticated state and clears the token", async () => {
+    localStorage.setItem("access_token", "token-123");
+    mocks.apiInstance.get.mockResolvedValueOnce({ data: user });
+    mocks.apiInstance.post.mockResolvedValueOnce({ data: {} });
+
+    renderProvider();
+    expect((await screen.findByTestId("state")).textContent).toBe("test@example.com|ready");
+
+    fireEvent.click(screen.getByText("sign-out"));
+
+    await waitFor(() => {
+      expect(localStorage.getItem("access_token")).toBeNull();
+    });
+    expect((await screen.findByTestId("state")).textContent).toBe("guest|ready");
+    expect(mocks.apiInstance.post).toHaveBeenCalledWith("/logout");
   });
 });
 

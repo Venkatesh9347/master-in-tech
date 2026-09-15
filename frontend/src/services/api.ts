@@ -71,6 +71,13 @@ export const isServerError = (error: unknown): boolean =>
 export const isAuthError = (error: unknown): boolean =>
   isAxiosErrorLike(error) && (error as AxiosError).response?.status === 401;
 
+/**
+ * Legacy broad matcher, kept for backward compatibility (unit tests).
+ * Do NOT use for new request/response decisions: substring matching
+ * misclassifies authenticated endpoints (e.g. GET /api/tutor/courses,
+ * POST /api/events/{id}/register). Use {@link isAuthFlowUrl},
+ * {@link isPublicCatalogRead} and {@link shouldSkipAuthHeader} instead.
+ */
 export const isExemptUrl = (url?: string): boolean =>
   Boolean(
     url &&
@@ -78,8 +85,77 @@ export const isExemptUrl = (url?: string): boolean =>
         url.includes("/register") ||
         url.includes("/auth/") ||
         url.includes("/enquiries") ||
-        url.includes("/health"))
+        url.includes("/health") ||
+        url.includes("/courses") ||
+        url.includes("/course-categories") ||
+        url.includes("/public/") ||
+        url.includes("/events") ||
+        url.includes("/placements"))
   );
+
+/**
+ * Auth-flow endpoints that never carry a user session (login, registration,
+ * OAuth/OTP exchanges, health checks). A 401 here is a credential problem,
+ * never a session revocation.
+ *
+ * Exact matching is deliberate: substring matching would misclassify
+ * authenticated endpoints such as POST /api/events/{id}/register.
+ */
+export const isAuthFlowUrl = (url?: string): boolean =>
+  Boolean(
+    url &&
+      (url === "/login" ||
+        url === "/register" ||
+        url === "/health" ||
+        url.startsWith("/auth/"))
+  );
+
+export interface PublicReadConfig {
+  method?: string;
+  url?: string;
+}
+
+/**
+ * Anonymous public catalog reads that must succeed without credentials.
+ *
+ * Narrowly scoped to exact collection paths with GET/HEAD only. Substring
+ * matching is deliberately NOT used: authenticated endpoints merely
+ * containing these segments (GET /api/tutor/courses, POST
+ * /api/courses/{id}/enroll, GET /api/courses/{id}/sections, POST
+ * /api/events/{id}/register, GET /api/placements/my-applications, exact
+ * POST /api/enquiries vs /api/admin/enquiries/*) must always keep their
+ * Bearer token. A broad substring exemption provably broke tutor
+ * dashboards (GET /api/tutor/courses sent without Authorization -> 401).
+ */
+export const isPublicCatalogRead = (config?: PublicReadConfig): boolean => {
+  const method = (config?.method || "get").toLowerCase();
+  if (method !== "get" && method !== "head") return false;
+
+  const url = config?.url || "";
+  return (
+    url === "/courses" ||
+    url === "/course-categories" ||
+    url === "/events" ||
+    url === "/events/upcoming" ||
+    url === "/events/past" ||
+    url === "/placements/settings" ||
+    url === "/placements/opportunities" ||
+    url.startsWith("/public/")
+  );
+};
+
+/**
+ * Per-request opt-out for the Authorization header. True only for auth
+ * flows, the exact public POST /enquiries lead form, and anonymous public
+ * catalog reads. Everything else (including authenticated /courses/*,
+ * /events/*, /placements/* and /admin/enquiries/* calls) keeps its token.
+ */
+export const shouldSkipAuthHeader = (config?: PublicReadConfig): boolean => {
+  const url = config?.url || "";
+  if (isAuthFlowUrl(url)) return true;
+  if (url === "/enquiries") return true;
+  return isPublicCatalogRead(config);
+};
 
 export const isSessionRevoked = (error: unknown): boolean => {
   if (!isAuthError(error)) return false;
@@ -124,8 +200,19 @@ export const classifyApiError = (error: unknown): ClassifiedApiError => {
   };
 };
 
-// Automatically attach Sanctum token to authenticated requests
+// Automatically attach Sanctum token to authenticated requests.
+// Anonymous public catalog reads skip the header so they never depend on
+// (stale) token state; every other request keeps its Bearer token.
 API.interceptors.request.use((config) => {
+  if (shouldSkipAuthHeader({ method: config.method, url: config.url })) {
+    // Never leak a stale token on anonymous reads (including retries that
+    // reuse the same config object).
+    if (config.headers.Authorization) {
+      delete config.headers.Authorization;
+    }
+    return config;
+  }
+
   const token = localStorage.getItem("access_token");
 
   if (token) {
@@ -181,8 +268,17 @@ API.interceptors.response.use(
       const requestUrl = isAxiosErrorLike(error)
         ? (error as AxiosError).config?.url
         : undefined;
+      const requestMethod = isAxiosErrorLike(error)
+        ? (error as AxiosError).config?.method
+        : undefined;
 
-      const isLoginRequest = isExemptUrl(requestUrl);
+      // Only auth flows and anonymous public reads are exempt from session
+      // revocation. A 401 on any authenticated endpoint (including
+      // /tutor/courses or /courses/{id}/enroll) is a real session failure.
+      const isLoginRequest =
+        isAuthFlowUrl(requestUrl) ||
+        isPublicCatalogRead({ method: requestMethod, url: requestUrl }) ||
+        requestUrl === "/enquiries";
 
       if (!isLoginRequest && !isRevoking) {
         isRevoking = true;

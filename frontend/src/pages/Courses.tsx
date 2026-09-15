@@ -36,15 +36,28 @@ export default function Courses() {
       API.get('/course-categories').catch(() => ({ data: [] })),
     ])
       .then(([coursesRes, catRes]) => {
-        const courseData = Array.isArray(coursesRes.data) ? coursesRes.data : coursesRes.data.data || []
-        setCourses(courseData)
-        if (Array.isArray(catRes.data) && catRes.data.length > 0) {
+        // Canonical backend contract (CourseController::index) is a raw JSON
+        // array. The CourseListResponse `{ data: Course[] }` wrapped shape is
+        // also accepted. Anything else (null, string, unexpected object)
+        // fails safely to an empty list instead of throwing.
+        const rawData: unknown = coursesRes?.data;
+        const wrappedData =
+          rawData !== null && typeof rawData === "object"
+            ? (rawData as { data?: unknown }).data
+            : undefined;
+        const courseData: Course[] = Array.isArray(rawData)
+          ? (rawData as Course[])
+          : Array.isArray(wrappedData)
+            ? (wrappedData as Course[])
+            : [];
+        setCourses(courseData.filter((c) => c !== null && typeof c === "object"))
+        if (Array.isArray(catRes?.data) && catRes.data.length > 0) {
           setDbCategories(catRes.data)
         }
         setLoading(false)
       })
       .catch((err) => {
-        console.error(err)
+        console.error("[Courses] Failed to fetch courses:", err)
         setError('Failed to load courses from the platform.')
         setLoading(false)
       })
@@ -88,22 +101,31 @@ export default function Courses() {
   const filteredCourses = useMemo(() => {
     return courses
       .filter((course) => {
+        if (course === null || typeof course !== "object") return false;
+        // Tolerate malformed entries (missing fields) so one bad record can
+        // never blank the whole catalog.
+        const title = course.title ?? "";
+        const description = course.description ?? "";
+        const instructor = course.instructor ?? "";
+        const difficulty = course.difficulty ?? "";
+        const category = course.category ?? "";
+        const skills = course.skills_gained ?? [];
         const matchesSearch =
           search === '' ||
-          course.title.toLowerCase().includes(search.toLowerCase()) ||
-          course.description.toLowerCase().includes(search.toLowerCase()) ||
-          (course.skills_gained && course.skills_gained.some((s) => s.toLowerCase().includes(search.toLowerCase()))) ||
-          course.instructor.toLowerCase().includes(search.toLowerCase())
+          title.toLowerCase().includes(search.toLowerCase()) ||
+          description.toLowerCase().includes(search.toLowerCase()) ||
+          (skills && skills.some((s) => (s ?? "").toLowerCase().includes(search.toLowerCase()))) ||
+          instructor.toLowerCase().includes(search.toLowerCase())
 
         const matchesCategory =
           selectedCategory === 'All' ||
-          (course.category && course.category.toLowerCase() === selectedCategory.toLowerCase())
+          (category && category.toLowerCase() === selectedCategory.toLowerCase())
 
         const matchesDifficulty =
           selectedDifficulty === 'All' ||
           selectedDifficulty === 'All Levels' ||
-          course.difficulty.toLowerCase() === selectedDifficulty.toLowerCase() ||
-          (selectedDifficulty.toLowerCase() === 'basic' && course.difficulty.toLowerCase() === 'beginner')
+          difficulty.toLowerCase() === selectedDifficulty.toLowerCase() ||
+          (selectedDifficulty.toLowerCase() === 'basic' && difficulty.toLowerCase() === 'beginner')
 
         return matchesSearch && matchesCategory && matchesDifficulty
       })
