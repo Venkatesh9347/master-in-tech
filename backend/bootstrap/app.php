@@ -32,4 +32,70 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(function (\Illuminate\Http\Request $request) {
             return $request->is('api/*') || $request->expectsJson();
         });
+
+        // S-01: API exception sanitization (defense in depth, independent of
+        // APP_DEBUG). API error responses must never expose stack traces,
+        // absolute filesystem paths, exception class names, or source
+        // file/line details. Intentional HTTP semantics (401/403/404/422/429
+        // etc.) are preserved; only the debug envelope is removed. The
+        // original exception is logged server-side for diagnostics.
+        $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) {
+            if (! ($request->is('api/*') || $request->expectsJson())) {
+                return null;
+            }
+
+            // Validation failures: keep the 422 contract (message + errors).
+            if ($e instanceof \Illuminate\Validation\ValidationException) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+
+            // Authentication failures: keep the 401 contract.
+            if ($e instanceof \Illuminate\Auth\AuthenticationException) {
+                $message = $e->getMessage() !== '' ? $e->getMessage() : 'Unauthenticated.';
+                return response()->json(['message' => $message], 401);
+            }
+
+            // Authorization failures (Gate/Policy denies): keep 403.
+            // Message is app-authored and safe to expose.
+            if ($e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+                $message = $e->getMessage() !== '' ? $e->getMessage() : 'Forbidden.';
+                $status = ($e->hasStatus() && is_int($e->status())) ? $e->status() : 403;
+                return response()->json(['message' => $message], $status);
+            }
+
+            // Missing models: generic 404. The framework default message
+            // leaks the model class name, so it must not be echoed.
+            if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+                return response()->json(['message' => 'Not found.'], 404);
+            }
+
+            // HTTP exceptions (abort(), throttling, method-not-allowed,
+            // maintenance, route 404s): preserve status code, message, and
+            // headers (e.g. Retry-After). Only 5xx messages are replaced —
+            // they may carry internals — while the status code is kept.
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                $status = $e->getStatusCode();
+                if ($status >= 500) {
+                    \Illuminate\Support\Facades\Log::error('api.exception', [
+                        'status' => $status,
+                        'exception' => get_class($e),
+                    ]);
+                    return response()->json(['message' => 'Server Error'], $status);
+                }
+                $message = $e->getMessage() !== '' ? $e->getMessage() : 'Error';
+                return response()->json(['message' => $message], $status, $e->getHeaders());
+            }
+
+            // Anything else (database faults, runtime errors, ...): log
+            // server-side for diagnostics, return a generic 500. Never
+            // serialize the original Throwable to the client.
+            \Illuminate\Support\Facades\Log::error('api.exception', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+            ]);
+            return response()->json(['message' => 'Server Error'], 500);
+        });
     })->create();

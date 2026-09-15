@@ -591,7 +591,11 @@ fresh one.
 
 ## 28. Production checklist
 
-- [ ] `APP_ENV=production`, `APP_DEBUG=false`
+- [ ] `APP_ENV=production`, `APP_DEBUG=false` (MUST — never enable debug
+  outside local development: with debug on, API errors disclose exception
+  classes, absolute filesystem paths, and stack traces to unauthenticated
+  callers. `backend/bootstrap/app.php` additionally sanitizes API error
+  responses regardless of this flag, but the flag must still be `false`.)
 - [ ] `APP_KEY` set (and `APP_PREVIOUS_KEYS` during rotation)
 - [ ] `DB_*` point at the managed database; `php artisan migrate --force`
   applied
