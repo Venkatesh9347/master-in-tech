@@ -148,16 +148,29 @@ class PublicContentHardeningTest extends TestCase
         ]);
 
         $post = function (string $event) {
-            $payload = json_encode(['event' => $event, 'room' => ['name' => 'masterintech-session-4242']]);
+            // Genuine-shaped webhook delivery: claim-shaped JWT (iss/iat/nbf/
+            // exp + sha256 of the exact raw body) alongside the event JSON.
+            $rawBody = (string) json_encode(['event' => $event, 'room' => ['name' => 'masterintech-session-4242']]);
+            $now = time();
+            $claims = [
+                'iss' => 'devkey',
+                'iat' => $now,
+                'nbf' => $now,
+                'exp' => $now + 300,
+                'sha256' => base64_encode(hash('sha256', $rawBody, true)),
+            ];
             $header = json_encode(['alg' => 'HS256', 'typ' => 'JWT', 'kid' => 'devkey']);
             $b64 = fn ($s) => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
-            $input = $b64($header) . '.' . $b64($payload);
+            $input = $b64($header) . '.' . $b64((string) json_encode($claims));
             $sig = rtrim(strtr(base64_encode(hash_hmac('sha256', $input, 'secret', true)), '+/', '-_'), '=');
 
-            return $this->postJson('/api/livekit/webhook', json_decode($payload, true), [
+            $server = $this->transformHeadersToServerVars([
                 'Authorization' => 'Bearer ' . $input . '.' . $sig,
                 'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
             ]);
+
+            return $this->call('POST', '/api/livekit/webhook', [], [], [], $server, $rawBody);
         };
 
         $post('room_started')->assertOk();

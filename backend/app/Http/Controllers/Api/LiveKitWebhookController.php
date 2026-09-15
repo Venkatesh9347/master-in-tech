@@ -271,7 +271,60 @@ class LiveKitWebhookController extends Controller
         $signingInput = $parts[0] . '.' . $parts[1];
         $expected = $this->base64UrlEncode(hash_hmac('sha256', $signingInput, $apiSecret, true));
 
-        return hash_equals($expected, $parts[2]);
+        if (! hash_equals($expected, $parts[2])) {
+            return false;
+        }
+
+        // Validate the JWT payload claims. Genuine LiveKit webhook tokens
+        // carry iss/iat/nbf/exp plus a sha256 body binding (S-02A ground
+        // truth). Claims are only trusted after signature verification.
+        $payloadJson = $this->base64UrlDecode($parts[1]);
+        if ($payloadJson === '') {
+            return false;
+        }
+
+        $claims = json_decode($payloadJson, true);
+        if (! is_array($claims)) {
+            return false;
+        }
+
+        // exp is required: missing/null/non-numeric values reject. Enforced
+        // with ~60s leeway per the LiveKit Go reference behavior.
+        if (! isset($claims['exp']) || ! is_numeric($claims['exp'])) {
+            return false;
+        }
+        if (time() > (int) $claims['exp'] + 60) {
+            return false;
+        }
+
+        // nbf, when asserted, must be numeric and satisfied within the same
+        // clock-skew allowance.
+        if (array_key_exists('nbf', $claims) && $claims['nbf'] !== null) {
+            if (! is_numeric($claims['nbf'])) {
+                return false;
+            }
+            if (time() < (int) $claims['nbf'] - 60) {
+                return false;
+            }
+        }
+
+        // iss must equal the configured API key.
+        if (! isset($claims['iss']) || $claims['iss'] !== $apiKey) {
+            return false;
+        }
+
+        // Body binding: the sha256 claim must equal the base64-encoded
+        // SHA-256 digest of the EXACT raw HTTP request body. Never hash
+        // parsed/reserialized JSON.
+        if (! isset($claims['sha256']) || ! is_string($claims['sha256']) || $claims['sha256'] === '') {
+            return false;
+        }
+        $bodyHash = base64_encode(hash('sha256', $request->getContent(), true));
+        if (! hash_equals($claims['sha256'], $bodyHash)) {
+            return false;
+        }
+
+        return true;
     }
 
     private function base64UrlEncode(string $data): string
