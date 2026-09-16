@@ -12,6 +12,7 @@ use App\Models\CourseEnrollment;
 use App\Models\Lesson;
 use App\Models\LessonProgress;
 use App\Models\User;
+use App\Models\VideoPlaybackSession;
 use App\Services\Enrollment\EnrollmentAccess;
 use App\Services\Enrollment\EnrollmentPaymentGate;
 use Illuminate\Http\Request;
@@ -380,9 +381,20 @@ class AdminEnrollmentController extends Controller
             }
         }
 
+        $previousStatus = $enrollment->status;
+
         $enrollment->update([
             'status' => $target,
         ]);
+
+        // S-03: when access is revoked (active/completed -> pending/cancelled),
+        // invalidate this user's playback sessions for this course only.
+        if (in_array($previousStatus, ['active', 'completed'], true)
+            && in_array($target, ['pending', 'cancelled'], true)) {
+            VideoPlaybackSession::where('user_id', $enrollment->user_id)
+                ->where('course_id', $enrollment->course_id)
+                ->delete();
+        }
 
         $enrollment->load([
             'user:id,name,email,student_id,status,avatar,role',
@@ -403,7 +415,15 @@ class AdminEnrollmentController extends Controller
     public function destroy(CourseEnrollment $enrollment)
     {
         $old = $enrollment->toArray();
+        $revokedUserId = $enrollment->user_id;
+        $revokedCourseId = $enrollment->course_id;
         $enrollment->delete();
+
+        // S-03: enrollment deletion revokes course access; invalidate that
+        // user's playback sessions for this course only.
+        VideoPlaybackSession::where('user_id', $revokedUserId)
+            ->where('course_id', $revokedCourseId)
+            ->delete();
 
         AuditLog::log('deleted_enrollment', null, $old, null);
 

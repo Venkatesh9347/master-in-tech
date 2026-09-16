@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\VideoPlaybackSession;
 use App\Services\GoogleAuthService;
 use App\Services\OtpService;
 use Illuminate\Http\JsonResponse;
@@ -199,6 +200,11 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         $user = $request->user();
+
+        // S-03: invalidate this user's HLS playback sessions on logout so a
+        // bearer playback token cannot be replayed after logout within TTL.
+        VideoPlaybackSession::where('user_id', $user->id)->delete();
+
         $token = $user->currentAccessToken();
 
         $tokenSessionId = null;

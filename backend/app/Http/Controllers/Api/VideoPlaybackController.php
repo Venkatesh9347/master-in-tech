@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\Lesson;
+use App\Models\User;
 use App\Models\VideoAsset;
 use App\Services\Video\Drivers\LocalHlsAes128Driver;
 use App\Services\Video\VideoSecurityManager;
@@ -125,6 +126,19 @@ class VideoPlaybackController extends Controller
         $token = $request->query('token', '');
 
         $driver = $videoManager->getDriver($asset->driver);
+
+        // Verify signed token/session/asset binding first (existing behavior).
+        if (! $driver->verifyPlaybackToken($asset, $token)) {
+            return response('Unauthorized key request or expired session.', 403);
+        }
+
+        // S-03 defense-in-depth: verify current enrollment/access before
+        // releasing the AES-128 key. Uses the verified token identity and the
+        // asset's authoritative course; no client-supplied IDs are trusted.
+        if (! $this->hasCurrentKeyAccess($asset, $token)) {
+            return response('Unauthorized key request or expired session.', 403);
+        }
+
         $key = $driver->getDecryptionKey($asset, $token);
 
         if ($key === null) {
@@ -221,5 +235,48 @@ class VideoPlaybackController extends Controller
         if (! $isEnrolled) {
             abort(403, 'Course Access Required. You must have an active enrollment in this course to stream video lessons.');
         }
+    }
+
+    /**
+     * S-03 defense-in-depth: verify current access before AES-128 key release.
+     *
+     * Identity comes from the already-verified signed token payload and the
+     * asset's authoritative course_id; client-supplied IDs are never trusted.
+     * Preserves admin + owning-tutor bypass; students require active/completed.
+     */
+    private function hasCurrentKeyAccess(VideoAsset $asset, string $token): bool
+    {
+        if (! str_contains($token, '.')) {
+            return false;
+        }
+
+        [$encodedPayload] = explode('.', $token, 2);
+        $payload = json_decode(base64_decode($encodedPayload), true);
+        if (! is_array($payload) || empty($payload['user_id'])) {
+            return false;
+        }
+
+        $user = User::find($payload['user_id']);
+        if (! $user) {
+            return false;
+        }
+
+        $course = Course::find($asset->course_id);
+        if (! $course) {
+            return false;
+        }
+
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        if ($user->role === 'tutor' && (int) $course->instructor_id === (int) $user->id) {
+            return true;
+        }
+
+        return CourseEnrollment::where('user_id', $user->id)
+            ->where('course_id', $course->id)
+            ->whereIn('status', ['active', 'completed'])
+            ->exists();
     }
 }
