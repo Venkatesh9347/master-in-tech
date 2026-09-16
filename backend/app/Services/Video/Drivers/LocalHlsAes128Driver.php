@@ -216,6 +216,43 @@ class LocalHlsAes128Driver implements VideoDriverInterface
     }
 
     /**
+     * Strict allowlist for HLS segment filenames.
+     *
+     * Compatible with generateVariantPlaylist(): sprintf("%s_segment_%03d.ts").
+     * Single filename only, .ts only, _segment_ marker required, safe chars
+     * only. Rejects /, \, .., null/control chars, prefixes, extensions,
+     * absolute/Windows/UNC paths, and traversal after request decoding.
+     */
+    protected function isValidSegmentName(string $segment): bool
+    {
+        if ($segment === '' || strlen($segment) > 255) {
+            return false;
+        }
+
+        if (str_contains($segment, '/') || str_contains($segment, '\\')) {
+            return false;
+        }
+
+        if (str_contains($segment, "\0")) {
+            return false;
+        }
+
+        if (preg_match('/[\x00-\x1F\x7F]/', $segment)) {
+            return false;
+        }
+
+        if (str_contains($segment, '..')) {
+            return false;
+        }
+
+        if ($segment !== basename($segment)) {
+            return false;
+        }
+
+        return (bool) preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]*_segment_[0-9]+\.ts$/', $segment);
+    }
+
+    /**
      * Return the raw media segment bytes, or a deterministic dev buffer.
      *
      * On the local driver no real .ts uploads exist, so we emit a fixed-size
@@ -225,6 +262,12 @@ class LocalHlsAes128Driver implements VideoDriverInterface
     public function readSegment(VideoAsset $asset, string $segment, string $token): ?string
     {
         if (! $this->verifyPlaybackToken($asset, $token)) {
+            return null;
+        }
+
+        // S-04: reject invalid syntax before any filesystem access so a
+        // malicious name can never reach exists()/get() or synthetic fallback.
+        if (! $this->isValidSegmentName($segment)) {
             return null;
         }
 

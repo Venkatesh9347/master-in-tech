@@ -40,6 +40,11 @@ class S3HlsDriver extends LocalHlsAes128Driver
             return null;
         }
 
+        // S-04: same allowlist as local driver; never reach S3 object fetch.
+        if (! $this->isValidSegmentName($segment)) {
+            return null;
+        }
+
         $path = "videos/{$asset->asset_id}/{$segment}";
 
         $contents = Storage::disk($this->storageDisk())->get($path);

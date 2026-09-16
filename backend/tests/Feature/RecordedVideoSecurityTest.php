@@ -653,4 +653,147 @@ class RecordedVideoSecurityTest extends TestCase
         $keyRes->assertStatus(200);
         $this->assertEquals(16, strlen($keyRes->getContent()));
     }
+
+    // -----------------------------------------------------------------
+    // S-04 regression: segment filename allowlist
+    // -----------------------------------------------------------------
+
+    private function authorizeValidSegmentToken(): array
+    {
+        $auth = $this->actingAs($this->enrolledStudent, 'sanctum')
+            ->postJson("/api/courses/{$this->course->id}/lessons/{$this->lesson->id}/playback-auth");
+        $auth->assertStatus(200);
+
+        return [$auth->json('session.asset_id'), $auth->json('session.playback_token')];
+    }
+
+    public function test_legitimate_segment_succeeds_and_is_reusable(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        $first = $this->get("/api/video-stream/{$assetId}/segments/720p_segment_000.ts?token={$q}");
+        $first->assertStatus(200);
+        $second = $this->get("/api/video-stream/{$assetId}/segments/720p_segment_000.ts?token={$q}");
+        $second->assertStatus(200);
+        $this->assertEquals($first->getContent(), $second->getContent());
+    }
+
+    public function test_slash_traversal_rejected(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        // Raw ../ contains slashes: blocked at routing (404), never driver.
+        $this->get("/api/video-stream/{$assetId}/segments/../nonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/..%2F..%2Fnonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+    }
+
+    public function test_backslash_traversal_rejected(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        // Raw backslash cannot be sent (Symfony rejects backslash URIs), so
+        // cover the driver-reachable encoded forms (%5C -> backslash).
+        $this->get("/api/video-stream/{$assetId}/segments/..%5Cnonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/..%5C..%5Cnonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/..%5c..%5cnonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+    }
+
+    public function test_encoded_and_double_encoded_traversal_rejected(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        $this->get("/api/video-stream/{$assetId}/segments/%2e%2e%2fnonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/%2e%2e%5cnonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/%252e%252e%252fnonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/%252e%252e%255cnonexistent_xyz_123.ts?token={$q}")
+            ->assertStatus(404);
+    }
+
+    public function test_wrong_extensions_rejected(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        $this->get("/api/video-stream/{$assetId}/segments/evil.php?token={$q}")->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/720p.m3u8?token={$q}")->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/enc.key?token={$q}")->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/720p_segment_000.mp4?token={$q}")->assertStatus(404);
+    }
+
+    public function test_absolute_windows_unc_paths_rejected(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        $this->get("/api/video-stream/{$assetId}/segments/%2Fetc%2Fpasswd?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/C:%5CWindows%5CSystem32%5Cevil_segment_000.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/C:%2FWindows%2FSystem32%2Fevil_segment_000.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/%5C%5Cserver%5Cshare%5Cevil_segment_000.ts?token={$q}")
+            ->assertStatus(404);
+    }
+
+    public function test_null_byte_rejected_without_error_disclosure(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        $res = $this->get("/api/video-stream/{$assetId}/segments/720p_segment_000.ts%00?token={$q}");
+        $res->assertStatus(404);
+        $res->assertDontSee('Exception');
+        $res->assertDontSee('storage');
+        $res->assertDontSee('app/private');
+    }
+
+    public function test_cross_asset_materials_certificates_traversal_rejected(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        $otherAsset = 'vasset_00000000-0000-4000-8000-000000000000';
+        $this->get("/api/video-stream/{$assetId}/segments/..%5C{$otherAsset}%5C720p_segment_000.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/..%5C{$otherAsset}%5Cenc.key?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/..%5Cmaterials%5Cprobe_segment_000.ts?token={$q}")
+            ->assertStatus(404);
+        $this->get("/api/video-stream/{$assetId}/segments/..%5Ccertificates%5Cprobe_segment_000.ts?token={$q}")
+            ->assertStatus(404);
+    }
+
+    public function test_invalid_token_with_malicious_segment_remains_rejected(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+
+        $bad = urlencode($token . 'tamper');
+        $this->get("/api/video-stream/{$assetId}/segments/..%5Cnonexistent_xyz_123.ts?token={$bad}")
+            ->assertStatus(403);
+        $this->get("/api/video-stream/{$assetId}/segments/evil.php?token={$bad}")
+            ->assertStatus(403);
+    }
+
+    public function test_valid_token_with_valid_segment_remains_200(): void
+    {
+        [$assetId, $token] = $this->authorizeValidSegmentToken();
+        $q = urlencode($token);
+
+        $this->get("/api/video-stream/{$assetId}/segments/480p_segment_001.ts?token={$q}")
+            ->assertStatus(200);
+        $this->get("/api/video-stream/{$assetId}/segments/360p_segment_002.ts?token={$q}")
+            ->assertStatus(200);
+    }
 }
