@@ -582,6 +582,13 @@ class AdminClassSessionController extends Controller
 
         $material->load('uploader:id,name,email');
 
+        \App\Models\AuditLog::log('created_class_session_material', $material, null, [
+            'id' => $material->id,
+            'class_session_id' => $material->class_session_id,
+            'course_id' => $material->course_id,
+            'title' => $material->title,
+        ]);
+
         return response()->json([
             'message' => 'Material uploaded successfully.',
             'material' => $material,
@@ -594,7 +601,12 @@ class AdminClassSessionController extends Controller
     public function destroyMaterial(int $id, int $materialId): JsonResponse
     {
         $material = ClassMaterial::where('class_session_id', $id)->findOrFail($materialId);
+        $old = $material->only([
+            'id', 'class_session_id', 'course_id', 'title', 'file_name',
+        ]);
         $material->delete();
+
+        \App\Models\AuditLog::log('deleted_class_session_material', null, $old, null);
 
         return response()->json([
             'message' => 'Material removed successfully.',

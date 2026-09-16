@@ -174,6 +174,12 @@ class PaymentWebhookController extends Controller
             'processed_at' => now(),
         ]);
 
+        // F1: only a fresh status transition notifies (duplicate deliveries
+        // re-resolve an unchanged row and stay silent). Post-commit here.
+        if ($transaction->wasChanged('status')) {
+            \App\Services\NotificationService::paymentStatusChanged($transaction);
+        }
+
         Log::info('payment.webhook.processed', [
             'provider' => $provider,
             'provider_event_id' => $ledger->provider_event_id,

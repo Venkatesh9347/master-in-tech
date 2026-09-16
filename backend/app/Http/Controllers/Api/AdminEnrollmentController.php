@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\VideoPlaybackSession;
 use App\Services\Enrollment\EnrollmentAccess;
 use App\Services\Enrollment\EnrollmentPaymentGate;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -308,6 +309,9 @@ class AdminEnrollmentController extends Controller
             }
 
             DB::commit();
+
+            // F1: post-commit only — a later rollback can never precede this.
+            NotificationService::enrollmentCreated($enrollment);
         } catch (\Exception $e) {
             DB::rollBack();
 

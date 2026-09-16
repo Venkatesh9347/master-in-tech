@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Assignment;
 use App\Models\AssignmentSubmission;
+use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\CourseReview;
@@ -136,6 +137,8 @@ class TutorController extends Controller
         $course = Course::create($validated);
         $course->makeHidden(['price']);
 
+        AuditLog::log('created_course', $course, null, $course->toArray());
+
         return response()->json($course->fresh()->loadCount(['sections', 'lessons', 'enrollments']), 201);
     }
 
@@ -171,9 +174,13 @@ class TutorController extends Controller
         // Never allow altering instructor_id or price by tutor
         unset($validated['instructor_id'], $validated['instructor'], $validated['price'], $validated['fee']);
 
+        $old = $course->toArray();
+
         $course->update($validated);
 
         $fresh = $course->fresh()->loadCount(['sections', 'lessons', 'enrollments']);
+
+        AuditLog::log('updated_course', $course, $old, $fresh->toArray());
 
         return response()->json($fresh);
     }
@@ -191,7 +198,11 @@ class TutorController extends Controller
 
         $this->authorizeTutorCourse($request, $course);
 
+        $old = $course->toArray();
+
         $course->delete();
+
+        AuditLog::log('deleted_course', null, $old, null);
 
         return response()->json([
             'message' => 'Course deleted successfully.',
@@ -333,10 +344,25 @@ class TutorController extends Controller
         $passingGrade = $percentage >= 50.0;
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($submission, $validated, $score, $passingGrade, $request) {
+            $old = $submission->only([
+                'id', 'user_id', 'course_id', 'lesson_id', 'assignment_id', 'score', 'status',
+            ]);
+
             $submission->update([
                 'score' => $score,
                 'feedback' => $validated['feedback'] ?? $submission->feedback,
                 'status' => $validated['status'] ?? 'graded',
+            ]);
+
+            AuditLog::log('graded_assignment_submission', $submission, $old, [
+                'id' => $submission->id,
+                'user_id' => $submission->user_id,
+                'course_id' => $submission->course_id,
+                'lesson_id' => $submission->lesson_id,
+                'assignment_id' => $submission->assignment_id,
+                'score' => $score,
+                'status' => $submission->status,
+                'graded_by' => $request->user()?->id,
             ]);
 
             \App\Models\LearningActivityLog::logEvent(
@@ -487,6 +513,14 @@ class TutorController extends Controller
             // Update lesson type to quiz
             $lesson->update(['type' => 'quiz']);
 
+            AuditLog::log('saved_quiz', $quiz, null, [
+                'id' => $quiz->id,
+                'lesson_id' => $lesson->id,
+                'course_id' => $course->id,
+                'title' => $quiz->title,
+                'question_count' => count($validated['questions']),
+            ]);
+
             return response()->json([
                 'message' => 'Quiz saved successfully.',
                 'quiz' => $quiz->fresh()->load('questions.options'),
@@ -523,6 +557,14 @@ class TutorController extends Controller
 
         // Update lesson type to assignment
         $lesson->update(['type' => 'assignment']);
+
+        AuditLog::log('saved_assignment', $assignment, null, [
+            'id' => $assignment->id,
+            'lesson_id' => $lesson->id,
+            'course_id' => $course->id,
+            'title' => $assignment->title,
+            'max_marks' => $assignment->max_marks,
+        ]);
 
         return response()->json([
             'message' => 'Assignment saved successfully.',

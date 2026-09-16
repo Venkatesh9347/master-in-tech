@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AssignmentSubmission;
+use App\Models\AuditLog;
 use App\Models\Certificate;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
@@ -188,6 +189,10 @@ class AdminUserController extends Controller
             }
         }
 
+        AuditLog::log('created_user', $user, null, $user->only([
+            'id', 'name', 'email', 'role', 'status', 'student_id', 'phone',
+        ]));
+
         return response()->json([
             'message' => "User ({$user->role}) created successfully by Administrator.",
             'user' => $user->fresh()->loadCount(['enrollments', 'taughtCourses'])->load('enrollments.course:id,title'),
@@ -226,7 +231,15 @@ class AdminUserController extends Controller
         // managed through the dedicated updateRole policy-controlled endpoint.
         unset($validated['role']);
 
+        $old = $user->only([
+            'id', 'name', 'email', 'role', 'status', 'student_id', 'phone',
+        ]);
+
         $user->update($validated);
+
+        AuditLog::log('updated_user', $user, $old, $user->fresh()->only([
+            'id', 'name', 'email', 'role', 'status', 'student_id', 'phone',
+        ]));
 
         return response()->json([
             'message' => "User details updated successfully.",
@@ -245,8 +258,20 @@ class AdminUserController extends Controller
 
         $this->denyUnlessSuperAdminGrantAllowed($request, $validated['role']);
 
+        $oldRole = $user->role;
+
         // HIGH-7: explicit policy-controlled role update bypasses mass assignment.
         $user->forceFill(['role' => $validated['role']])->save();
+
+        AuditLog::log('updated_user_role', $user, [
+            'id' => $user->id,
+            'email' => $user->email,
+            'role' => $oldRole,
+        ], [
+            'id' => $user->id,
+            'email' => $user->email,
+            'role' => $validated['role'],
+        ]);
 
         return response()->json([
             'message' => "User role successfully updated to {$validated['role']}.",
@@ -263,7 +288,13 @@ class AdminUserController extends Controller
             return response()->json(['message' => 'Cannot delete your own administrator account.'], 403);
         }
 
+        $old = $user->only([
+            'id', 'name', 'email', 'role', 'status', 'student_id',
+        ]);
+
         $user->delete();
+
+        AuditLog::log('deleted_user', null, $old, null);
 
         return response()->json([
             'message' => 'User account removed successfully.',

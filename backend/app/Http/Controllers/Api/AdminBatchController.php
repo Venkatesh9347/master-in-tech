@@ -12,6 +12,7 @@ use App\Models\CourseEnrollment;
 use App\Models\User;
 use App\Services\Enrollment\EnrollmentAccess;
 use App\Services\Enrollment\EnrollmentPaymentGate;
+use App\Services\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -361,6 +362,9 @@ class AdminBatchController extends Controller
 
         AuditLog::log('assigned_batch_student', $batch, null, ['batch_id' => $batch->id, 'batch_code' => $batch->code, 'user_id' => $userId]);
 
+        // F1: membership row is committed (no surrounding transaction here).
+        NotificationService::batchMembershipChanged('assigned', $membership->fresh());
+
         return response()->json([
             'message' => 'Student enrolled into batch successfully.',
             'membership' => $membership,
@@ -500,6 +504,17 @@ class AdminBatchController extends Controller
 
         AuditLog::log('transferred_batch_student', $batch, ['from_batch' => $batch->code, 'student' => $user->name], ['to_batch' => $toBatch->code, 'reason' => $validated['reason']]);
 
+        // F1: transfer transaction committed above; notify on the fresh
+        // destination membership so stale state can never match.
+        $newMembership = BatchStudent::where('batch_id', $toBatch->id)
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->first();
+
+        if ($newMembership) {
+            NotificationService::batchMembershipChanged('transferred', $newMembership);
+        }
+
         if ($transferViaOverride) {
             $targetEnrollment = CourseEnrollment::where('user_id', $user->id)
                 ->where('course_id', $toBatch->course_id)
@@ -562,6 +577,9 @@ class AdminBatchController extends Controller
         });
 
         AuditLog::log('discontinued_batch_student', $batch, ['batch' => $batch->code, 'student' => $user->name], ['reason' => $validated['reason']]);
+
+        // F1: discontinuation transaction committed above.
+        NotificationService::batchMembershipChanged('discontinued', $membership->fresh());
 
         return response()->json([
             'message' => "Student {$user->name} marked as discontinued from {$batch->code}.",

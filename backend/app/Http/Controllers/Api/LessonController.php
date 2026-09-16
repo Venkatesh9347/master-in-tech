@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\Lesson;
 use App\Models\Section;
@@ -526,6 +527,8 @@ class LessonController extends Controller
 
         $lesson = Lesson::create($validated);
 
+        AuditLog::log('created_lesson', $lesson, null, $lesson->toArray());
+
         return response()->json($lesson->load(['quiz.questions.options', 'assignment', 'resources']), 201);
     }
 
@@ -578,7 +581,11 @@ class LessonController extends Controller
 
         $validated['metadata'] = ! empty($metadata) ? $metadata : null;
 
+        $old = $lesson->toArray();
+
         $lesson->update($validated);
+
+        AuditLog::log('updated_lesson', $lesson, $old, $lesson->fresh()->toArray());
 
         return response()->json($lesson->fresh()->load(['quiz.questions.options', 'assignment', 'resources']));
     }
@@ -598,8 +605,22 @@ class LessonController extends Controller
             abort(404, 'Lesson not found for this section.');
         }
 
+        $wasPublished = (bool) $lesson->is_published;
+
         $lesson->update([
             'is_published' => ! $lesson->is_published,
+        ]);
+
+        AuditLog::log($wasPublished ? 'unpublished_lesson' : 'published_lesson', $lesson, [
+            'id' => $lesson->id,
+            'course_id' => $course->id,
+            'section_id' => $section->id,
+            'is_published' => $wasPublished,
+        ], [
+            'id' => $lesson->id,
+            'course_id' => $course->id,
+            'section_id' => $section->id,
+            'is_published' => ! $wasPublished,
         ]);
 
         return response()->json([
@@ -640,7 +661,11 @@ class LessonController extends Controller
             ], 422);
         }
 
+        $old = $lesson->toArray();
+
         $lesson->delete();
+
+        AuditLog::log('deleted_lesson', null, $old, null);
 
         return response()->json(['message' => 'Lesson deleted successfully.']);
     }

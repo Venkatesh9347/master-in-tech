@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AssignmentSubmission;
+use App\Models\AuditLog;
 use Illuminate\Http\Request;
 
 class AdminAssignmentGradeController extends Controller
@@ -54,10 +55,25 @@ class AdminAssignmentGradeController extends Controller
         $passingGrade = $percentage >= 50.0;
 
         \Illuminate\Support\Facades\DB::transaction(function () use ($submission, $validated, $score, $passingGrade, $request) {
+            $old = $submission->only([
+                'id', 'user_id', 'course_id', 'lesson_id', 'assignment_id', 'score', 'status',
+            ]);
+
             $submission->update([
                 'score' => $score,
                 'feedback' => $validated['feedback'] ?? $submission->feedback,
                 'status' => $validated['status'] ?? 'graded',
+            ]);
+
+            AuditLog::log('graded_assignment_submission', $submission, $old, [
+                'id' => $submission->id,
+                'user_id' => $submission->user_id,
+                'course_id' => $submission->course_id,
+                'lesson_id' => $submission->lesson_id,
+                'assignment_id' => $submission->assignment_id,
+                'score' => $score,
+                'status' => $submission->status,
+                'graded_by' => $request->user()?->id,
             ]);
 
             \App\Models\LearningActivityLog::logEvent(

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Batch;
 use App\Models\BatchStudent;
 use App\Models\BatchTransfer;
@@ -13,6 +14,7 @@ use App\Models\EnquiryNote;
 use App\Models\User;
 use App\Services\Enrollment\EnrollmentAccess;
 use App\Services\Enrollment\EnrollmentPaymentGate;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -283,6 +285,7 @@ class EnquiryController extends Controller
         }
 
         $oldStatus = $enquiry->status;
+        $old = $enquiry->toArray();
 
         if (! empty($validated['course_id']) && $validated['course_id'] != $enquiry->course_id) {
             $course = Course::find($validated['course_id']);
@@ -313,6 +316,8 @@ class EnquiryController extends Controller
             ]);
         }
 
+        AuditLog::log('updated_enquiry', $enquiry, $old, $enquiry->fresh()->toArray());
+
         return response()->json([
             'message' => 'Enquiry updated successfully.',
             'enquiry' => $enquiry->fresh(['user', 'course', 'notes', 'enrolledUser']),
@@ -334,6 +339,11 @@ class EnquiryController extends Controller
             'user_id' => $request->user()->id,
             'user_name' => $request->user()->name,
             'note' => $validated['note'],
+        ]);
+
+        AuditLog::log('created_enquiry_note', $enquiry, null, [
+            'enquiry_id' => $enquiry->id,
+            'note_id' => $note->id,
         ]);
 
         return response()->json([
@@ -467,7 +477,21 @@ class EnquiryController extends Controller
                 );
             }
 
+            AuditLog::log('created_enrollment', $enrollment, $previousEnrollmentStatus !== null ? [
+                'user_id' => $user->id,
+                'course_id' => $course->id,
+                'status' => $previousEnrollmentStatus,
+            ] : null, [
+                'user_id' => $user->id,
+                'course_id' => $course->id,
+                'status' => $enrollment->status,
+                'enquiry_id' => $enquiry->id,
+            ]);
+
             DB::commit();
+
+            // F1: post-commit only — a later rollback can never precede this.
+            NotificationService::enrollmentCreated($enrollment);
         } catch (\Exception $e) {
             DB::rollBack();
 

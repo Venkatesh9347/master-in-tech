@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\Section;
 use Illuminate\Http\Request;
@@ -67,6 +68,8 @@ class SectionController extends Controller
 
         $section = $course->sections()->create($validated);
 
+        AuditLog::log('created_section', $section, null, $section->toArray());
+
         return response()->json($section->load('lessons'), 201);
     }
 
@@ -86,7 +89,11 @@ class SectionController extends Controller
             'is_published' => 'boolean',
         ]);
 
+        $old = $section->toArray();
+
         $section->update($validated);
+
+        AuditLog::log('updated_section', $section, $old, $section->fresh()->toArray());
 
         return response()->json($section->fresh()->load('lessons'));
     }
@@ -99,8 +106,20 @@ class SectionController extends Controller
         $this->authorizeCourseAccess($request, $course);
         $this->authorizeSection($course, $section);
 
+        $wasPublished = (bool) $section->is_published;
+
         $section->update([
             'is_published' => ! $section->is_published,
+        ]);
+
+        AuditLog::log($wasPublished ? 'unpublished_section' : 'published_section', $section, [
+            'id' => $section->id,
+            'course_id' => $course->id,
+            'is_published' => $wasPublished,
+        ], [
+            'id' => $section->id,
+            'course_id' => $course->id,
+            'is_published' => ! $wasPublished,
         ]);
 
         return response()->json([
@@ -137,7 +156,11 @@ class SectionController extends Controller
             }
         }
 
+        $old = $section->toArray();
+
         $section->delete();
+
+        AuditLog::log('deleted_section', null, $old, null);
 
         return response()->json(['message' => 'Module deleted successfully.']);
     }
@@ -177,6 +200,12 @@ class SectionController extends Controller
                     $course->lessons()->where('id', $lData['id'])->update($update);
                 }
             }
+
+            AuditLog::log('reordered_curriculum', $course, null, [
+                'course_id' => $course->id,
+                'section_count' => is_countable($validated['sections'] ?? null) ? count($validated['sections']) : 0,
+                'lesson_count' => is_countable($validated['lessons'] ?? null) ? count($validated['lessons']) : 0,
+            ]);
         });
 
         $sections = $course->sections()

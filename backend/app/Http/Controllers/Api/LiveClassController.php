@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
 use App\Models\LiveClass;
@@ -10,6 +11,7 @@ use App\Models\LiveClassAttendance;
 use App\Models\LiveClassMessage;
 use App\Models\User;
 use App\Services\LiveClass\LiveClassProviderManager;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -360,6 +362,11 @@ class LiveClassController extends Controller
             'status' => 'scheduled',
         ], $normalized));
 
+        AuditLog::log('created_live_class', $liveClass, null, $liveClass->toArray());
+
+        // F1: single auto-commit write above; enrolled students notified.
+        NotificationService::liveClassScheduled($liveClass->fresh());
+
         return response()->json([
             'message' => 'Live class scheduled successfully.',
             'live_class' => $liveClass,
@@ -394,7 +401,13 @@ class LiveClassController extends Controller
         ]);
 
         $normalized = $providerManager->normalizeProviderAttributes($validated);
+        $old = $liveClass->toArray();
         $liveClass->update(array_merge($validated, $normalized));
+
+        AuditLog::log('updated_live_class', $liveClass, $old, $liveClass->fresh()->toArray());
+
+        // F1: single auto-commit write above.
+        NotificationService::liveClassUpdated($liveClass->fresh());
 
         return response()->json([
             'message' => 'Live class updated successfully.',
@@ -412,7 +425,29 @@ class LiveClassController extends Controller
 
         $this->authorizeTutorOwnership($user, $liveClass->course);
 
+        $old = $liveClass->toArray();
+
+        // F1: snapshot immutable facts + recipients before delete; the
+        // record is gone afterwards, so the job sends from snapshot only.
+        $cancelSnapshot = [
+            'title' => (string) $liveClass->title,
+            'class_date' => $liveClass->class_date,
+            'start_time' => $liveClass->start_time,
+            'course_title' => (string) ($liveClass->course?->title ?? ''),
+        ];
+        $cancelRecipients = CourseEnrollment::where('course_id', $liveClass->course_id)
+            ->whereIn('status', ['active', 'completed'])
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
         $liveClass->delete();
+
+        AuditLog::log('deleted_live_class', null, $old, null);
+
+        NotificationService::liveClassCancelled($cancelSnapshot, $cancelRecipients);
 
         return response()->json([
             'message' => 'Live class deleted successfully.',
@@ -429,9 +464,21 @@ class LiveClassController extends Controller
 
         $this->authorizeTutorOwnership($user, $liveClass->course);
 
+        $oldStatus = $liveClass->status;
+
         $liveClass->update([
             'status' => 'live',
             'started_at' => $liveClass->started_at ?: now(),
+        ]);
+
+        AuditLog::log('started_live_class', $liveClass, [
+            'id' => $liveClass->id,
+            'course_id' => $liveClass->course_id,
+            'status' => $oldStatus,
+        ], [
+            'id' => $liveClass->id,
+            'course_id' => $liveClass->course_id,
+            'status' => 'live',
         ]);
 
         return response()->json([
@@ -450,9 +497,21 @@ class LiveClassController extends Controller
 
         $this->authorizeTutorOwnership($user, $liveClass->course);
 
+        $oldStatus = $liveClass->status;
+
         $liveClass->update([
             'status' => 'completed',
             'ended_at' => now(),
+        ]);
+
+        AuditLog::log('ended_live_class', $liveClass, [
+            'id' => $liveClass->id,
+            'course_id' => $liveClass->course_id,
+            'status' => $oldStatus,
+        ], [
+            'id' => $liveClass->id,
+            'course_id' => $liveClass->course_id,
+            'status' => 'completed',
         ]);
 
         // Auto-close any lingering participant sessions

@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\Crm\CrmFinanceGuard;
 use App\Services\Enrollment\EnrollmentAccess;
 use App\Services\Enrollment\EnrollmentPaymentGate;
+use App\Services\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -553,6 +554,15 @@ class AdminCrmController extends Controller
             ]);
         }
 
+        if (! $isPaymentEvent) {
+            AuditLog::log('created_crm_activity', $lead, null, [
+                'enquiry_id' => $lead->id,
+                'activity_id' => $activity->id,
+                'activity_type' => $activity->activity_type,
+                'title' => $activity->title,
+            ]);
+        }
+
         $activity->load('user:id,name,email,avatar');
 
         return response()->json([
@@ -660,6 +670,13 @@ class AdminCrmController extends Controller
 
         $followUp->load(['assignedTo:id,name,email', 'createdBy:id,name,email']);
 
+        AuditLog::log('created_crm_follow_up', $lead, null, [
+            'enquiry_id' => $lead->id,
+            'follow_up_id' => $followUp->id,
+            'assigned_to' => $followUp->assigned_to,
+            'scheduled_at' => $followUp->scheduled_at?->toISOString(),
+        ]);
+
         return response()->json([
             'message' => 'Follow-up scheduled successfully.',
             'follow_up' => $followUp,
@@ -691,6 +708,7 @@ class AdminCrmController extends Controller
         ]);
 
         $completedAt = $validated['status'] === 'completed' ? now() : null;
+        $oldStatus = $followUp->status;
 
         $followUp->update([
             'status' => $validated['status'],
@@ -700,6 +718,16 @@ class AdminCrmController extends Controller
         ]);
 
         $lead = $followUp->enquiry;
+
+        AuditLog::log('updated_crm_follow_up', $lead, [
+            'enquiry_id' => $lead?->id,
+            'follow_up_id' => $followUp->id,
+            'status' => $oldStatus,
+        ], [
+            'enquiry_id' => $lead?->id,
+            'follow_up_id' => $followUp->id,
+            'status' => $validated['status'],
+        ]);
 
         // Log activity
         if ($validated['status'] === 'completed') {
@@ -997,6 +1025,9 @@ class AdminCrmController extends Controller
             }
 
             DB::commit();
+
+            // F1: post-commit only — a later rollback can never precede this.
+            NotificationService::enrollmentCreated($enrollment);
 
             if (! $enrollmentActive) {
                 return response()->json([

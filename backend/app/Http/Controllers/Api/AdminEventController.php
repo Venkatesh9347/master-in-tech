@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Event;
 use App\Models\EventRegistration;
 use Illuminate\Http\Request;
@@ -49,6 +50,8 @@ class AdminEventController extends Controller
 
         $event = Event::create($validated);
 
+        AuditLog::log('created_event', $event, null, $event->toArray());
+
         return response()->json($event, 201);
     }
 
@@ -93,7 +96,11 @@ class AdminEventController extends Controller
             $validated['slug'] = Str::slug($validated['title']);
         }
 
+        $old = $event->toArray();
+
         $event->update($validated);
+
+        AuditLog::log('updated_event', $event, $old, $event->fresh()->toArray());
 
         return response()->json($event);
     }
@@ -104,7 +111,11 @@ class AdminEventController extends Controller
     public function destroy($id)
     {
         $event = Event::findOrFail($id);
+        $old = $event->toArray();
         $event->delete();
+
+        AuditLog::log('deleted_event', null, $old, null);
+
         return response()->noContent();
     }
 

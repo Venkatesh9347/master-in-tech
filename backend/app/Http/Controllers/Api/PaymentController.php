@@ -98,6 +98,12 @@ class PaymentController extends Controller
                 $validated['signature'] ?? null,
             );
 
+            // F1: only a fresh status transition notifies (repeat confirms of
+            // an already-paid order stay silent). Post-commit by construction.
+            if ($tx->wasChanged('status')) {
+                \App\Services\NotificationService::paymentStatusChanged($tx);
+            }
+
             return response()->json([
                 'message' => 'Payment confirmed.',
                 'order' => [

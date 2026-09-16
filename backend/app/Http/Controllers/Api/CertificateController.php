@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Certificate;
 use App\Models\Course;
 use App\Models\CourseEnrollment;
@@ -43,7 +44,9 @@ class CertificateController extends Controller
 
         // Verify enrollment and completion inside a transaction with a lock so
         // concurrent requests cannot mint duplicate certificates (M2).
-        return DB::transaction(function () use ($user, $course) {
+        $issuedCertificate = null;
+
+        $response = DB::transaction(function () use ($user, $course, &$issuedCertificate) {
             // B3 pay-before-classroom: only active/completed enrollments qualify.
             $enrollment = CourseEnrollment::where('user_id', $user->id)
                 ->where('course_id', $course->id)
@@ -108,6 +111,15 @@ class CertificateController extends Controller
                 'progress_percentage' => 100,
             ]);
 
+            $issuedCertificate = $certificate;
+
+            AuditLog::log('generated_certificate', $certificate, null, [
+                'id' => $certificate->id,
+                'user_id' => $certificate->user_id,
+                'course_id' => $certificate->course_id,
+                'certificate_code' => $certificate->certificate_code,
+            ]);
+
             // Best-effort PDF artifact generation. Failures are non-fatal; the
             // download endpoint re-attempts on demand (CertificatePdfService).
             (new CertificatePdfService())->attempt($certificate);
@@ -117,6 +129,14 @@ class CertificateController extends Controller
                 'certificate' => $this->payload($certificate),
             ], 201);
         });
+
+        // F1: transaction committed (or no certificate was minted); notify
+        // only on actual issuance.
+        if ($issuedCertificate instanceof Certificate) {
+            \App\Services\NotificationService::certificateIssued($issuedCertificate);
+        }
+
+        return $response;
     }
 
     /**
