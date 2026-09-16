@@ -88,18 +88,18 @@ class AuthController extends Controller
             ]);
         }
 
-        if (in_array($user->status, ['disabled', 'inactive', 'suspended'], true)) {
-            throw ValidationException::withMessages([
-                'email' => ['Your account has been deactivated or suspended. Please contact MasterInTech.'],
-            ]);
-        }
+        // NEW-SEC-03: account-state failures must be indistinguishable from
+        // bad credentials to an unauthenticated caller, otherwise a correct
+        // password guess confirms the account exists, is disabled, or is
+        // awaiting approval. Enforcement is unchanged — these accounts still
+        // receive no token — only the visible message is normalized.
+        $accountBlocked = in_array($user->status, ['disabled', 'inactive', 'suspended'], true)
+            || ($user->isCompany() && (! $user->company || ! $user->company->isApproved()));
 
-        if ($user->isCompany()) {
-            if (! $user->company || ! $user->company->isApproved()) {
-                throw ValidationException::withMessages([
-                    'email' => ['Your corporate partner account is awaiting MasterInTech approval or has been suspended.'],
-                ]);
-            }
+        if ($accountBlocked) {
+            throw ValidationException::withMessages([
+                'email' => ['The provided credentials are incorrect.'],
+            ]);
         }
 
         $token = $user->startNewActiveSession('auth_token')->plainTextToken;

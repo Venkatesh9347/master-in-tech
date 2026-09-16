@@ -124,5 +124,40 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute($testingBurst ?? 20)->by('crm-recordings|'.$userId);
         });
+
+        // NEW-SEC-02: LMS progress writes (lesson start/complete/progress,
+        // quiz start/submit, assignment submit, event registration). Light
+        // single-row writes; keyed by user so one account cannot block
+        // another and changing IPs does not bypass the cap.
+        RateLimiter::for('lms-write', function (Request $request) use ($testingBurst) {
+            $userId = $request->user()?->id ?? 'guest';
+
+            return Limit::perMinute($testingBurst ?? 60)->by('lms-write|'.$userId);
+        });
+
+        // NEW-SEC-02: certificate issuance/download (PDF generation + row
+        // minting under lock; rare legitimate use, keyed by user).
+        RateLimiter::for('certificates', function (Request $request) use ($testingBurst) {
+            $userId = $request->user()?->id ?? 'guest';
+
+            return Limit::perMinute($testingBurst ?? 20)->by('certificates|'.$userId);
+        });
+
+        // NEW-SEC-02: LiveKit token minting (JWT + attendance writes;
+        // rejoin bursts stay far below this, keyed by user).
+        RateLimiter::for('livekit-token', function (Request $request) use ($testingBurst) {
+            $userId = $request->user()?->id ?? 'guest';
+
+            return Limit::perMinute($testingBurst ?? 30)->by('livekit-token|'.$userId);
+        });
+
+        // NEW-SEC-02: HLS playback authorization (mints a DB playback
+        // session per call; players re-auth every few minutes, keyed by
+        // user so token/session abuse cannot amplify storage writes).
+        RateLimiter::for('playback-auth', function (Request $request) use ($testingBurst) {
+            $userId = $request->user()?->id ?? 'guest';
+
+            return Limit::perMinute($testingBurst ?? 30)->by('playback-auth|'.$userId);
+        });
     }
 }

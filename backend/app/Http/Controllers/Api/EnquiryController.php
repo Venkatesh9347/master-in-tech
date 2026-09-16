@@ -15,6 +15,7 @@ use App\Services\Enrollment\EnrollmentAccess;
 use App\Services\Enrollment\EnrollmentPaymentGate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class EnquiryController extends Controller
@@ -470,8 +471,17 @@ class EnquiryController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
+            Log::error('enquiry.enroll.failed', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'enquiry_id' => $enquiry->id ?? null,
+                'course_id' => $course->id ?? null,
+                'user_id' => $user->id ?? null,
+                'enrollment_id' => $enrollment->id ?? null,
+            ]);
+
             return response()->json([
-                'message' => 'Failed to enroll student: ' . $e->getMessage(),
+                'message' => 'Failed to enroll student. Please try again.',
             ], 500);
         }
 

@@ -125,7 +125,7 @@ export default function AdminMedia() {
       fetchMedia()
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setUploadError(msg || 'Upload failed. Please ensure file format is allowed (JPG, PNG, WebP, SVG).')
+      setUploadError(msg || 'Upload failed. Please ensure file format is allowed (JPG, PNG, WebP, GIF, PDF, MP4).')
     } finally {
       setUploading(false)
     }
@@ -431,7 +431,7 @@ export default function AdminMedia() {
                 <span>🔄 {replacing ? 'Replacing...' : 'Replace File on Disk'}</span>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/svg+xml,image/gif"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
                   onChange={(e) => handleReplaceFile(e, selectedAsset)}
                   disabled={replacing}
                   className="hidden"
@@ -474,12 +474,12 @@ export default function AdminMedia() {
             <form onSubmit={handleUploadSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Select File (JPG, PNG, WebP, SVG) *
+                  Select File (JPG, PNG, WebP, GIF, PDF, MP4) *
                 </label>
                 <input
                   type="file"
                   required
-                  accept="image/jpeg,image/png,image/webp,image/svg+xml,image/gif,application/pdf"
+                  accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,video/mp4"
                   onChange={(e) => {
                     const f = e.target.files?.[0] || null
                     setUploadFile(f)

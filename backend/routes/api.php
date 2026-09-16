@@ -292,9 +292,9 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::post('/student/mock-interview/book', [StudentMockInterviewController::class, 'book']);
     Route::get('/student/mock-interview/my-interviews', [StudentMockInterviewController::class, 'myInterviews']);
 
-    // Event Registration
-    Route::post('/events/{eventId}/register', [EventRegistrationController::class, 'register']);
-    Route::delete('/events/{eventId}/register', [EventRegistrationController::class, 'cancel']);
+    // Event Registration (write-amplified; per-user capped)
+    Route::post('/events/{eventId}/register', [EventRegistrationController::class, 'register'])->middleware('throttle:lms-write');
+    Route::delete('/events/{eventId}/register', [EventRegistrationController::class, 'cancel'])->middleware('throttle:lms-write');
     Route::get('/my-events', [EventRegistrationController::class, 'myEvents']);
     Route::get('/my-registrations', [EventRegistrationController::class, 'myRegistrations']);
     Route::get('/events/{eventId}/registration', [EventRegistrationController::class, 'checkRegistration']);
@@ -310,19 +310,19 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::put('/student/profile', [StudentProfileController::class, 'update']);
     Route::get('/courses/{course}/lms-progress', [CourseProgressController::class, 'show']);
     Route::get('/courses/{course}/sections/{section}/lessons/{lesson}', [LessonController::class, 'show']);
-    Route::post('/courses/{course}/lessons/{lesson}/start', [LessonController::class, 'start']);
-    Route::post('/courses/{course}/lessons/{lesson}/playback-progress', [LessonController::class, 'playbackProgress']);
-    Route::post('/courses/{course}/lessons/{lesson}/progress', [LessonController::class, 'playbackProgress']);
-    Route::post('/courses/{course}/lessons/{lesson}/playback-auth', [VideoPlaybackController::class, 'authorizeLessonPlayback']);
-    Route::post('/courses/{course}/lessons/{lesson}/complete', [LessonController::class, 'complete']);
-    Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/complete', [LessonController::class, 'complete']);
+    Route::post('/courses/{course}/lessons/{lesson}/start', [LessonController::class, 'start'])->middleware('throttle:lms-write');
+    Route::post('/courses/{course}/lessons/{lesson}/playback-progress', [LessonController::class, 'playbackProgress'])->middleware('throttle:lms-write');
+    Route::post('/courses/{course}/lessons/{lesson}/progress', [LessonController::class, 'playbackProgress'])->middleware('throttle:lms-write');
+    Route::post('/courses/{course}/lessons/{lesson}/playback-auth', [VideoPlaybackController::class, 'authorizeLessonPlayback'])->middleware('throttle:playback-auth');
+    Route::post('/courses/{course}/lessons/{lesson}/complete', [LessonController::class, 'complete'])->middleware('throttle:lms-write');
+    Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/complete', [LessonController::class, 'complete'])->middleware('throttle:lms-write');
 
     // Quizzes & Assignments
     Route::get('/quizzes/{quiz}', [QuizController::class, 'show']);
-    Route::post('/quizzes/{quiz}/start', [QuizController::class, 'start']);
-    Route::post('/quiz-attempts/{attempt}/submit', [QuizController::class, 'submit']);
+    Route::post('/quizzes/{quiz}/start', [QuizController::class, 'start'])->middleware('throttle:lms-write');
+    Route::post('/quiz-attempts/{attempt}/submit', [QuizController::class, 'submit'])->middleware('throttle:lms-write');
     Route::get('/assignments/{assignment}', [AssignmentController::class, 'show']);
-    Route::post('/assignments/{assignment}/submit', [AssignmentController::class, 'submit']);
+    Route::post('/assignments/{assignment}/submit', [AssignmentController::class, 'submit'])->middleware('throttle:lms-write');
 
     // Personal Notes & Discussions
     Route::get('/courses/{course}/lessons/{lesson}/note', [LessonNoteController::class, 'show']);
@@ -333,8 +333,8 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
 
     // Reviews & Certificates
     Route::post('/courses/{course}/reviews', [CourseReviewController::class, 'store']);
-    Route::post('/courses/{course}/certificate', [CertificateController::class, 'generate']);
-    Route::get('/student/certificates/{code}/download', [CertificateController::class, 'download']);
+    Route::post('/courses/{course}/certificate', [CertificateController::class, 'generate'])->middleware('throttle:certificates');
+    Route::get('/student/certificates/{code}/download', [CertificateController::class, 'download'])->middleware('throttle:certificates');
 
     // Real-Time Live Classroom (Enrolled Students)
     Route::get('/my-live-classes', [LiveClassController::class, 'myLiveClasses']);
@@ -398,14 +398,14 @@ Route::middleware(['auth:sanctum', 'single.session'])->group(function () {
     Route::get('/class-materials/{id}/download', [TutorMaterialController::class, 'download']);
 
     // Class Sessions LiveKit WebRTC Token & Status
-    Route::post('/class-sessions/{id}/livekit-token', [ClassSessionLiveKitController::class, 'generateToken']);
+    Route::post('/class-sessions/{id}/livekit-token', [ClassSessionLiveKitController::class, 'generateToken'])->middleware('throttle:livekit-token');
     Route::post('/class-sessions/{id}/livekit-status', [ClassSessionLiveKitController::class, 'updateStatus']);
     Route::post('/class-sessions/{id}/leave', [ClassSessionLiveKitController::class, 'leaveSession']);
 
     // Internal Live Classroom System (Phase 1, 2, 3)
     Route::get('/live-classroom/sessions', [LiveClassroomController::class, 'index']);
     Route::get('/live-classroom/sessions/{id}', [LiveClassroomController::class, 'show']);
-    Route::post('/live-classroom/sessions/{id}/token', [LiveClassroomController::class, 'generateToken']);
+    Route::post('/live-classroom/sessions/{id}/token', [LiveClassroomController::class, 'generateToken'])->middleware('throttle:livekit-token');
     Route::post('/live-classroom/sessions/{id}/leave', [LiveClassroomController::class, 'leave']);
     Route::post('/live-classroom/sessions/{id}/start', [LiveClassroomController::class, 'start']);
     Route::post('/live-classroom/sessions/{id}/end', [LiveClassroomController::class, 'end']);

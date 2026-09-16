@@ -19,6 +19,7 @@ use App\Services\Enrollment\EnrollmentPaymentGate;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class AdminCrmController extends Controller
@@ -1023,8 +1024,16 @@ class AdminCrmController extends Controller
             ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('crm.convert.failed', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'lead_id' => $lead->id ?? null,
+                'course_id' => $course->id ?? null,
+                'user_id' => $user->id ?? null,
+                'enrollment_id' => $enrollment->id ?? null,
+            ]);
             return response()->json([
-                'message' => 'Failed to convert lead to student: ' . $e->getMessage(),
+                'message' => 'Failed to convert lead to student. Please try again.',
             ], 500);
         }
     }

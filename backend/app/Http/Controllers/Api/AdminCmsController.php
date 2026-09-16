@@ -655,15 +655,15 @@ class AdminCmsController extends Controller
     public function uploadMedia(Request $request)
     {
         $request->validate([
-            'file' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp,pdf,mp4|max:51200',
+            'file' => 'required|file|mimes:jpeg,png,jpg,gif,webp,pdf,mp4|max:51200',
             'title' => 'nullable|string|max:255',
             'alt_text' => 'nullable|string|max:255',
-            'folder' => 'nullable|string|max:50',
+            'folder' => 'nullable|string|max:50|alpha_dash',
         ]);
 
         $file = $request->file('file');
         $folder = $request->input('folder', 'general');
-        $safeName = time() . '_' . Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)) . '.' . $file->getClientOriginalExtension();
+        $safeName = time() . '_' . Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)) . '.' . $file->extension();
         $path = $file->storeAs("uploads/media/{$folder}", $safeName, 'public');
         $url = Storage::disk('public')->url($path);
 
@@ -694,7 +694,7 @@ class AdminCmsController extends Controller
         $validated = $request->validate([
             'title' => 'nullable|string|max:255',
             'alt_text' => 'nullable|string|max:255',
-            'folder' => 'nullable|string|max:50',
+            'folder' => 'nullable|string|max:50|alpha_dash',
         ]);
 
         $old = $media->toArray();
@@ -710,7 +710,7 @@ class AdminCmsController extends Controller
     public function replaceMedia(Request $request, MediaAsset $media)
     {
         $request->validate([
-            'file' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp,pdf,mp4|max:51200',
+            'file' => 'required|file|mimes:jpeg,png,jpg,gif,webp,pdf,mp4|max:51200',
         ]);
 
         $file = $request->file('file');
@@ -720,7 +720,7 @@ class AdminCmsController extends Controller
             Storage::disk($media->disk)->delete($media->file_path);
         }
 
-        $safeName = time() . '_' . Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)) . '.' . $file->getClientOriginalExtension();
+        $safeName = time() . '_' . Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)) . '.' . $file->extension();
         $path = $file->storeAs("uploads/media/{$folder}", $safeName, 'public');
         $url = Storage::disk('public')->url($path);
 

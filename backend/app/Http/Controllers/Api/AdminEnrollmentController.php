@@ -17,6 +17,7 @@ use App\Services\Enrollment\EnrollmentAccess;
 use App\Services\Enrollment\EnrollmentPaymentGate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AdminEnrollmentController extends Controller
 {
@@ -310,8 +311,16 @@ class AdminEnrollmentController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
 
+            Log::error('admin.enrollment.create.failed', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'user_id' => $userId ?? null,
+                'course_id' => $courseId ?? null,
+                'enrollment_id' => $enrollment->id ?? null,
+            ]);
+
             return response()->json([
-                'message' => 'Failed to create enrollment: ' . $e->getMessage(),
+                'message' => 'Failed to create enrollment. Please try again.',
             ], 500);
         }
 
