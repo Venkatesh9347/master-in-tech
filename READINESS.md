@@ -1,15 +1,15 @@
 # MasterInTech — End-to-End Readiness
 
-**Branch:** `baseline/recovered-2026-08-24` · **HEAD:** `fbfdf07`
+**Branch:** `integration/master-intech-complete` · **Release HEAD:** `9fbd328` ("security: close release remediation findings"; S-01/S-02A/S-03/S-04 + Disclosure + NEW-SEC-01/02/03, 8 modified + 4 new test files)
 **Scope:** Repository-only readiness. This document records what is **verified in-repo**, what is **pending**, and the **external/deployment blockers** that cannot be resolved inside this repository (no credentials/infrastructure provisioned here).
 
-> Security/correctness posture: every P0/P1 finding remediated in-repo is applied. Test suite is green. No `.env`/real secrets are committed (all `.env` files are gitignored and untracked).
+> Security/correctness posture: every P0/P1 finding remediated in-repo is applied, and the S-01/S-02A/S-03/S-04 + Admin-Exception-Disclosure + NEW-SEC-01/02/03 remediation queue is complete and verified (see §7). Test suite is green. No `.env`/real secrets are committed (all `.env` files are gitignored and untracked).
 
 ---
 
 ## 1. Verified in-repo items (FIXED)
 
-Automated evidence: **backend** `phpunit` → **430 tests / 3002 assertions passing**; **frontend** `tsc -b` → clean.
+Automated evidence: **backend** `phpunit` → **738 tests / 4283 assertions passing**; **frontend** `tsc --noEmit` → clean.
 
 | Area | Finding | Fix (file) |
 |------|---------|-----------|
@@ -39,10 +39,23 @@ Automated evidence: **backend** `phpunit` → **430 tests / 3002 assertions pass
 | **Weak admin-set password** | `enroll()` accepted `min:6` + redundant weak-password list | `EnquiryController` → `min:8`, deduped/expanded deny-list |
 
 ### Preserved (verified non-regression)
-- Payment **idempotency**: none exists — unchanged (add as feature, not security patch).
-- Payment webhook **signature verification**: none exists — unchanged (see Blocked).
+- Payment **idempotency**: provider idempotency-key ledger with unique `(provider, idempotency_key)`; webhook event ledger dedupes replays (`PaymentService`, `PaymentWebhookController`).
+- Payment webhook **signature verification**: HMAC-SHA256 verification enforced; fail-closed in production (`RazorpayProvider`, `PaymentService::ensureProductionPaymentConfigured`).
 - **Health checks**: `/api/health` (`api.php:75`) and `/up` (`bootstrap/app.php:12`) intact.
 - `SendOtpEmailJob`, all seeders, all P0/P1 fixes.
+
+## 1b. Security remediation queue (CLOSED — verified in-repo)
+
+| ID | Finding | Fix (file) + regression test |
+|----|---------|------------------------------|
+| **S-01** | Verbose API exception disclosure | `bootstrap/app.php` JSON sanitizer; `ApiExceptionSanitizationTest` |
+| **S-02A** | LiveKit webhook trust | JWT claims + sha256 body binding; `LiveKitWebhookTest` |
+| **S-03** | HLS session replay after logout/revocation | logout + enrollment-revocation invalidation, AES-key enrollment re-check (`AuthController`, `AdminEnrollmentController`, `VideoPlaybackController`); 19 tests in `RecordedVideoSecurityTest` |
+| **S-04** | HLS segment path traversal | strict segment allowlist in `LocalHlsAes128Driver` (inherited by `S3HlsDriver`); 10 tests in `RecordedVideoSecurityTest` |
+| **Disclosure follow-up** | Raw `$e->getMessage()` in 3 transactional 500s | fixed generic 500s + server-side `Log::error` (`AdminCrm/AdminEnrollment/EnquiryController`); `AdminExceptionDisclosureTest` (3 tests) |
+| **NEW-SEC-01** | Media-upload folder traversal + SVG/public-disk handling | `alpha_dash` folder rules, SVG removed from upload mimes, content-sniffed extensions (`AdminCmsController`); `MediaUploadPathSecurityTest` (18 tests) |
+| **NEW-SEC-02** | Unthrottled authenticated write/token endpoints | 4 named per-user limiters (`AppServiceProvider`), 15 throttled routes (`routes/api.php`); `RateLimitEnforcementTest` (6 tests) |
+| **NEW-SEC-03** | Login account-enumeration oracle | unified generic 422 for bad-credentials/blocked/unapproved states (`AuthController::login`); `LoginEnumerationTest` (5 tests) |
 
 ---
 
@@ -74,7 +87,7 @@ These require real infrastructure and credential provisioning — deliberately *
 | Blocker | Required values | Where to set |
 |---------|-----------------|--------------|
 | **LiveKit** (realtime classroom) | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | backend `.env` (production) |
-| **Razorpay** (payments) | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | backend `.env` (production); add payment routes + webhook signature verification in code |
+| **Razorpay** (payments) | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | backend `.env` (production) + `PAYMENT_PROVIDER=razorpay`; webhook signature verification, idempotency ledger, and amount binding already implemented in code |
 | **SMTP / email** (OTP, session invites) | `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS` | backend `.env` (production) |
 | **Local AI model inference** (Ollama) | `AI_PROVIDER=ollama`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (default `http://localhost:11434`) | backend `.env`; add `ollama` provider to `AiOrchestratorService`/`config/ai.php` |
 | **Google OAuth** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | backend `.env` + frontend `VITE_GOOGLE_CLIENT_ID` |
@@ -104,11 +117,11 @@ These require real infrastructure and credential provisioning — deliberately *
 cd backend
 composer install
 php artisan migrate:fresh --seed
-php vendor/bin/phpunit            # expect 430 tests / 3002 assertions
+php vendor/bin/phpunit            # expect 738 tests / 4283 assertions
 
 # frontend
 cd ../frontend
 npm install
-npx tsc -b                        # expect exit 0
+npx tsc --noEmit                  # expect exit 0
 npm run dev
 ```
