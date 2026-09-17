@@ -36,6 +36,14 @@ class CertificateController extends Controller
             ->first();
 
         if ($existing) {
+            if ($existing->isRevoked()) {
+                return response()->json([
+                    'message' => 'This certificate has been revoked.',
+                    'status' => Certificate::STATUS_REVOKED,
+                    'certificate_code' => $existing->certificate_code,
+                ], 422);
+            }
+
             return response()->json([
                 'message' => 'Certificate already issued.',
                 'certificate' => $this->payload($existing),
@@ -64,6 +72,14 @@ class CertificateController extends Controller
                 ->first();
 
             if ($existing) {
+                if ($existing->isRevoked()) {
+                    return response()->json([
+                        'message' => 'This certificate has been revoked.',
+                        'status' => Certificate::STATUS_REVOKED,
+                        'certificate_code' => $existing->certificate_code,
+                    ], 422);
+                }
+
                 return response()->json([
                     'message' => 'Certificate already issued.',
                     'certificate' => $this->payload($existing),
@@ -173,6 +189,10 @@ class CertificateController extends Controller
 
     /**
      * Public verification of certificate authenticity.
+     *
+     * A revoked certificate is recognized but never reported as valid; the
+     * revoked state is distinguished without exposing admin ids, audit
+     * metadata, or internal implementation details.
      */
     public function verify($code)
     {
@@ -185,6 +205,19 @@ class CertificateController extends Controller
                 'valid' => false,
                 'message' => 'Invalid or unrecognized certificate ID.',
             ], 404);
+        }
+
+        if ($certificate->isRevoked()) {
+            return response()->json([
+                'valid' => false,
+                'revoked' => true,
+                'message' => 'This certificate has been revoked and is no longer valid.',
+                'certificate_code' => $certificate->certificate_code,
+                'recipient_name' => $certificate->user?->name,
+                'course_title' => $certificate->course?->title,
+                'issued_at' => $certificate->issued_at,
+                'revoked_at' => $certificate->revoked_at,
+            ]);
         }
 
         return response()->json([
@@ -202,6 +235,10 @@ class CertificateController extends Controller
      *
      * The artifact lives on the private 'local' disk and is only ever served
      * through this authenticated, ownership-checked endpoint.
+     *
+     * Revoked certificates are never served as valid artifacts (410): the
+     * historical record is preserved, but no valid PDF is represented to
+     * the user and the revocation is never silently undone.
      */
     public function download(Request $request, $code)
     {
@@ -220,6 +257,14 @@ class CertificateController extends Controller
             return response()->json(['message' => 'You do not have access to this certificate.'], 403);
         }
 
+        if ($certificate->isRevoked()) {
+            return response()->json([
+                'message' => 'This certificate has been revoked and is no longer available for download.',
+                'status' => Certificate::STATUS_REVOKED,
+                'certificate_code' => $certificate->certificate_code,
+            ], 410);
+        }
+
         $pdfService = new CertificatePdfService();
         $path = $pdfService->ensureFor($certificate);
 
@@ -236,6 +281,99 @@ class CertificateController extends Controller
     }
 
     /**
+     * Revoke a certificate (admin-only, route middleware).
+     *
+     * Explicit, append-only active -> revoked transition under a row lock so
+     * concurrent revocations converge on `revoked` and can never reactivate
+     * the certificate. Replaying the revocation is deterministic (returns
+     * the revoked state without a second audit event). The record is never
+     * deleted; attribution comes from the authenticated administrator, never
+     * from client input.
+     */
+    public function revoke(Request $request, $certificateId)
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+        ]);
+
+        $reason = trim($validated['reason']);
+
+        if ($reason === '') {
+            return response()->json([
+                'message' => 'The reason field is required.',
+                'errors' => ['reason' => ['A revocation reason is required.']],
+            ], 422);
+        }
+
+        // Explicit lookup (not implicit binding) so unknown ids return a
+        // generic 404 without disclosing model internals.
+        $certificate = Certificate::where('id', $certificateId)->first();
+
+        if ($certificate === null) {
+            return response()->json(['message' => 'Not found.'], 404);
+        }
+
+        return DB::transaction(function () use ($certificate, $request, $reason) {
+            $locked = Certificate::where('id', $certificate->id)->lockForUpdate()->first();
+
+            if ($locked === null) {
+                return response()->json(['message' => 'Not found.'], 404);
+            }
+
+            if ($locked->isRevoked()) {
+                return response()->json([
+                    'message' => 'Certificate already revoked.',
+                    'certificate' => $this->revocationPayload($locked),
+                ]);
+            }
+
+            $old = $locked->toArray();
+
+            $locked->fill([
+                'status' => Certificate::STATUS_REVOKED,
+                'revoked_at' => now(),
+                'revoked_by' => (int) $request->user()->id,
+                'revocation_reason' => $reason,
+            ]);
+            $locked->save();
+
+            // Immutable audit event via the existing mechanism: safe
+            // operational fields only (no secrets, payloads, or PII beyond
+            // the internal certificate identity already stored).
+            AuditLog::log('certificate_revoked', $locked, $old, [
+                'certificate_id' => $locked->id,
+                'certificate_code' => $locked->certificate_code,
+                'user_id' => $locked->user_id,
+                'course_id' => $locked->course_id,
+                'previous_status' => $old['status'] ?? Certificate::STATUS_ACTIVE,
+                'new_status' => Certificate::STATUS_REVOKED,
+                'revoked_by' => (int) $request->user()->id,
+                'revocation_reason' => $reason,
+                'revoked_at' => $locked->revoked_at?->toISOString(),
+            ]);
+
+            return response()->json([
+                'message' => 'Certificate revoked.',
+                'certificate' => $this->revocationPayload($locked->fresh() ?? $locked),
+            ]);
+        });
+    }
+
+    /**
+     * Admin revocation representation (no internal audit metadata).
+     */
+    private function revocationPayload(Certificate $certificate): array
+    {
+        return [
+            'certificate_code' => $certificate->certificate_code,
+            'status' => $certificate->status,
+            'revoked_at' => $certificate->revoked_at?->toISOString(),
+            'revoked_by' => $certificate->revoked_by,
+            'revocation_reason' => $certificate->revocation_reason,
+        ];
+    }
+
+    /**
      * Public-safe certificate payload (never includes user email).
      */
     private function payload(Certificate $certificate): array
@@ -246,7 +384,9 @@ class CertificateController extends Controller
 
         return [
             'certificate_code' => $certificate->certificate_code,
+            'status' => $certificate->status ?? Certificate::STATUS_ACTIVE,
             'issued_at' => $certificate->issued_at?->toISOString(),
+            'revoked_at' => $certificate->revoked_at?->toISOString(),
             'recipient_name' => $certificate->user?->name,
             'course_title' => $certificate->course?->title,
             'instructor' => $certificate->course?->instructor,

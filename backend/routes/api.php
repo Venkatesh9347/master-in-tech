@@ -694,6 +694,9 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
 
     // Admin Payment Refunds (outbound, admin-only, audited; never revokes enrollment)
     Route::post('/admin/payments/{payment}/refund', [AdminPaymentController::class, 'refund']);
+
+    // Admin Certificate Revocation (explicit active -> revoked, audited)
+    Route::post('/admin/certificates/{certificate}/revoke', [CertificateController::class, 'revoke']);
     Route::get('/admin/enrollments', [AdminEnrollmentController::class, 'index']);
     Route::get('/admin/students/{user}/enrollments', [AdminEnrollmentController::class, 'studentEnrollments']);
     Route::post('/admin/enrollments', [AdminEnrollmentController::class, 'store']);
