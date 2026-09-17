@@ -28,6 +28,13 @@ class AdminMockInterviewController extends Controller
 
     /**
      * List students with their course completion & placement eligibility breakdown.
+     *
+     * Server-side pagination bounds the roster: only the requested page of
+     * students is loaded, and eligibility inputs for exactly that page are
+     * preloaded with batched queries (students outside the page cause zero
+     * queries). Per-student results come from the same service routine as
+     * single-student checks, so semantics are identical. Authorization,
+     * scope, search, ordering, row shape, and PII fields are unchanged.
      */
     public function eligibilityList(Request $request)
     {
@@ -45,12 +52,23 @@ class AdminMockInterviewController extends Controller
             });
         }
 
-        $allStudents = $query->orderBy('name', 'asc')->get();
+        $dashboardFilter = strtoupper(trim((string) $request->input('dashboard_status', $request->input('status', 'all'))));
 
-        $dashboardFilter = $request->input('dashboard_status', $request->input('status', 'all'));
+        if ($dashboardFilter !== '' && $dashboardFilter !== 'ALL') {
+            // Exact dashboard_status predicate BEFORE pagination, so page
+            // contents, total, and last_page all describe the filtered
+            // population (see MockInterviewService::applyDashboardStatusFilter).
+            MockInterviewService::applyDashboardStatusFilter($query, $dashboardFilter);
+        }
 
-        $items = $allStudents->map(function (User $student) {
-            $eligibility = MockInterviewService::checkStudentEligibility($student);
+        $students = $query->select('users.*')
+            ->orderBy('users.name', 'asc')
+            ->orderBy('users.id', 'asc')
+            ->paginate($this->perPage($request));
+
+        $results = MockInterviewService::checkManyEligibility($students->getCollection());
+
+        $items = $students->getCollection()->map(function (User $student) use ($results) {
             return [
                 'id' => $student->id,
                 'name' => $student->name,
@@ -58,28 +76,16 @@ class AdminMockInterviewController extends Controller
                 'phone' => $student->phone,
                 'student_id' => $student->student_id,
                 'avatar' => $student->avatar,
-                'eligibility' => $eligibility,
+                'eligibility' => $results[(int) $student->id],
             ];
         });
 
-        if ($dashboardFilter && $dashboardFilter !== 'all') {
-            $normalizedFilter = strtoupper(trim($dashboardFilter));
-            $items = $items->filter(function ($item) use ($normalizedFilter) {
-                return strtoupper($item['eligibility']['placement_dashboard_status'] ?? '') === $normalizedFilter;
-            })->values();
-        }
-
-        $perPage = (int) $request->input('per_page', 50);
-        $page = (int) $request->input('page', 1);
-        $total = $items->count();
-        $paginatedItems = $items->slice(($page - 1) * $perPage, $perPage)->values();
-
         return response()->json([
-            'current_page' => $page,
-            'data' => $paginatedItems,
-            'total' => $total,
-            'per_page' => $perPage,
-            'last_page' => (int) ceil($total / max(1, $perPage)),
+            'current_page' => $students->currentPage(),
+            'data' => $items->values(),
+            'total' => $students->total(),
+            'per_page' => $students->perPage(),
+            'last_page' => $students->lastPage(),
         ]);
     }
 

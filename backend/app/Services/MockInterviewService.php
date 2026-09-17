@@ -16,6 +16,8 @@ use App\Models\MockInterviewSlot;
 use App\Models\StudentPlacementEligibility;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -26,10 +28,427 @@ class MockInterviewService
      */
     public static function checkStudentEligibility(User $student): array
     {
+        return self::buildEligibilityResult($student, self::gatherEligibilityInputs($student));
+    }
+
+    /**
+     * Batched eligibility for a page of students. Inputs are preloaded with
+     * page-scoped WHERE IN queries (students outside the set cause zero
+     * queries); each result is produced by the same build routine as the
+     * single-student check, so per-student semantics are identical.
+     *
+     * @param  Collection<int, User>  $students
+     * @return array<int, array> Keyed by user id.
+     */
+    public static function checkManyEligibility(Collection $students): array
+    {
+        $inputs = self::gatherManyEligibilityInputs($students);
+
+        $results = [];
+
+        foreach ($students as $student) {
+            $results[(int) $student->id] = self::buildEligibilityResult($student, $inputs[(int) $student->id]);
+        }
+
+        return $results;
+    }
+
+    /**
+     * Apply an exact dashboard_status predicate to a users query so filtering
+     * happens BEFORE pagination: page contents, total, and last_page all
+     * describe the filtered population.
+     *
+     * The computed placement_dashboard_status decomposes exactly into
+     * persisted columns plus EXISTS subqueries (verified against
+     * buildEligibilityResult()):
+     * - ENABLED  <=> persisted status is ENABLED
+     * - SUSPENDED <=> persisted status is SUSPENDED
+     * - ELIGIBLE <=> eligible AND (no record OR (DISABLED without updated_by))
+     * - DISABLED <=> NOT ENABLED AND NOT SUSPENDED AND NOT (eligible clause)
+     * where eligible = ((courseEligible AND mockDone AND hasEval) OR override).
+     *
+     * Only portable constructs are used (EXISTS, COUNT, basic arithmetic and
+     * NULL-safe comparisons): no per-row PHP evaluation, no full-population
+     * load. The 99.95 comparison is exactly equivalent to PHP's
+     * round($pct, 1) >= 100.0 under the default half-up mode. Certificate
+     * counting is intentionally unchanged here (revoked-certificate handling
+     * is a separate P1-G decision, not part of this predicate).
+     */
+    public static function applyDashboardStatusFilter(Builder $query, string $status): void
+    {
+        $query->leftJoin('student_placement_eligibilities as spe', 'spe.user_id', '=', 'users.id');
+
+        match ($status) {
+            StudentPlacementEligibility::STATUS_ENABLED => $query->where('spe.dashboard_status', 'ENABLED'),
+            StudentPlacementEligibility::STATUS_SUSPENDED => $query->where('spe.dashboard_status', 'SUSPENDED'),
+            StudentPlacementEligibility::STATUS_ELIGIBLE => $query
+                ->where(function ($e): void {
+                    self::eligibleCondition($e);
+                })
+                ->where(function ($r): void {
+                    self::recordAbsentOrUnclaimedCondition($r);
+                }),
+            StudentPlacementEligibility::STATUS_DISABLED => $query
+                ->where(function ($x): void {
+                    $x->whereNull('spe.dashboard_status')->orWhere('spe.dashboard_status', '<>', 'ENABLED');
+                })
+                ->where(function ($x): void {
+                    $x->whereNull('spe.dashboard_status')->orWhere('spe.dashboard_status', '<>', 'SUSPENDED');
+                })
+                ->where(function ($x): void {
+                    $x->where(function ($e): void {
+                        self::notEligibleCondition($e);
+                    })->orWhere(function ($r): void {
+                        self::recordClaimedCondition($r);
+                    });
+                }),
+            // Unknown values matched nothing under the old in-PHP filter;
+            // preserve that observable behavior.
+            default => $query->whereRaw('0 = 1'),
+        };
+    }
+
+    /**
+     * eligible = ((courseEligible AND mockDone AND hasEval) OR override).
+     */
+    private static function eligibleCondition($query): void
+    {
+        $query->where(function ($e): void {
+            $e->where(function ($all): void {
+                $all->where(function ($c): void {
+                    self::courseEligibleCondition($c);
+                })->where(function ($m): void {
+                    self::mockDoneCondition($m);
+                })->where(function ($v): void {
+                    self::hasEvaluationCondition($v);
+                });
+            })->orWhere('spe.is_admin_override', true);
+        });
+    }
+
+    /**
+     * courseEligible = hasCompleted OR override.
+     */
+    private static function courseEligibleCondition($query): void
+    {
+        $query->where(function ($c): void {
+            $c->whereExists(self::lessonCompletedEnrollmentExists())
+                ->orWhereExists(self::certificatesExist())
+                ->orWhere('spe.is_admin_override', true);
+        });
+    }
+
+    /**
+     * mockDone = completed interview exists OR any evaluation exists.
+     */
+    private static function mockDoneCondition($query): void
+    {
+        $query->whereExists(self::completedInterviewExists())
+            ->orWhereExists(self::anyEvaluationExists());
+    }
+
+    /**
+     * hasEval = any evaluation exists.
+     */
+    private static function hasEvaluationCondition($query): void
+    {
+        $query->whereExists(self::anyEvaluationExists());
+    }
+
+    /**
+     * notEligible = (notCourseEligible OR notMockDone OR notHasEval) AND notOverride.
+     */
+    private static function notEligibleCondition($query): void
+    {
+        $query->where(function ($e): void {
+            $e->where(function ($c): void {
+                self::notCourseEligibleCondition($c);
+            })->orWhere(function ($m): void {
+                self::notMockDoneCondition($m);
+            })->orWhere(function ($v): void {
+                self::notHasEvaluationCondition($v);
+            });
+        })->where(function ($o): void {
+            self::notOverrideCondition($o);
+        });
+    }
+
+    /**
+     * notCourseEligible = no lesson-completed enrollment AND no certificate AND notOverride.
+     */
+    private static function notCourseEligibleCondition($query): void
+    {
+        $query->whereNotExists(self::lessonCompletedEnrollmentExists())
+            ->whereNotExists(self::certificatesExist())
+            ->where(function ($o): void {
+                self::notOverrideCondition($o);
+            });
+    }
+
+    /**
+     * notMockDone = no completed interview AND no evaluation.
+     */
+    private static function notMockDoneCondition($query): void
+    {
+        $query->whereNotExists(self::completedInterviewExists())
+            ->whereNotExists(self::anyEvaluationExists());
+    }
+
+    /**
+     * notHasEvaluation = no evaluation.
+     */
+    private static function notHasEvaluationCondition($query): void
+    {
+        $query->whereNotExists(self::anyEvaluationExists());
+    }
+
+    /**
+     * notOverride = flag absent or falsy (NULL-safe: matches PHP's (bool) cast).
+     */
+    private static function notOverrideCondition($query): void
+    {
+        $query->where(function ($o): void {
+            $o->whereNull('spe.is_admin_override')->orWhere('spe.is_admin_override', '<>', 1);
+        });
+    }
+
+    /**
+     * Record absent, or persisted DISABLED without an updated_by actor.
+     */
+    private static function recordAbsentOrUnclaimedCondition($query): void
+    {
+        $query->where(function ($r): void {
+            $r->whereNull('spe.user_id')
+                ->orWhere(function ($d): void {
+                    $d->where('spe.dashboard_status', 'DISABLED')
+                        ->whereNull('spe.dashboard_status_updated_by');
+                });
+        });
+    }
+
+    /**
+     * Negation of recordAbsentOrUnclaimedCondition: a record exists AND it is
+     * not (DISABLED without updated_by). NULL-safe disjunction.
+     */
+    private static function recordClaimedCondition($query): void
+    {
+        $query->whereNotNull('spe.user_id')
+            ->where(function ($r): void {
+                $r->whereNull('spe.dashboard_status')
+                    ->orWhere('spe.dashboard_status', '<>', 'DISABLED')
+                    ->orWhereNotNull('spe.dashboard_status_updated_by');
+            });
+    }
+
+    private static function completedInterviewExists(): \Closure
+    {
+        return function ($s): void {
+            $s->select(DB::raw(1))->from('mock_interviews as mi')
+                ->whereColumn('mi.student_id', 'users.id')
+                ->where('mi.status', MockInterview::STATUS_COMPLETED);
+        };
+    }
+
+    private static function anyEvaluationExists(): \Closure
+    {
+        return function ($s): void {
+            $s->select(DB::raw(1))->from('mock_interview_evaluations as ev')
+                ->whereColumn('ev.student_id', 'users.id');
+        };
+    }
+
+    private static function certificatesExist(): \Closure
+    {
+        return function ($s): void {
+            $s->select(DB::raw(1))->from('certificates as c')
+                ->whereColumn('c.user_id', 'users.id');
+        };
+    }
+
+    /**
+     * An enrollment whose course completion matches buildEligibilityResult()
+     * exactly: published-lesson math with the 99.95 round-up equivalence, or
+     * the stored progress/completed fallback when the course has no lessons.
+     */
+    private static function lessonCompletedEnrollmentExists(): \Closure
+    {
+        return function ($s): void {
+            $s->select(DB::raw(1))->from('course_enrollments as e')
+                ->whereColumn('e.user_id', 'users.id')
+                ->where(function ($t): void {
+                    $t->where(function ($a): void {
+                        $a->whereRaw('(SELECT COUNT(*) FROM lessons AS l WHERE l.course_id = e.course_id AND l.is_published = 1) > 0')
+                            ->where(function ($b): void {
+                                $b->whereRaw('(SELECT COUNT(*) FROM lesson_progress AS lp WHERE lp.user_id = e.user_id AND lp.course_id = e.course_id AND lp.completed = 1) >= (SELECT COUNT(*) FROM lessons AS l2 WHERE l2.course_id = e.course_id AND l2.is_published = 1)')
+                                    ->orWhereRaw('(SELECT COUNT(*) FROM lesson_progress AS lp WHERE lp.user_id = e.user_id AND lp.course_id = e.course_id AND lp.completed = 1) * 100.0 / (SELECT COUNT(*) FROM lessons AS l2 WHERE l2.course_id = e.course_id AND l2.is_published = 1) >= 99.95');
+                            });
+                    })->orWhere(function ($a): void {
+                        $a->whereRaw('(SELECT COUNT(*) FROM lessons AS l WHERE l.course_id = e.course_id AND l.is_published = 1) = 0')
+                            ->where(function ($b): void {
+                                $b->where('e.progress_percentage', '>=', 100)
+                                    ->orWhere('e.status', 'completed');
+                            });
+                    });
+                });
+        };
+    }
+
+    /**
+     * Gather every input the eligibility computation queries for one student.
+     */
+    private static function gatherEligibilityInputs(User $student): array
+    {
         // 1. Fetch active/completed course enrollments
         $enrollments = CourseEnrollment::where('user_id', $student->id)
             ->with(['course:id,title,code,slug'])
             ->get();
+
+        $lessonTotals = [];
+        $completedCounts = [];
+
+        foreach ($enrollments as $enrollment) {
+            $courseId = (int) $enrollment->course_id;
+            $lessonTotals[$courseId] = Lesson::where('course_id', $courseId)->where('is_published', true)->count();
+            $completedCounts[$courseId] = LessonProgress::where('user_id', $student->id)
+                ->where('course_id', $courseId)
+                ->where('completed', true)
+                ->count();
+        }
+
+        return [
+            'enrollments' => $enrollments,
+            'lessonTotals' => $lessonTotals,
+            'completedCounts' => $completedCounts,
+            'certificatesCount' => Certificate::where('user_id', $student->id)->count(),
+            'eligibilityRecord' => StudentPlacementEligibility::where('user_id', $student->id)
+                ->with(['dashboardStatusUpdatedBy:id,name,email', 'dashboardEnabledBy:id,name,email', 'overrideAdmin:id,name,email'])
+                ->first(),
+            'completedMock' => MockInterview::where('student_id', $student->id)
+                ->where('status', MockInterview::STATUS_COMPLETED)
+                ->with(['slot', 'interviewer', 'evaluation'])
+                ->latest('scheduled_at')
+                ->first(),
+            'activeBooking' => MockInterview::where('student_id', $student->id)
+                ->whereIn('status', [MockInterview::STATUS_BOOKED, MockInterview::STATUS_CONFIRMED, MockInterview::STATUS_RESCHEDULED])
+                ->with(['slot', 'interviewer', 'course', 'batch'])
+                ->latest()
+                ->first(),
+            'latestEvaluation' => MockInterviewEvaluation::where('student_id', $student->id)
+                ->with(['interviewer', 'interview'])
+                ->latest('evaluated_at')
+                ->first(),
+            'primaryBatch' => $student->activeBatches()->with('course:id,title,code')->first(),
+        ];
+    }
+
+    /**
+     * Gather the same inputs for many students with page-scoped WHERE IN
+     * queries. Students outside the given set are never queried.
+     *
+     * @param  Collection<int, User>  $students
+     * @return array<int, array> Keyed by user id, same shape as gatherEligibilityInputs().
+     */
+    private static function gatherManyEligibilityInputs(Collection $students): array
+    {
+        $ids = $students->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+
+        $enrollmentsByUser = CourseEnrollment::whereIn('user_id', $ids)
+            ->with(['course:id,title,code,slug'])
+            ->get()
+            ->groupBy('user_id');
+
+        $courseIds = $enrollmentsByUser->flatten()->pluck('course_id')
+            ->map(static fn ($id): int => (int) $id)->unique()->all();
+
+        $lessonTotals = [];
+
+        foreach (Lesson::whereIn('course_id', $courseIds)
+            ->where('is_published', true)
+            ->selectRaw('course_id, COUNT(*) AS aggregate')
+            ->groupBy('course_id')
+            ->pluck('aggregate', 'course_id') as $courseId => $total) {
+            $lessonTotals[(int) $courseId] = (int) $total;
+        }
+
+        $completedByUser = [];
+
+        LessonProgress::whereIn('user_id', $ids)
+            ->whereIn('course_id', $courseIds)
+            ->where('completed', true)
+            ->selectRaw('user_id, course_id, COUNT(*) AS aggregate')
+            ->groupBy('user_id', 'course_id')
+            ->get()
+            ->each(function ($row) use (&$completedByUser): void {
+                $completedByUser[(int) $row->user_id][(int) $row->course_id] = (int) $row->aggregate;
+            });
+
+        $certCounts = [];
+
+        foreach (Certificate::whereIn('user_id', $ids)
+            ->selectRaw('user_id, COUNT(*) AS aggregate')
+            ->groupBy('user_id')
+            ->pluck('aggregate', 'user_id') as $userId => $total) {
+            $certCounts[(int) $userId] = (int) $total;
+        }
+
+        $records = StudentPlacementEligibility::whereIn('user_id', $ids)
+            ->with(['dashboardStatusUpdatedBy:id,name,email', 'dashboardEnabledBy:id,name,email', 'overrideAdmin:id,name,email'])
+            ->get()
+            ->keyBy('user_id');
+
+        $completedMocks = MockInterview::whereIn('student_id', $ids)
+            ->where('status', MockInterview::STATUS_COMPLETED)
+            ->with(['slot', 'interviewer', 'evaluation'])
+            ->orderBy('scheduled_at', 'desc')
+            ->get()
+            ->groupBy('student_id')
+            ->map(static fn ($group) => $group->first());
+
+        $activeBookings = MockInterview::whereIn('student_id', $ids)
+            ->whereIn('status', [MockInterview::STATUS_BOOKED, MockInterview::STATUS_CONFIRMED, MockInterview::STATUS_RESCHEDULED])
+            ->with(['slot', 'interviewer', 'course', 'batch'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy('student_id')
+            ->map(static fn ($group) => $group->first());
+
+        $latestEvaluations = MockInterviewEvaluation::whereIn('student_id', $ids)
+            ->with(['interviewer', 'interview'])
+            ->orderBy('evaluated_at', 'desc')
+            ->get()
+            ->groupBy('student_id')
+            ->map(static fn ($group) => $group->first());
+
+        $students->load(['activeBatches' => static fn ($query) => $query->with('course:id,title,code')]);
+
+        $inputs = [];
+
+        foreach ($students as $student) {
+            $uid = (int) $student->id;
+
+            $inputs[$uid] = [
+                'enrollments' => $enrollmentsByUser->get($uid, collect()),
+                'lessonTotals' => $lessonTotals,
+                'completedCounts' => $completedByUser[$uid] ?? [],
+                'certificatesCount' => $certCounts[$uid] ?? 0,
+                'eligibilityRecord' => $records->get($uid),
+                'completedMock' => $completedMocks->get($uid),
+                'activeBooking' => $activeBookings->get($uid),
+                'latestEvaluation' => $latestEvaluations->get($uid),
+                'primaryBatch' => $student->activeBatches->first(),
+            ];
+        }
+
+        return $inputs;
+    }
+
+    /**
+     * Pure eligibility computation over pre-gathered inputs. Issues zero
+     * queries; shared by the single and batched paths so both agree exactly.
+     */
+    private static function buildEligibilityResult(User $student, array $inputs): array
+    {
+        $enrollments = $inputs['enrollments'];
 
         $courseSummaries = [];
         $hasCompletedAnyCourse = false;
@@ -37,11 +456,8 @@ class MockInterviewService
 
         foreach ($enrollments as $enrollment) {
             $courseId = $enrollment->course_id;
-            $totalPublishedLessons = Lesson::where('course_id', $courseId)->where('is_published', true)->count();
-            $completedLessons = LessonProgress::where('user_id', $student->id)
-                ->where('course_id', $courseId)
-                ->where('completed', true)
-                ->count();
+            $totalPublishedLessons = $inputs['lessonTotals'][(int) $courseId] ?? 0;
+            $completedLessons = $inputs['completedCounts'][(int) $courseId] ?? 0;
 
             $percentage = $totalPublishedLessons > 0
                 ? round(($completedLessons / $totalPublishedLessons) * 100, 1)
@@ -71,15 +487,13 @@ class MockInterviewService
         }
 
         // 2. Check for earned certificates
-        $certificatesCount = Certificate::where('user_id', $student->id)->count();
+        $certificatesCount = (int) $inputs['certificatesCount'];
         if ($certificatesCount > 0) {
             $hasCompletedAnyCourse = true;
         }
 
         // 3. Check tracked / overridden eligibility record
-        $eligibilityRecord = StudentPlacementEligibility::where('user_id', $student->id)
-            ->with(['dashboardStatusUpdatedBy:id,name,email', 'dashboardEnabledBy:id,name,email', 'overrideAdmin:id,name,email'])
-            ->first();
+        $eligibilityRecord = $inputs['eligibilityRecord'];
         $isAdminOverride = (bool) ($eligibilityRecord?->is_admin_override ?? false);
 
         // Course eligibility determination
@@ -99,25 +513,14 @@ class MockInterviewService
         }
 
         // 4. Check mock interviews
-        $completedMock = MockInterview::where('student_id', $student->id)
-            ->where('status', MockInterview::STATUS_COMPLETED)
-            ->with(['slot', 'interviewer', 'evaluation'])
-            ->latest('scheduled_at')
-            ->first();
+        $completedMock = $inputs['completedMock'];
 
-        $activeBooking = MockInterview::where('student_id', $student->id)
-            ->whereIn('status', [MockInterview::STATUS_BOOKED, MockInterview::STATUS_CONFIRMED, MockInterview::STATUS_RESCHEDULED])
-            ->with(['slot', 'interviewer', 'course', 'batch'])
-            ->latest()
-            ->first();
+        $activeBooking = $inputs['activeBooking'];
 
-        $latestEvaluation = MockInterviewEvaluation::where('student_id', $student->id)
-            ->with(['interviewer', 'interview'])
-            ->latest('evaluated_at')
-            ->first();
+        $latestEvaluation = $inputs['latestEvaluation'];
 
         // 5. Batch information
-        $primaryBatch = $student->activeBatches()->with('course:id,title,code')->first();
+        $primaryBatch = $inputs['primaryBatch'];
         $batchSummary = $primaryBatch ? [
             'id' => $primaryBatch->id,
             'name' => $primaryBatch->name,
