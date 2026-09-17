@@ -42,9 +42,17 @@ export default function AdminSubmissions() {
 
   const loadSubmissions = () => {
     setLoading(true);
-    API.get<SubmissionItem[]>('/admin/assignments/submissions')
+    API.get<SubmissionItem[] | { data: SubmissionItem[] }>('/admin/assignments/submissions')
       .then((res) => {
-        setSubmissions(Array.isArray(res.data) ? res.data : []);
+        // The endpoint returns a Laravel paginator envelope; legacy plain
+        // arrays are still tolerated so partial rollouts never blank the desk.
+        const payload: unknown = res.data;
+        const list = Array.isArray(payload)
+          ? payload
+          : Array.isArray((payload as { data?: unknown } | null)?.data)
+            ? (payload as { data: SubmissionItem[] }).data
+            : [];
+        setSubmissions(list);
       })
       .catch(() => setError('Failed to load assignment submissions.'))
       .finally(() => setLoading(false));

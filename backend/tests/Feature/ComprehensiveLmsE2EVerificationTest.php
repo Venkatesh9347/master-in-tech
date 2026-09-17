@@ -309,7 +309,7 @@ class ComprehensiveLmsE2EVerificationTest extends TestCase
         $adminSubmissionsRes = $this->actingAs($admin, 'sanctum')
             ->getJson('/api/admin/assignments/submissions');
         $adminSubmissionsRes->assertOk();
-        $adminSubmissionsRes->assertJsonCount(1);
+        $adminSubmissionsRes->assertJsonCount(1, 'data');
 
         $gradeRes = $this->actingAs($admin, 'sanctum')
             ->postJson("/api/admin/assignments/submissions/{$submissionId}/grade", [

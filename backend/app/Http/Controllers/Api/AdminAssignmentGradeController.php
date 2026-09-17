@@ -28,7 +28,15 @@ class AdminAssignmentGradeController extends Controller
             $query->where('status', $request->status);
         }
 
-        return response()->json($query->get());
+        // Bounded server-side pagination (P1-B convention): the submissions
+        // table grows with students x assignments, so the full collection
+        // must never be serialized in one response. Filters, sorting, eager
+        // loads, and item fields are unchanged; `id` breaks `updated_at`
+        // ties so pages are deterministic.
+        return response()->json(
+            $query->orderBy('id', 'desc')
+                ->paginate($this->perPage($request))
+        );
     }
 
     /**
