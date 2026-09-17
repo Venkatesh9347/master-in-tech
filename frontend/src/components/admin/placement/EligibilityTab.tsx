@@ -7,6 +7,13 @@ export default function EligibilityTab() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'ENABLED' | 'ELIGIBLE' | 'SUSPENDED' | 'DISABLED'>('all')
+  const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState<{
+    current_page: number
+    last_page: number
+    total: number
+    per_page: number
+  } | null>(null)
 
   // Dashboard Status Action Modal
   const [statusModalStudent, setStatusModalStudent] = useState<StudentEligibilityListItem | null>(null)
@@ -34,18 +41,33 @@ export default function EligibilityTab() {
       const params = new URLSearchParams()
       if (search.trim()) params.append('search', search.trim())
       if (statusFilter !== 'all') params.append('dashboard_status', statusFilter)
+      // Server-side pagination: only the requested roster page is loaded.
+      params.append('page', String(page))
 
-      const res = await API.get<{ data?: StudentEligibilityListItem[] } | StudentEligibilityListItem[]>(
+      const res = await API.get<
+        | { data?: StudentEligibilityListItem[]; current_page?: number; last_page?: number; total?: number; per_page?: number }
+        | StudentEligibilityListItem[]
+      >(
         `/admin/mock-interviews/eligibility?${params.toString()}`
       )
       const list = Array.isArray(res.data) ? res.data : res.data?.data || []
       setStudents(list)
+      if (!Array.isArray(res.data) && typeof res.data?.total === 'number') {
+        setPagination({
+          current_page: res.data.current_page ?? page,
+          last_page: res.data.last_page ?? page,
+          total: res.data.total ?? list.length,
+          per_page: res.data.per_page ?? list.length,
+        })
+      } else {
+        setPagination(null)
+      }
     } catch {
       showMsg('Failed to load students placement eligibility list.', 'error')
     } finally {
       setLoading(false)
     }
-  }, [search, statusFilter])
+  }, [search, statusFilter, page])
 
   useEffect(() => {
     fetchStudents()
@@ -147,7 +169,10 @@ export default function EligibilityTab() {
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setPage(1)
+              }}
               placeholder="Search by student name, email, student ID..."
               className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-500 transition"
             />
@@ -157,10 +182,13 @@ export default function EligibilityTab() {
             <label className="text-[11px] font-bold text-slate-400 whitespace-nowrap">Dashboard Status:</label>
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as 'all' | 'ENABLED' | 'ELIGIBLE' | 'SUSPENDED' | 'DISABLED')}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as 'all' | 'ENABLED' | 'ELIGIBLE' | 'SUSPENDED' | 'DISABLED')
+                setPage(1)
+              }}
               className="bg-slate-900 border border-slate-800 text-slate-200 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500"
             >
-              <option value="all">All Statuses ({students.length})</option>
+              <option value="all">All Statuses ({pagination?.total ?? students.length})</option>
               <option value="ENABLED">🚀 Dashboard Enabled</option>
               <option value="ELIGIBLE">⭐ Eligible for Activation</option>
               <option value="SUSPENDED">⛔ Suspended</option>
@@ -427,6 +455,31 @@ export default function EligibilityTab() {
           </div>
         )}
       </div>
+
+      {/* Roster Pagination (server-side; prev/next only) */}
+      {pagination && pagination.last_page > 1 && (
+        <div className="flex items-center justify-between gap-3 bg-slate-950 px-4 py-3 rounded-2xl border border-slate-800">
+          <button
+            type="button"
+            disabled={pagination.current_page <= 1 || loading}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-200 bg-slate-900 hover:bg-slate-800 border border-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            ← Previous
+          </button>
+          <span className="text-[11px] font-bold text-slate-400">
+            Page {pagination.current_page} of {pagination.last_page} · {pagination.total} students
+          </span>
+          <button
+            type="button"
+            disabled={pagination.current_page >= pagination.last_page || loading}
+            onClick={() => setPage((p) => p + 1)}
+            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-200 bg-slate-900 hover:bg-slate-800 border border-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next →
+          </button>
+        </div>
+      )}
 
       {/* Placement Dashboard Status Modal */}
       {statusModalStudent && (
