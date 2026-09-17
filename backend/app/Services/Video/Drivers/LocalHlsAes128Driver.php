@@ -103,6 +103,18 @@ class LocalHlsAes128Driver implements VideoDriverInterface
             return null;
         }
 
+        return $this->ensureEncryptionKey($asset);
+    }
+
+    /**
+     * Ensure the deterministic per-asset AES-128 key exists on disk.
+     *
+     * Shared by the secure key endpoint and the local transcode pipeline so
+     * segments are always encrypted with the key clients receive. The key
+     * is deterministic per asset, so concurrent/repeated calls are safe.
+     */
+    public function ensureEncryptionKey(VideoAsset $asset): string
+    {
         $disk = Storage::disk($this->storageDisk());
         $keyPath = "videos/{$asset->asset_id}/enc.key";
 
@@ -255,9 +267,11 @@ class LocalHlsAes128Driver implements VideoDriverInterface
     /**
      * Return the raw media segment bytes, or a deterministic dev buffer.
      *
-     * On the local driver no real .ts uploads exist, so we emit a fixed-size
+     * On the local driver, lessons without a real upload emit a fixed-size
      * synthetic encrypted chunk (same content-type as a real MPEG-TS segment)
-     * to keep the development stream playable end-to-end.
+     * to keep the development stream playable end-to-end. Assets produced by
+     * the upload pipeline never fall back: a missing real segment is a 404
+     * so synthetic data can never masquerade as transcoded output.
      */
     public function readSegment(VideoAsset $asset, string $segment, string $token): ?string
     {
@@ -276,6 +290,11 @@ class LocalHlsAes128Driver implements VideoDriverInterface
 
         if ($disk->exists($path)) {
             return $disk->get($path);
+        }
+
+        // E1: real uploaded assets must serve actual transcoded segments only.
+        if (($asset->metadata['source'] ?? null) === 'upload') {
+            return null;
         }
 
         return str_pad("ENC_TS_CHUNK_{$asset->asset_id}_{$segment}_" . hash('sha256', $segment), 188 * 10, "\0");

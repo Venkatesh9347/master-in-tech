@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import API from '../services/api';
 import type { Section, Lesson, LessonType } from '../types/lms';
 import type { Course } from '../types/course';
+import LessonVideoUpload from '../components/lms/LessonVideoUpload';
 
 export default function AdminCurriculum() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -472,6 +473,14 @@ export default function AdminCurriculum() {
                                   <span className="text-[10px] text-blue-500 truncate max-w-[200px]">
                                     🎥 {les.metadata.video_url}
                                   </span>
+                                )}
+                                {les.type === 'video' && courseId && (
+                                  <LessonVideoUpload
+                                    courseId={Number(courseId)}
+                                    sectionId={section.id}
+                                    lessonId={les.id}
+                                    onStatusChange={loadCurriculum}
+                                  />
                                 )}
                               </div>
                             </div>

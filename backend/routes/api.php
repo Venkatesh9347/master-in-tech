@@ -48,6 +48,7 @@ use App\Http\Controllers\Api\TutorController;
 use App\Http\Controllers\Api\TutorMaterialController;
 use App\Http\Controllers\Api\TutorQuizController;
 use App\Http\Controllers\Api\VideoPlaybackController;
+use App\Http\Controllers\Api\VideoUploadController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
 use App\Http\Controllers\Api\LiveKitWebhookController;
@@ -508,6 +509,12 @@ Route::middleware(['auth:sanctum', 'single.session', 'tutor'])->group(function (
     Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/publish', [LessonController::class, 'togglePublish']);
     Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/unpublish', [LessonController::class, 'togglePublish']);
     Route::delete('/courses/{course}/sections/{section}/lessons/{lesson}', [LessonController::class, 'destroy']);
+
+    // E1 local video ingest: source upload + transcode status (admin or
+    // owning instructor; the tutor middleware already rejects students).
+    Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/video', [VideoUploadController::class, 'store']);
+    Route::get('/courses/{course}/sections/{section}/lessons/{lesson}/video', [VideoUploadController::class, 'show']);
+    Route::post('/courses/{course}/sections/{section}/lessons/{lesson}/video/retry', [VideoUploadController::class, 'retry']);
 });
 
 /*

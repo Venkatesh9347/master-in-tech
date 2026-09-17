@@ -34,6 +34,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Source Upload Size Limit (Bytes)
+    |--------------------------------------------------------------------------
+    |
+    | Strict server-side cap for raw lesson video uploads handled by the
+    | local transcode pipeline. Environment driven so staging/production
+    | can raise it without a code change. Defaults to 512 MB.
+    |
+    */
+    'upload_max_bytes' => (int) env('VIDEO_UPLOAD_MAX_BYTES', 512 * 1024 * 1024),
+
+    /*
+    |--------------------------------------------------------------------------
     | FFmpeg / FFprobe Binary Paths
     |--------------------------------------------------------------------------
     |

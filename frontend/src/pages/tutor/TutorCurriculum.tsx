@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import API from '../../services/api'
 import type { Section, Lesson, LessonType } from '../../types/lms'
 import type { Course } from '../../types/course'
+import LessonVideoUpload from '../../components/lms/LessonVideoUpload'
 
 interface QuizQuestionDraft {
   id?: number
@@ -620,6 +621,14 @@ export default function TutorCurriculum() {
                                 <span className="text-[10px] text-blue-500 truncate max-w-[200px]">
                                   🎥 {lesson.metadata.video_url}
                                 </span>
+                              )}
+                              {lesson.type === 'video' && (courseId || id) && (
+                                <LessonVideoUpload
+                                  courseId={Number(courseId || id)}
+                                  sectionId={section.id}
+                                  lessonId={lesson.id}
+                                  onStatusChange={loadCurriculum}
+                                />
                               )}
                               {lesson.metadata?.document_url && (
                                 <span className="text-[10px] text-indigo-500 truncate max-w-[200px]">

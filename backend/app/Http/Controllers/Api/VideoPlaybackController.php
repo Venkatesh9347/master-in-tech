@@ -46,7 +46,17 @@ class VideoPlaybackController extends Controller
             ], 403);
         }
 
-        // 4. Issue Short-Lived Playback Authorization & Watermark
+        // 4. Refuse playback while an uploaded asset is still processing
+        // or has failed. Auto-provisioned legacy assets are created READY
+        // and are unaffected by this gate.
+        $asset = $videoManager->findOrCreateAssetForLesson($lesson);
+        if (! $asset->wasRecentlyCreated && $asset->status !== 'ready') {
+            return response()->json([
+                'message' => 'This video is still being processed. Please try again later.',
+            ], 403);
+        }
+
+        // 5. Issue Short-Lived Playback Authorization & Watermark
         $playbackSession = $videoManager->authorizePlayback($lesson, $user);
 
         return response()->json([
