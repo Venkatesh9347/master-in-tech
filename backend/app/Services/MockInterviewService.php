@@ -71,8 +71,8 @@ class MockInterviewService
      * NULL-safe comparisons): no per-row PHP evaluation, no full-population
      * load. The 99.95 comparison is exactly equivalent to PHP's
      * round($pct, 1) >= 100.0 under the default half-up mode. Certificate
-     * counting is intentionally unchanged here (revoked-certificate handling
-     * is a separate P1-G decision, not part of this predicate).
+     * counting is active-only throughout (P1-G): revoked credentials confer
+     * no eligibility in the predicate, the single gather, or the batch gather.
      */
     public static function applyDashboardStatusFilter(Builder $query, string $status): void
     {
@@ -260,8 +260,11 @@ class MockInterviewService
     private static function certificatesExist(): \Closure
     {
         return function ($s): void {
+            // P1-G: only ACTIVE certificates count toward eligibility; revoked
+            // credentials confer nothing (matches the gather paths below).
             $s->select(DB::raw(1))->from('certificates as c')
-                ->whereColumn('c.user_id', 'users.id');
+                ->whereColumn('c.user_id', 'users.id')
+                ->where('c.status', Certificate::STATUS_ACTIVE);
         };
     }
 
@@ -319,7 +322,9 @@ class MockInterviewService
             'enrollments' => $enrollments,
             'lessonTotals' => $lessonTotals,
             'completedCounts' => $completedCounts,
-            'certificatesCount' => Certificate::where('user_id', $student->id)->count(),
+            'certificatesCount' => Certificate::where('user_id', $student->id)
+                ->where('status', Certificate::STATUS_ACTIVE)
+                ->count(),
             'eligibilityRecord' => StudentPlacementEligibility::where('user_id', $student->id)
                 ->with(['dashboardStatusUpdatedBy:id,name,email', 'dashboardEnabledBy:id,name,email', 'overrideAdmin:id,name,email'])
                 ->first(),
@@ -385,6 +390,7 @@ class MockInterviewService
         $certCounts = [];
 
         foreach (Certificate::whereIn('user_id', $ids)
+            ->where('status', Certificate::STATUS_ACTIVE)
             ->selectRaw('user_id, COUNT(*) AS aggregate')
             ->groupBy('user_id')
             ->pluck('aggregate', 'user_id') as $userId => $total) {
