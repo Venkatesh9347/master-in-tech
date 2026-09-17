@@ -77,10 +77,12 @@ class AdmissionsPipelineTest extends TestCase
         $resStats->assertStatus(200)
             ->assertJsonFragment(['total' => 2, 'new' => 1, 'demo_scheduled' => 1]);
 
-        // List test
+        // List test (paginated envelope with metadata)
         $resList = $this->getJson('/api/admin/enquiries?status=new');
         $resList->assertStatus(200);
-        $this->assertCount(1, $resList->json());
+        $this->assertCount(1, $resList->json('data'));
+        $this->assertEquals(1, $resList->json('total'));
+        $this->assertEquals(1, $resList->json('current_page'));
     }
 
     public function test_admin_can_update_lead_status_and_schedule_demo(): void
@@ -301,7 +303,7 @@ class AdmissionsPipelineTest extends TestCase
 
         $resAdminList = $this->getJson('/api/admin/enquiries');
         $resAdminList->assertStatus(200);
-        $lead = collect($resAdminList->json())->firstWhere('id', $enquiryId);
+        $lead = collect($resAdminList->json('data'))->firstWhere('id', $enquiryId);
         $this->assertNotNull($lead);
         $this->assertEquals('Steve', $lead['name']);
         $this->assertEquals('steve099@gmail.com', $lead['email']);

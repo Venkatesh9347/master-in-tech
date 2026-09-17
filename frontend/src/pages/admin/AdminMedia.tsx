@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState } from 'react'
 import API from '../../services/api'
+import Pagination from '../../components/Pagination'
+import { usePagedQuery } from '../../hooks/usePagedQuery'
 
 interface MediaAsset {
   id: number
@@ -29,8 +31,7 @@ const FOLDER_TABS = [
 ]
 
 export default function AdminMedia() {
-  const [mediaList, setMediaList] = useState<MediaAsset[]>([])
-  const [loading, setLoading] = useState(true)
+
   const [activeFolder, setActiveFolder] = useState('all')
   const [search, setSearch] = useState('')
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null)
@@ -61,33 +62,35 @@ export default function AdminMedia() {
     setTimeout(() => setToastMessage(''), 3000)
   }
 
-  const fetchMedia = useCallback(() => {
-    setLoading(true)
-    setLoadError(false)
-    const params: Record<string, string | number> = { per_page: 48 }
-    if (activeFolder !== 'all') params.folder = activeFolder
-    if (search.trim()) params.search = search.trim()
-
-    API.get<{ data?: MediaAsset[] } | MediaAsset[]>('/admin/media', { params })
-      .then((res) => {
-        const raw = res.data
-        const items = Array.isArray(raw) ? raw : (raw as { data?: MediaAsset[] }).data || []
-        setMediaList(items)
+  // Media grid: server-paginated; folder/search changes reset to page 1.
+  const {
+    items: mediaList,
+    meta: mediaMeta,
+    loading,
+    setPage: setMediaPage,
+    reload: fetchMedia,
+  } = usePagedQuery<MediaAsset>(
+    '/admin/media',
+    {
+      folder: activeFolder !== 'all' ? activeFolder : undefined,
+      search: search.trim() || undefined,
+    },
+    {
+      perPage: 48,
+      errorMessage: 'Failed to load media library.',
+      onError: () => setLoadError(true),
+      onSuccess: (items) => {
         if (selectedAsset) {
           const updated = items.find((i) => i.id === selectedAsset.id)
           if (updated) setSelectedAsset(updated)
         }
-      })
-      .catch(() => {
-        setMediaList([])
-        setLoadError(true)
-      })
-      .finally(() => setLoading(false))
-  }, [activeFolder, search, selectedAsset])
+      },
+    }
+  )
 
   useEffect(() => {
-    fetchMedia()
-  }, [fetchMedia])
+    setLoadError(false)
+  }, [activeFolder, search])
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -345,6 +348,9 @@ export default function AdminMedia() {
                 )
               })}
             </div>
+          )}
+          {mediaMeta && (
+            <Pagination meta={mediaMeta} onPageChange={setMediaPage} label="Media library pagination" />
           )}
         </div>
 

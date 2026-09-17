@@ -1,8 +1,10 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import API from '../../services/api'
 import type { UserRole } from '../../context/auth-context'
 import type { Course } from '../../types/course'
+import Pagination from '../../components/Pagination'
+import { usePagedQuery } from '../../hooks/usePagedQuery'
 
 interface AdminUserItem {
   id: number
@@ -22,9 +24,7 @@ interface AdminUserItem {
 }
 
 export default function AdminUsers() {
-  const [users, setUsers] = useState<AdminUserItem[]>([])
   const [courses, setCourses] = useState<Course[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'all' | 'student' | 'tutor' | 'admin'>('all')
 
@@ -68,31 +68,35 @@ export default function AdminUsers() {
   const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
 
-  const loadUsers = useCallback(() => {
-    setLoading(true)
-    let url = '/admin/users'
-    const params = new URLSearchParams()
-    if (activeTab !== 'all') params.append('role', activeTab)
-    if (search.trim()) params.append('search', search.trim())
-
-    if (params.toString()) {
-      url += `?${params.toString()}`
+  const {
+    items: users,
+    meta: usersMeta,
+    loading,
+    error: usersError,
+    setPage: setUsersPage,
+    reload: loadUsers,
+  } = usePagedQuery<AdminUserItem>(
+    '/admin/users',
+    {
+      role: activeTab !== 'all' ? activeTab : undefined,
+      search: search.trim() || undefined,
+    },
+    {
+      errorMessage: 'Failed to load user list.',
     }
-
-    API.get<AdminUserItem[]>(url)
-      .then((res) => {
-        setUsers(Array.isArray(res.data) ? res.data : [])
-      })
-      .catch(() => setErrorMsg('Failed to load user list.'))
-      .finally(() => setLoading(false))
-  }, [activeTab, search])
+  )
 
   useEffect(() => {
-    loadUsers()
+    if (usersError) {
+      setErrorMsg(usersError)
+    }
+  }, [usersError])
+
+  useEffect(() => {
     API.get<Course[]>('/courses')
       .then((res) => setCourses(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
-  }, [loadUsers])
+  }, [])
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -342,7 +346,7 @@ export default function AdminUsers() {
         </form>
 
         <div className="text-xs text-slate-400 font-semibold">
-          Showing <strong className="text-white">{users.length}</strong> accounts
+          Showing <strong className="text-white">{usersMeta ? usersMeta.total : users.length}</strong> accounts
         </div>
       </div>
 
@@ -459,6 +463,9 @@ export default function AdminUsers() {
               </tbody>
             </table>
           </div>
+        )}
+        {usersMeta && (
+          <Pagination meta={usersMeta} onPageChange={setUsersPage} label="User list pagination" />
         )}
       </div>
 

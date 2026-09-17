@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import API from '../../services/api'
 import type { Course } from '../../types/course'
+import Pagination from '../../components/Pagination'
+import { usePagedQuery } from '../../hooks/usePagedQuery'
 
 export type LeadStatus =
   | 'new'
@@ -91,7 +93,6 @@ const statusDisplayLabels: Record<LeadStatus, string> = {
 
 export default function AdminEnquiries() {
   const [searchParams] = useSearchParams()
-  const [enquiries, setEnquiries] = useState<EnquiryItem[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [stats, setStats] = useState<PipelineStats>({
     total: 0,
@@ -106,7 +107,6 @@ export default function AdminEnquiries() {
     not_interested: 0,
     no_response: 0,
   })
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>(() => searchParams.get('status') || 'all')
   const [courseFilter, setCourseFilter] = useState<string>('all')
@@ -142,38 +142,43 @@ export default function AdminEnquiries() {
       .catch(() => {})
   }, [])
 
-  const loadPipeline = useCallback(() => {
-    setLoading(true)
-    let url = '/admin/enquiries'
-    const params = new URLSearchParams()
-    if (statusFilter !== 'all') params.append('status', statusFilter)
-    if (courseFilter !== 'all') params.append('course_id', courseFilter)
-    if (search.trim()) params.append('search', search.trim())
-
-    if (params.toString()) {
-      url += `?${params.toString()}`
-    }
-
-    Promise.all([
-      API.get<EnquiryItem[]>(url),
-      API.get<PipelineStats>('/admin/enquiries/stats').catch(() => ({ data: null })),
-    ])
-      .then(([listRes, statsRes]) => {
-        const list = Array.isArray(listRes.data) ? listRes.data : []
-        setEnquiries(list)
-        if (statsRes.data) {
-          setStats(statsRes.data)
-        }
-
+  // Lead pipeline: server-paginated; filter/search changes reset to page 1.
+  const {
+    items: enquiries,
+    meta: enquiriesMeta,
+    loading,
+    setPage: setEnquiriesPage,
+    reload: reloadPipeline,
+  } = usePagedQuery<EnquiryItem>(
+    '/admin/enquiries',
+    {
+      status: statusFilter !== 'all' ? statusFilter : undefined,
+      course_id: courseFilter !== 'all' ? courseFilter : undefined,
+      search: search.trim() || undefined,
+    },
+    {
+      errorMessage: 'Failed to load lead pipeline.',
+      onError: (message) => setErrorMsg(message),
+      onSuccess: (list) => {
         // If a lead is currently open in modal, refresh its view
         if (selectedEnquiry) {
           const fresh = list.find((e) => e.id === selectedEnquiry.id)
           if (fresh) setSelectedEnquiry(fresh)
         }
+      },
+    }
+  )
+
+  const loadPipeline = useCallback(() => {
+    reloadPipeline()
+    API.get<PipelineStats>('/admin/enquiries/stats')
+      .then((statsRes) => {
+        if (statsRes.data) {
+          setStats(statsRes.data)
+        }
       })
-      .catch(() => setErrorMsg('Failed to load lead pipeline.'))
-      .finally(() => setLoading(false))
-  }, [statusFilter, courseFilter, search, selectedEnquiry])
+      .catch(() => {})
+  }, [reloadPipeline])
 
   useEffect(() => {
     loadPipeline()
@@ -625,6 +630,11 @@ export default function AdminEnquiries() {
                 })}
               </tbody>
             </table>
+            {enquiriesMeta && (
+              <div className="px-4 pb-3">
+                <Pagination meta={enquiriesMeta} onPageChange={setEnquiriesPage} label="Leads pipeline pagination" />
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -151,38 +151,41 @@ class AdminStudentEnrollmentTest extends TestCase
 
         Sanctum::actingAs($admin);
 
-        // 1. List all
+        // 1. List all (paginated envelope with metadata)
         $resAll = $this->getJson('/api/admin/enrollments');
         $resAll->assertStatus(200);
-        $this->assertCount(2, $resAll->json());
+        $this->assertCount(2, $resAll->json('data'));
+        $this->assertEquals(2, $resAll->json('total'));
+        $this->assertEquals(1, $resAll->json('current_page'));
 
         // 2. Search by student name
         $resSearch = $this->getJson('/api/admin/enrollments?search=Alice');
         $resSearch->assertStatus(200);
-        $this->assertCount(1, $resSearch->json());
-        $this->assertEquals($studentAlice->id, $resSearch->json('0.user.id'));
+        $this->assertCount(1, $resSearch->json('data'));
+        $this->assertEquals(1, $resSearch->json('total'));
+        $this->assertEquals($studentAlice->id, $resSearch->json('data.0.user.id'));
 
         // 3. Search by student ID
         $resSearchId = $this->getJson('/api/admin/enrollments?search=STU-1001');
         $resSearchId->assertStatus(200);
-        $this->assertCount(1, $resSearchId->json());
+        $this->assertCount(1, $resSearchId->json('data'));
 
         // 4. Search by course category
         $resSearchCategory = $this->getJson('/api/admin/enrollments?search=DevOps');
         $resSearchCategory->assertStatus(200);
-        $this->assertCount(1, $resSearchCategory->json());
-        $this->assertEquals($studentBob->id, $resSearchCategory->json('0.user.id'));
+        $this->assertCount(1, $resSearchCategory->json('data'));
+        $this->assertEquals($studentBob->id, $resSearchCategory->json('data.0.user.id'));
 
         // 5. Filter by status
         $resFilterStatus = $this->getJson('/api/admin/enrollments?status=completed');
         $resFilterStatus->assertStatus(200);
-        $this->assertCount(1, $resFilterStatus->json());
-        $this->assertEquals('completed', $resFilterStatus->json('0.status'));
+        $this->assertCount(1, $resFilterStatus->json('data'));
+        $this->assertEquals('completed', $resFilterStatus->json('data.0.status'));
 
         // 6. Filter by course_id
         $resFilterCourse = $this->getJson("/api/admin/enrollments?course_id={$reactCourse->id}");
         $resFilterCourse->assertStatus(200);
-        $this->assertCount(1, $resFilterCourse->json());
+        $this->assertCount(1, $resFilterCourse->json('data'));
     }
 
     public function test_admin_can_view_specific_student_enrollments_with_progress(): void

@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import API from '../../services/api'
 import type { Course } from '../../types/course'
+import Pagination from '../../components/Pagination'
+import { usePagedQuery } from '../../hooks/usePagedQuery'
+import { extractPage } from '../../types/pagination'
 
 interface StudentUser {
   id: number
@@ -46,7 +49,6 @@ export default function AdminEnrollments() {
   const [stats, setStats] = useState<StatsData | null>(null)
   const [students, setStudents] = useState<StudentUser[]>([])
   const [courses, setCourses] = useState<Course[]>([])
-  const [allEnrollments, setAllEnrollments] = useState<EnrollmentItem[]>([])
 
   // Student Assignment Mode State
   const [selectedStudent, setSelectedStudent] = useState<StudentUser | null>(null)
@@ -101,8 +103,9 @@ export default function AdminEnrollments() {
 
   const fetchStudents = useCallback(async () => {
     try {
-      const res = await API.get<StudentUser[]>('/admin/users?role=student')
-      const studentList = Array.isArray(res.data) ? res.data : []
+      // Roster picker: bounded first page of the paginated users endpoint.
+      const res = await API.get<unknown>('/admin/users?role=student&per_page=100')
+      const studentList = extractPage<StudentUser>(res.data).items
       setStudents(studentList)
       return studentList
     } catch {
@@ -111,14 +114,23 @@ export default function AdminEnrollments() {
     }
   }, [])
 
-  const fetchAllEnrollments = useCallback(async () => {
-    try {
-      const res = await API.get<EnrollmentItem[]>('/admin/enrollments')
-      setAllEnrollments(Array.isArray(res.data) ? res.data : [])
-    } catch {
-      // Non-blocking
+  // Master table: server-paginated; filter/search/sort changes reset to page 1.
+  const {
+    items: masterEnrollments,
+    meta: masterMeta,
+    setPage: setMasterPage,
+    reload: reloadMasterEnrollments,
+  } = usePagedQuery<EnrollmentItem>(
+    '/admin/enrollments',
+    {
+      status: masterStatusFilter !== 'all' ? masterStatusFilter : undefined,
+      course_id: masterCourseFilter !== 'all' ? masterCourseFilter : undefined,
+      search: masterSearch.trim() || undefined,
+    },
+    {
+      errorMessage: 'Failed to load enrollments table.',
     }
-  }, [])
+  )
 
   // 2. Fetch Enrollments for Selected Student
   const fetchStudentEnrollments = useCallback(async (studentId: number) => {
@@ -136,7 +148,7 @@ export default function AdminEnrollments() {
   // Initial Load
   useEffect(() => {
     setLoadingInitial(true)
-    Promise.all([fetchStats(), fetchCourses(), fetchStudents(), fetchAllEnrollments()])
+    Promise.all([fetchStats(), fetchCourses(), fetchStudents()])
       .then(([, , studentList]) => {
         if (studentList && studentList.length > 0 && !selectedStudent) {
           setSelectedStudent(studentList[0])
@@ -144,7 +156,7 @@ export default function AdminEnrollments() {
         }
       })
       .finally(() => setLoadingInitial(false))
-  }, [fetchStats, fetchCourses, fetchStudents, fetchAllEnrollments, fetchStudentEnrollments, selectedStudent])
+  }, [fetchStats, fetchCourses, fetchStudents, fetchStudentEnrollments, selectedStudent])
 
   // Select student handler
   const handleSelectStudent = (student: StudentUser) => {
@@ -211,7 +223,7 @@ export default function AdminEnrollments() {
       // Refresh student's enrollments and global stats
       fetchStudentEnrollments(selectedStudent.id)
       fetchStats()
-      fetchAllEnrollments()
+      reloadMasterEnrollments()
       fetchStudents()
 
       setTimeout(() => setSuccessMsg(''), 5000)
@@ -251,7 +263,7 @@ export default function AdminEnrollments() {
       setModalStatus('active')
 
       fetchStats()
-      fetchAllEnrollments()
+      reloadMasterEnrollments()
       fetchStudents()
       if (selectedStudent && selectedStudent.id === Number(modalStudentId)) {
         fetchStudentEnrollments(selectedStudent.id)
@@ -282,10 +294,9 @@ export default function AdminEnrollments() {
       setStudentEnrollments((prev) =>
         prev.map((item) => (item.id === enrollmentId ? { ...item, status: newStatus } : item))
       )
-      // Update in allEnrollments
-      setAllEnrollments((prev) =>
-        prev.map((item) => (item.id === enrollmentId ? { ...item, status: newStatus } : item))
-      )
+      // Refresh the server-filtered master table (a status change can move
+      // the row off the current filter/page, so patching locally is wrong).
+      reloadMasterEnrollments()
 
       fetchStats()
       setTimeout(() => setSuccessMsg(''), 4000)
@@ -312,7 +323,7 @@ export default function AdminEnrollments() {
 
       // Remove from local lists
       setStudentEnrollments((prev) => prev.filter((item) => item.id !== enrollmentToDelete.id))
-      setAllEnrollments((prev) => prev.filter((item) => item.id !== enrollmentToDelete.id))
+      reloadMasterEnrollments()
 
       setEnrollmentToDelete(null)
       fetchStats()
@@ -327,32 +338,8 @@ export default function AdminEnrollments() {
     }
   }
 
-  // Master Table Filtered List
-  const filteredMasterEnrollments = useMemo(() => {
-    return allEnrollments.filter((item) => {
-      // Status filter
-      if (masterStatusFilter !== 'all' && item.status !== masterStatusFilter) {
-        return false
-      }
-      // Course filter
-      if (masterCourseFilter !== 'all' && String(item.course_id) !== masterCourseFilter) {
-        return false
-      }
-      // Search filter
-      if (masterSearch.trim()) {
-        const query = masterSearch.toLowerCase().trim()
-        const matchStudent =
-          item.user?.name?.toLowerCase().includes(query) ||
-          item.user?.email?.toLowerCase().includes(query) ||
-          item.user?.student_id?.toLowerCase().includes(query)
-        const matchCourse =
-          item.course?.title?.toLowerCase().includes(query) ||
-          item.course?.category?.toLowerCase().includes(query)
-        if (!matchStudent && !matchCourse) return false
-      }
-      return true
-    })
-  }, [allEnrollments, masterStatusFilter, masterCourseFilter, masterSearch])
+  // Master Table list is server-filtered/paginated via usePagedQuery above;
+  // the hook refetches page 1 whenever these filter states change.
 
   return (
     <div className="space-y-8">
@@ -390,7 +377,7 @@ export default function AdminEnrollments() {
             type="button"
             onClick={() => {
               setViewMode('master_table')
-              fetchAllEnrollments()
+              reloadMasterEnrollments()
             }}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
               viewMode === 'master_table'
@@ -414,7 +401,7 @@ export default function AdminEnrollments() {
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-3xl font-black text-white">
-              {stats?.total_enrollments ?? (loadingInitial ? '...' : allEnrollments.length)}
+              {stats?.total_enrollments ?? masterMeta?.total ?? (loadingInitial ? '...' : masterEnrollments.length)}
             </span>
             <span className="text-xs font-semibold text-purple-400">active & past</span>
           </div>
@@ -966,14 +953,14 @@ export default function AdminEnrollments() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80 bg-slate-950/40">
-                {filteredMasterEnrollments.length === 0 ? (
+                {masterEnrollments.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-slate-500 font-semibold">
                       No enrollments found matching criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredMasterEnrollments.map((item) => {
+                  masterEnrollments.map((item) => {
                     const progress = Number(item.progress_percentage || 0)
                     return (
                       <tr key={item.id} className="hover:bg-slate-900/50 transition">
@@ -1059,6 +1046,9 @@ export default function AdminEnrollments() {
               </tbody>
             </table>
           </div>
+          {masterMeta && (
+            <Pagination meta={masterMeta} onPageChange={setMasterPage} label="Enrollments table pagination" />
+          )}
         </div>
       )}
 

@@ -121,7 +121,7 @@ class EnquiryLeadAndCatalogOptionTest extends TestCase
         $list = $this->actingAs($admin, 'sanctum')->getJson('/api/admin/enquiries');
 
         $list->assertOk();
-        $lead = collect($list->json())->firstWhere('email', 'anita.sharma@example.com');
+        $lead = collect($list->json('data'))->firstWhere('email', 'anita.sharma@example.com');
         $this->assertNotNull($lead, 'Submitted public enquiry must appear in Admin C-Panel enquiry list.');
         $this->assertEquals('Anita Sharma', $lead['name']);
         $this->assertEquals('9123456780', $lead['phone']);
@@ -133,7 +133,7 @@ class EnquiryLeadAndCatalogOptionTest extends TestCase
             ->getJson('/api/admin/enquiries?course_id=' . $course->id);
         $filtered->assertOk();
         $this->assertTrue(
-            collect($filtered->json())->contains(fn ($row) => $row['email'] === 'anita.sharma@example.com')
+            collect($filtered->json('data'))->contains(fn ($row) => $row['email'] === 'anita.sharma@example.com')
         );
     }
 }

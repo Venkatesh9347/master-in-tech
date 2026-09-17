@@ -67,7 +67,7 @@ class AdminBatchController extends Controller
 
         $batches = $query->orderBy('start_date', 'desc')
             ->orderBy('id', 'desc')
-            ->get();
+            ->paginate($this->perPage($request));
 
         return response()->json($batches);
     }
@@ -823,8 +823,8 @@ class AdminBatchController extends Controller
         }
 
         $history = $query->orderBy('created_at', 'desc')
-            ->limit(100)
-            ->get();
+            ->orderBy('id', 'desc')
+            ->paginate($this->perPage($request));
 
         return response()->json($history);
     }

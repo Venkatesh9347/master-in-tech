@@ -77,14 +77,10 @@ class AdminEnrollmentController extends Controller
         }
 
         $enrollments = $query->orderBy('enrolled_at', 'desc')
-            ->orderBy('id', 'desc');
+            ->orderBy('id', 'desc')
+            ->paginate($this->perPage($request));
 
-        $limit = $this->limitCap($request);
-        if ($limit !== null) {
-            $enrollments->limit($limit);
-        }
-
-        return response()->json($enrollments->get());
+        return response()->json($enrollments);
     }
 
     /**

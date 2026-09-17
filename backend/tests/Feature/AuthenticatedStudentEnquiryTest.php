@@ -281,7 +281,7 @@ class AuthenticatedStudentEnquiryTest extends TestCase
         $resList = $this->getJson('/api/admin/enquiries');
         $resList->assertStatus(200);
 
-        $list = collect($resList->json());
+        $list = collect($resList->json('data'));
         $lead1 = $list->firstWhere('id', $studentEnquiry->id);
         $lead2 = $list->firstWhere('id', $publicEnquiry->id);
 

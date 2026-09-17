@@ -27,4 +27,20 @@ abstract class Controller
 
         return min($limit, $ceiling);
     }
+
+    /**
+     * Resolve a bounded page size from the `per_page` query parameter for
+     * Laravel paginator responses. Always returns a safe positive integer
+     * clamped to the ceiling so a single request can never scan an
+     * unbounded table, regardless of client input.
+     */
+    protected function perPage(Request $request, int $default = 15, int $max = 100): int
+    {
+        $perPage = (int) $request->input('per_page', $default);
+        if ($perPage < 1) {
+            return $default;
+        }
+
+        return min($perPage, $max);
+    }
 }

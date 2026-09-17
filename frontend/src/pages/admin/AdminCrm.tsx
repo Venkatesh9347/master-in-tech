@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import API from '../../services/api'
 import { useAuth } from '../../context/useAuth'
 import type { Course } from '../../types/course'
+import Pagination from '../../components/Pagination'
+import { usePagedQuery } from '../../hooks/usePagedQuery'
 
 export type LeadStatus =
   | 'new'
@@ -173,7 +175,6 @@ export default function AdminCrm() {
 
   // Global Data
   const [stats, setStats] = useState<CrmStats | null>(null)
-  const [leads, setLeads] = useState<LeadItem[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [batches, setBatches] = useState<BatchOption[]>([])
   const [counsellors, setCounsellors] = useState<CounsellorUser[]>([])
@@ -191,8 +192,7 @@ export default function AdminCrm() {
   // Follow-ups Desk sub-filter
   const [followUpDeskTab, setFollowUpDeskTab] = useState<'overdue' | 'today' | 'upcoming' | 'completed' | 'all'>('overdue')
 
-  // Loading & State
-  const [loading, setLoading] = useState(true)
+  // Loading & State (list loading comes from usePagedQuery below)
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
@@ -256,29 +256,33 @@ export default function AdminCrm() {
     }
   }, [])
 
-  // 2. Fetch Leads List
-  const fetchLeads = useCallback(async () => {
-    setLoading(true)
-    setErrorMsg('')
-    try {
-      const params = new URLSearchParams()
-      if (search.trim()) params.append('search', search.trim())
-      if (statusFilter !== 'all') params.append('status', statusFilter)
-      if (priorityFilter !== 'all') params.append('priority', priorityFilter)
-      if (sourceFilter !== 'all') params.append('source', sourceFilter)
-      if (courseFilter !== 'all') params.append('course_id', courseFilter)
-      if (counsellorFilter !== 'all') params.append('assigned_counsellor_id', counsellorFilter)
-      if (followUpFilter !== 'all') params.append('follow_up_filter', followUpFilter)
-
-      const res = await API.get<{ data?: LeadItem[] } | LeadItem[]>(`/admin/crm/leads?${params.toString()}`)
-      const items = Array.isArray(res.data) ? res.data : res.data?.data || []
-      setLeads(items)
-    } catch {
-      setErrorMsg('Failed to load leads roster.')
-    } finally {
-      setLoading(false)
+  // 2. Fetch Leads List (server-paginated; filter changes reset to page 1)
+  const {
+    items: leads,
+    meta: leadsMeta,
+    loading,
+    setPage: setLeadsPage,
+    reload: reloadLeads,
+  } = usePagedQuery<LeadItem>(
+    '/admin/crm/leads',
+    {
+      search: search.trim() || undefined,
+      status: statusFilter !== 'all' ? statusFilter : undefined,
+      priority: priorityFilter !== 'all' ? priorityFilter : undefined,
+      source: sourceFilter !== 'all' ? sourceFilter : undefined,
+      course_id: courseFilter !== 'all' ? courseFilter : undefined,
+      assigned_counsellor_id: counsellorFilter !== 'all' ? counsellorFilter : undefined,
+      follow_up_filter: followUpFilter !== 'all' ? followUpFilter : undefined,
+    },
+    {
+      errorMessage: 'Failed to load leads roster.',
+      onError: (message) => setErrorMsg(message),
     }
-  }, [search, statusFilter, priorityFilter, sourceFilter, courseFilter, counsellorFilter, followUpFilter])
+  )
+
+  const fetchLeads = useCallback(() => {
+    reloadLeads()
+  }, [reloadLeads])
 
   // 3. Fetch Follow-ups Desk List
   const fetchFollowUps = useCallback(async () => {
@@ -697,7 +701,7 @@ export default function AdminCrm() {
         {/* Total Leads */}
         <div className="bg-slate-950/80 backdrop-blur border border-slate-800 rounded-2xl p-4 shadow-sm hover:border-purple-500/50 transition">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Total Leads</span>
-          <p className="text-2xl font-black text-white mt-1">{stats?.total_leads ?? leads.length}</p>
+          <p className="text-2xl font-black text-white mt-1">{stats?.total_leads ?? leadsMeta?.total ?? leads.length}</p>
           <span className="text-[10px] font-semibold text-purple-300 mt-0.5 block">
             {stats?.conversion_rate ?? 0}% Rate
           </span>
@@ -820,7 +824,7 @@ export default function AdminCrm() {
           }`}
         >
           <span>📋</span>
-          <span>Leads Roster & Pipeline ({leads.length})</span>
+          <span>Leads Roster & Pipeline ({leadsMeta?.total ?? leads.length})</span>
         </button>
 
         <button
@@ -1167,6 +1171,9 @@ export default function AdminCrm() {
                   </tbody>
                 </table>
               </div>
+              {leadsMeta && (
+                <Pagination meta={leadsMeta} onPageChange={setLeadsPage} label="Leads roster pagination" />
+              )}
             </div>
           )}
         </div>

@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
-import API from '../../services/api'
+import { useState } from 'react'
+import Pagination from '../../components/Pagination'
+import { usePagedQuery } from '../../hooks/usePagedQuery'
 
 interface AuditLogEntry {
   id: number
@@ -19,38 +20,26 @@ interface AuditLogEntry {
 }
 
 export default function AdminAuditLogs() {
-  const [logs, setLogs] = useState<AuditLogEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null)
   const [actionFilter, setActionFilter] = useState('')
 
-  const loadLogs = useCallback(() => {
-    setLoading(true)
-    setError(null)
-    const params = actionFilter ? { action: actionFilter } : {}
-    API.get<AuditLogEntry[] | { data: AuditLogEntry[] | { data: AuditLogEntry[] } }>('/admin/audit-logs', { params })
-      .then((res) => {
-        let list: AuditLogEntry[] = []
-        if (Array.isArray(res.data)) {
-          list = res.data
-        } else if (Array.isArray(res.data?.data)) {
-          list = res.data.data
-        } else if (res.data?.data && typeof res.data.data === 'object' && 'data' in res.data.data && Array.isArray((res.data.data as { data: AuditLogEntry[] }).data)) {
-          list = (res.data.data as { data: AuditLogEntry[] }).data
-        }
-        setLogs(list)
-      })
-      .catch((err: unknown) => {
-        const response = err as { response?: { data?: { message?: string } } }
-        setError(response.response?.data?.message || 'Failed to fetch audit logs. Please try again.')
-      })
-      .finally(() => setLoading(false))
-  }, [actionFilter])
-
-  useEffect(() => {
-    loadLogs()
-  }, [loadLogs])
+  // Audit trail: server-paginated; action-filter changes reset to page 1.
+  const {
+    items: logs,
+    meta: logsMeta,
+    loading,
+    error,
+    setPage: setLogsPage,
+    reload: loadLogs,
+  } = usePagedQuery<AuditLogEntry>(
+    '/admin/audit-logs',
+    {
+      action: actionFilter || undefined,
+    },
+    {
+      errorMessage: 'Failed to fetch audit logs. Please try again.',
+    }
+  )
 
   return (
     <div className="space-y-6">
@@ -174,6 +163,9 @@ export default function AdminAuditLogs() {
               </tbody>
             </table>
           </div>
+        )}
+        {logsMeta && (
+          <Pagination meta={logsMeta} onPageChange={setLogsPage} label="Audit logs pagination" />
         )}
       </div>
 

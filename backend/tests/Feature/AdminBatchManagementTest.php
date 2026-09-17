@@ -167,14 +167,14 @@ class AdminBatchManagementTest extends TestCase
         // Search with 6-digit date: 150926
         $res = $this->getJson('/api/admin/batches?search=150926');
         $res->assertStatus(200);
-        $this->assertCount(1, $res->json());
-        $this->assertEquals($batch1->id, $res->json('0.id'));
+        $this->assertCount(1, $res->json('data'));
+        $this->assertEquals($batch1->id, $res->json('data.0.id'));
 
         // Search with 6-digit date: 011026
         $res2 = $this->getJson('/api/admin/batches?search=011026');
         $res2->assertStatus(200);
-        $this->assertCount(1, $res2->json());
-        $this->assertEquals($batch2->id, $res2->json('0.id'));
+        $this->assertCount(1, $res2->json('data'));
+        $this->assertEquals($batch2->id, $res2->json('data.0.id'));
     }
 
     public function test_technology_and_course_and_status_filtering(): void
@@ -204,14 +204,14 @@ class AdminBatchManagementTest extends TestCase
         // Filter by course
         $resCourse = $this->getJson("/api/admin/batches?course_id={$reactCourse->id}");
         $resCourse->assertStatus(200);
-        $this->assertCount(1, $resCourse->json());
-        $this->assertEquals($batch1->id, $resCourse->json('0.id'));
+        $this->assertCount(1, $resCourse->json('data'));
+        $this->assertEquals($batch1->id, $resCourse->json('data.0.id'));
 
         // Filter by status
         $resStatus = $this->getJson('/api/admin/batches?status=upcoming');
         $resStatus->assertStatus(200);
-        $this->assertCount(1, $resStatus->json());
-        $this->assertEquals($batch2->id, $resStatus->json('0.id'));
+        $this->assertCount(1, $resStatus->json('data'));
+        $this->assertEquals($batch2->id, $resStatus->json('data.0.id'));
     }
 
     public function test_admin_can_add_student_to_batch_and_ensures_course_enrollment(): void
@@ -528,21 +528,21 @@ class AdminBatchManagementTest extends TestCase
         // Search with 6 digits: 230826 returns all 3 cohorts on that date
         $resDateAll = $this->getJson('/api/admin/batches?search=230826');
         $resDateAll->assertStatus(200);
-        $this->assertCount(3, $resDateAll->json());
+        $this->assertCount(3, $resDateAll->json('data'));
 
         // Search with 6 digits: 230826 + course_id (technology selection: AI)
         $resAi = $this->getJson("/api/admin/batches?search=230826&course_id={$aiCourse->id}");
         $resAi->assertStatus(200);
-        $this->assertCount(1, $resAi->json());
-        $this->assertEquals($aiBatch->id, $resAi->json('0.id'));
-        $this->assertEquals('RIT(AI)BC230826', $resAi->json('0.code'));
+        $this->assertCount(1, $resAi->json('data'));
+        $this->assertEquals($aiBatch->id, $resAi->json('data.0.id'));
+        $this->assertEquals('RIT(AI)BC230826', $resAi->json('data.0.code'));
 
         // Search with 6 digits: 230826 + course_id (technology selection: Java)
         $resJava = $this->getJson("/api/admin/batches?search=230826&course_id={$javaCourse->id}");
         $resJava->assertStatus(200);
-        $this->assertCount(1, $resJava->json());
-        $this->assertEquals($javaBatch->id, $resJava->json('0.id'));
-        $this->assertEquals('RIT(JAVA)BC230826', $resJava->json('0.code'));
+        $this->assertCount(1, $resJava->json('data'));
+        $this->assertEquals($javaBatch->id, $resJava->json('data.0.id'));
+        $this->assertEquals('RIT(JAVA)BC230826', $resJava->json('data.0.code'));
     }
 
     public function test_single_active_session_is_enforced_on_batch_management(): void

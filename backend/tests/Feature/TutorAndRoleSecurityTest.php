@@ -698,10 +698,11 @@ class TutorAndRoleSecurityTest extends TestCase
             'status' => 'new',
         ]);
 
-        // Admin lists enquiries
+        // Admin lists enquiries (paginated envelope)
         $res = $this->getJson('/api/admin/enquiries');
         $res->assertStatus(200);
-        $this->assertCount(1, $res->json());
+        $this->assertCount(1, $res->json('data'));
+        $this->assertEquals(1, $res->json('total'));
 
         // Admin updates status to contacted
         $resUpdate = $this->putJson("/api/admin/enquiries/{$enquiry->id}", [

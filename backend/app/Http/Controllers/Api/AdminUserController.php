@@ -68,14 +68,11 @@ class AdminUserController extends Controller
             });
         }
 
-        $users = $query->orderBy('created_at', 'desc');
+        $users = $query->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->paginate($this->perPage($request));
 
-        $limit = $this->limitCap($request);
-        if ($limit !== null) {
-            $users->limit($limit);
-        }
-
-        return response()->json($users->get());
+        return response()->json($users);
     }
 
     /**

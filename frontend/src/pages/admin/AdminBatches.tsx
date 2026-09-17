@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import API from '../../services/api'
 import type { Course } from '../../types/course'
+import Pagination from '../../components/Pagination'
+import { usePagedQuery } from '../../hooks/usePagedQuery'
+import { extractPage } from '../../types/pagination'
 
 interface TutorUser {
   id: number
@@ -151,12 +154,10 @@ export default function AdminBatches() {
   const [activeTab, setActiveTab] = useState<'batches_list' | 'batch_detail' | 'transfer_audit'>('batches_list')
 
   // Data States
-  const [batches, setBatches] = useState<BatchItem[]>([])
   const [courses, setCourses] = useState<Course[]>([])
   const [tutors, setTutors] = useState<TutorUser[]>([])
   const [allStudents, setAllStudents] = useState<StudentUser[]>([])
   const [stats, setStats] = useState<BatchStats | null>(null)
-  const [auditLogs, setAuditLogs] = useState<BatchTransferLog[]>([])
 
   // Selected Batch for Roster/Detail View
   const [selectedBatch, setSelectedBatch] = useState<BatchItem | null>(null)
@@ -167,6 +168,36 @@ export default function AdminBatches() {
   const [courseFilter, setCourseFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [tutorFilter, setTutorFilter] = useState('all')
+
+  // Batches grid: server-paginated; filter/search changes reset to page 1.
+  // (Declared before sixDigitDateInfo below, which reads the current page.)
+  const {
+    items: batches,
+    meta: batchesMeta,
+    loading,
+    setPage: setBatchesPage,
+    reload: reloadBatches,
+  } = usePagedQuery<BatchItem>(
+    '/admin/batches',
+    {
+      search: search.trim() || undefined,
+      course_id: courseFilter !== 'all' ? courseFilter : undefined,
+      status: statusFilter !== 'all' ? statusFilter : undefined,
+      tutor_id: tutorFilter !== 'all' ? tutorFilter : undefined,
+    },
+    {
+      errorMessage: 'Failed to load batches list.',
+      onError: (message) => setErrorMsg(message),
+    }
+  )
+
+  // Transfer audit trail: server-paginated (backend caps the window).
+  const {
+    items: auditLogs,
+    meta: auditMeta,
+    setPage: setAuditPage,
+    reload: reloadAuditLogs,
+  } = usePagedQuery<BatchTransferLog>('/admin/batches/history', {})
 
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -250,8 +281,7 @@ export default function AdminBatches() {
     }
   }, [search, batches, courses])
 
-  // Loading & Feedback
-  const [loading, setLoading] = useState(true)
+  // Loading & Feedback (list loading comes from usePagedQuery above)
   const [saving, setSaving] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
@@ -266,33 +296,13 @@ export default function AdminBatches() {
     }
   }, [])
 
-  const fetchBatches = useCallback(async () => {
-    setLoading(true)
-    setErrorMsg('')
-    try {
-      const params = new URLSearchParams()
-      if (search.trim()) params.append('search', search.trim())
-      if (courseFilter !== 'all') params.append('course_id', courseFilter)
-      if (statusFilter !== 'all') params.append('status', statusFilter)
-      if (tutorFilter !== 'all') params.append('tutor_id', tutorFilter)
+  const fetchBatches = useCallback(() => {
+    reloadBatches()
+  }, [reloadBatches])
 
-      const res = await API.get<BatchItem[]>(`/admin/batches?${params.toString()}`)
-      setBatches(Array.isArray(res.data) ? res.data : [])
-    } catch {
-      setErrorMsg('Failed to load batches list.')
-    } finally {
-      setLoading(false)
-    }
-  }, [search, courseFilter, statusFilter, tutorFilter])
-
-  const fetchAuditLogs = useCallback(async () => {
-    try {
-      const res = await API.get<BatchTransferLog[]>('/admin/batches/history')
-      setAuditLogs(Array.isArray(res.data) ? res.data : [])
-    } catch {
-      // Non-blocking
-    }
-  }, [])
+  const fetchAuditLogs = useCallback(() => {
+    reloadAuditLogs()
+  }, [reloadAuditLogs])
 
   useEffect(() => {
     fetchStats()
@@ -303,12 +313,12 @@ export default function AdminBatches() {
       .then((res) => setCourses(Array.isArray(res.data) ? res.data : []))
       .catch(() => {})
 
-    API.get<TutorUser[]>('/admin/users?role=tutor')
-      .then((res) => setTutors(Array.isArray(res.data) ? res.data : []))
+    API.get<unknown>('/admin/users?role=tutor&per_page=100')
+      .then((res) => setTutors(extractPage<TutorUser>(res.data).items))
       .catch(() => {})
 
-    API.get<StudentUser[]>('/admin/users?role=student')
-      .then((res) => setAllStudents(Array.isArray(res.data) ? res.data : []))
+    API.get<unknown>('/admin/users?role=student&per_page=100')
+      .then((res) => setAllStudents(extractPage<StudentUser>(res.data).items))
       .catch(() => {})
   }, [fetchStats, fetchBatches, fetchAuditLogs])
 
@@ -906,7 +916,7 @@ export default function AdminBatches() {
                 <span className="flex items-center gap-1.5">
                   <span className="text-purple-400 font-bold">💡 Tip:</span> Type a 6-digit date like <code className="text-purple-300 font-mono bg-purple-950/80 px-1 py-0.5 rounded">230826</code> in search to find batches starting on 23-Aug-2026 and select technology.
                 </span>
-                <span>Showing {batches.length} Batches</span>
+                <span>Showing {batchesMeta ? batchesMeta.total : batches.length} Batches</span>
               </div>
             )}
           </div>
@@ -1061,6 +1071,9 @@ export default function AdminBatches() {
                 )
               })}
             </div>
+          )}
+          {batchesMeta && (
+            <Pagination meta={batchesMeta} onPageChange={setBatchesPage} label="Batches list pagination" />
           )}
         </div>
       )}
@@ -1410,6 +1423,9 @@ export default function AdminBatches() {
               </tbody>
             </table>
           </div>
+          {auditMeta && (
+            <Pagination meta={auditMeta} onPageChange={setAuditPage} label="Batch transfer history pagination" />
+          )}
         </div>
       )}
 

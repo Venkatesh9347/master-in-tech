@@ -201,14 +201,11 @@ class EnquiryController extends Controller
             });
         }
 
-        $enquiries = $query->orderBy('created_at', 'desc');
+        $enquiries = $query->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
+            ->paginate($this->perPage($request));
 
-        $limit = $this->limitCap($request);
-        if ($limit !== null) {
-            $enquiries->limit($limit);
-        }
-
-        return response()->json($enquiries->get());
+        return response()->json($enquiries);
     }
 
     /**
