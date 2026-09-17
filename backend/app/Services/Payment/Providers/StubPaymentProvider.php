@@ -3,6 +3,8 @@
 namespace App\Services\Payment\Providers;
 
 use App\Services\Payment\Data\PaymentOrder;
+use App\Services\Payment\Data\ProviderRefundResult;
+use App\Services\Payment\Exceptions\PaymentProviderException;
 use App\Services\Payment\PaymentProviderInterface;
 use Illuminate\Support\Str;
 
@@ -65,6 +67,139 @@ class StubPaymentProvider implements PaymentProviderInterface
             'amount' => $data['a'],
             'currency' => $data['c'],
         ];
+    }
+
+    /**
+     * Test-only switch: when true, the next refundPayment() call throws a
+     * provider failure instead of succeeding. Reset via resetFailure().
+     */
+    private static bool $failNextRefund = false;
+
+    /**
+     * Simulates the unknown-outcome window: the refund IS accepted
+     * provider-side (registered, discoverable via fetchRefunds) but the
+     * response is lost, so the caller sees a failure. Reset via resetState().
+     */
+    private static bool $loseNextRefundResponse = false;
+
+    /**
+     * In-memory provider-side refund registry: payment id => normalized
+     * refund rows. Models gateway-side state that survives an application
+     * rollback, so reconciliation paths can be tested deterministically.
+     *
+     * @var array<string, array<int, array{id: string, amount: int, currency: string, status: string, receipt: ?string, idempotency_key: ?string}>>
+     */
+    private static array $issuedRefunds = [];
+
+    public static function failNextRefund(): void
+    {
+        self::$failNextRefund = true;
+    }
+
+    public static function loseNextRefundResponse(): void
+    {
+        self::$loseNextRefundResponse = true;
+    }
+
+    public static function resetFailure(): void
+    {
+        self::resetState();
+    }
+
+    public static function resetState(): void
+    {
+        self::$failNextRefund = false;
+        self::$loseNextRefundResponse = false;
+        self::$issuedRefunds = [];
+    }
+
+    /**
+     * @return array<int, array{id: string, amount: int, currency: string, status: string, receipt: ?string, idempotency_key: ?string}>
+     */
+    public static function issuedRefundsFor(string $paymentId): array
+    {
+        return array_values(self::$issuedRefunds[$paymentId] ?? []);
+    }
+
+    public static function issuedCountFor(string $paymentId): int
+    {
+        return count(self::$issuedRefunds[$paymentId] ?? []);
+    }
+
+    /**
+     * Deterministic, network-free outbound refund.
+     *
+     * Mirrors the Razorpay mapping: the stable logical identity travels as
+     * `receipt` (truncated) + `notes.idempotency_key` (full) and is echoed
+     * back by fetchRefunds() for orphan re-attachment. The refund id is
+     * derived from (payment id, amount, idempotency key) so replaying the
+     * same logical request yields the same provider id without shared state.
+     * Pass ['fail' => true] (or failNextRefund()) to simulate a definite
+     * gateway rejection; loseNextRefundResponse() simulates an accepted
+     * refund whose response never arrives.
+     */
+    public function refundPayment(string $paymentId, ?int $amountPaise = null, array $options = []): ProviderRefundResult
+    {
+        if (self::$failNextRefund || ($options['fail'] ?? false) === true) {
+            self::$failNextRefund = false;
+
+            throw new PaymentProviderException('Stub refund failed (injected).');
+        }
+
+        if ($paymentId === '') {
+            throw new PaymentProviderException('Stub refund failed.');
+        }
+
+        $amount = (int) ($amountPaise ?? $options['captured_amount'] ?? 0);
+        $currency = strtoupper((string) ($options['currency'] ?? config('payment.currency', 'INR')));
+        $key = (string) ($options['idempotency_key'] ?? '');
+
+        $refundId = 'stub_rfnd_'.substr(
+            hash_hmac('sha256', $paymentId.'|'.$amount.'|'.$key, (string) config('app.key')),
+            0,
+            16
+        );
+
+        // Provider-side state lands BEFORE any response is delivered, exactly
+        // like a real gateway: a lost response still leaves a live refund.
+        self::$issuedRefunds[$paymentId][] = [
+            'id' => $refundId,
+            'amount' => $amount,
+            'currency' => $currency,
+            'status' => 'processed',
+            'receipt' => $key !== '' ? substr($key, 0, 40) : null,
+            'idempotency_key' => $key !== '' ? $key : null,
+        ];
+
+        if (self::$loseNextRefundResponse) {
+            self::$loseNextRefundResponse = false;
+
+            throw new PaymentProviderException('Stub refund response lost (injected).');
+        }
+
+        return new ProviderRefundResult(
+            provider: 'stub',
+            refundId: $refundId,
+            paymentId: $paymentId,
+            amountPaise: $amount,
+            currency: $currency,
+            status: 'processed',
+            metadata: ['stub' => true],
+        );
+    }
+
+    /**
+     * Authoritative provider-side listing (in-memory; always available).
+     *
+     * @return array<int, array{id: string, amount: int, currency: string, status: string, receipt: ?string, idempotency_key: ?string}>
+     */
+    public function fetchRefunds(string $paymentId): ?array
+    {
+        if ($paymentId === '') {
+            return null;
+        }
+
+        return self::issuedRefundsFor($paymentId);
     }
 
     /* ---------------- token encoding ---------------- */

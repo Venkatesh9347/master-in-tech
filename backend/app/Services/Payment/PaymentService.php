@@ -3,14 +3,20 @@
 namespace App\Services\Payment;
 
 use App\Models\CourseEnrollment;
+use App\Models\PaymentRefund;
 use App\Models\PaymentTransaction;
 use App\Models\PaymentWebhookEvent;
 use App\Services\Payment\Data\PaymentOrder;
+use App\Services\Payment\Exceptions\PaymentNotConfiguredException;
+use App\Services\Payment\Exceptions\PaymentProviderException;
+use App\Services\Payment\Exceptions\PaymentRefundException;
 use App\Services\Payment\Exceptions\PaymentVerificationException;
 use App\Services\Payment\Providers\RazorpayProvider;
 use App\Services\Payment\Providers\StubPaymentProvider;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Payment orchestration layer.
@@ -368,16 +374,24 @@ class PaymentService
                 'captured', 'paid' => 'paid',
                 'authorized' => 'authorized',
                 'failed', 'cancelled' => 'failed',
+                'partially_refunded' => 'partially_refunded',
                 'refunded' => 'refunded',
                 default => $transaction->status,
             };
 
-            // Terminal states are append-only with one forward exception: a paid
-            // row may move to refunded, but refunded rows never change again and
-            // paid rows never downgrade to anything else.
-            $isDowngrade = $newStatus !== $transaction->status
-                && ! ($transaction->status === 'paid' && $newStatus === 'refunded');
-            if (in_array($transaction->status, ['paid', 'refunded'], true) && $isDowngrade) {
+            // Terminal states are append-only with forward-only refund
+            // progression: paid -> partially_refunded -> refunded. A refunded
+            // row never changes again; paid/partially_refunded rows never
+            // downgrade to anything else.
+            $forwardOnly = [
+                'paid' => ['partially_refunded', 'refunded'],
+                'partially_refunded' => ['refunded'],
+                'refunded' => [],
+            ];
+
+            if (array_key_exists($transaction->status, $forwardOnly)
+                && $newStatus !== $transaction->status
+                && ! in_array($newStatus, $forwardOnly[$transaction->status], true)) {
                 return $transaction;
             }
 
@@ -508,6 +522,445 @@ class PaymentService
     public function recordRefund(string $paymentId, array $context = []): ?PaymentTransaction
     {
         return $this->applyPaymentEvent($paymentId, 'refunded', $context);
+    }
+
+    /**
+     * Total amount (paise) already refunded for a transaction across all
+     * `succeeded` refund ledger rows. Failed provider attempts never reduce
+     * the remaining refundable amount.
+     */
+    public function refundedAmountFor(PaymentTransaction $transaction): int
+    {
+        return (int) PaymentRefund::where('payment_transaction_id', $transaction->id)
+            ->where('status', PaymentRefund::STATUS_SUCCEEDED)
+            ->sum('amount_paise');
+    }
+
+    /**
+     * Remaining refundable amount (paise): captured minus succeeded refunds,
+     * floored at zero.
+     */
+    public function remainingRefundableFor(PaymentTransaction $transaction): int
+    {
+        return max(0, (int) $transaction->amount_paise - $this->refundedAmountFor($transaction));
+    }
+
+    /**
+     * Phase 1 of initiateRefund: reconcile authoritative provider refund
+     * state into the local ledger before any new refund may be issued.
+     *
+     * Runs in its own transaction so reconciled truth commits even when the
+     * subsequent issue phase rejects the request. Discovers orphans from
+     * lost-response attempts (and out-of-band dashboard refunds) and records
+     * them as `reconciled` rows, restoring the original logical identity
+     * from `notes.idempotency_key` so a same-key retry replays the original
+     * row instead of issuing a second provider refund.
+     *
+     * Fails closed when provider state is unreachable: issuing blind while
+     * unable to verify is exactly how double refunds happen.
+     *
+     * @throws PaymentRefundException
+     */
+    public function reconcileProviderRefunds(PaymentTransaction $transaction, string $providerName, int $adminId): void
+    {
+        DB::transaction(function () use ($transaction, $providerName, $adminId) {
+            $locked = PaymentTransaction::where('id', $transaction->id)->lockForUpdate()->first();
+
+            if ($locked === null || $locked->provider !== $providerName) {
+                throw new PaymentRefundException('payment_not_found', (string) $transaction->payment_id);
+            }
+
+            if (! in_array($locked->status, ['paid', 'partially_refunded'], true)) {
+                return;
+            }
+
+            if ((string) $locked->payment_id === '') {
+                return;
+            }
+
+            try {
+                $remote = $this->provider()->fetchRefunds((string) $locked->payment_id);
+            } catch (PaymentNotConfiguredException $e) {
+                throw new PaymentRefundException('provider_not_configured', (string) $locked->payment_id);
+            } catch (\Throwable $e) {
+                $remote = null;
+            }
+
+            if ($remote === null) {
+                Log::warning('payment.refund.reconcile_unavailable', [
+                    'provider' => $providerName,
+                    'payment_transaction_id' => $locked->id,
+                ]);
+
+                throw new PaymentRefundException('provider_failed', (string) $locked->payment_id);
+            }
+
+            $inserted = [];
+
+            foreach ($remote as $item) {
+                if (! is_array($item) || (string) ($item['id'] ?? '') === '') {
+                    continue;
+                }
+
+                // Failed/cancelled provider refunds moved no money: ignore.
+                if (in_array(strtolower((string) ($item['status'] ?? '')), ['failed', 'cancelled'], true)) {
+                    continue;
+                }
+
+                $already = PaymentRefund::where('provider', $providerName)
+                    ->where('provider_refund_id', (string) $item['id'])
+                    ->first();
+
+                if ($already !== null) {
+                    continue;
+                }
+
+                // Restore the original logical identity when the provider
+                // echoes it back; otherwise key by the provider refund id so
+                // concurrent reconcilers still converge on one row.
+                $key = (isset($item['idempotency_key']) && is_string($item['idempotency_key']) && $item['idempotency_key'] !== '')
+                    ? substr($item['idempotency_key'], 0, 120)
+                    : substr('reconciled_'.(string) $item['id'], 0, 120);
+
+                try {
+                    $inserted[] = PaymentRefund::create([
+                        'payment_transaction_id' => $locked->id,
+                        'provider' => $providerName,
+                        'provider_refund_id' => (string) $item['id'],
+                        'idempotency_key' => $key,
+                        'initiated_by' => $adminId,
+                        'amount_paise' => max(0, (int) ($item['amount'] ?? 0)),
+                        'currency' => (string) ($item['currency'] !== '' ? $item['currency'] : $locked->currency),
+                        'status' => PaymentRefund::STATUS_SUCCEEDED,
+                        'source' => PaymentRefund::SOURCE_RECONCILED,
+                        'metadata' => ['reconciled' => true],
+                    ]);
+                } catch (QueryException $e) {
+                    if (! $this->isUniqueViolation($e)) {
+                        throw $e;
+                    }
+                    // A concurrent reconciler or webhook recorded it first.
+                }
+            }
+
+            if ($inserted === []) {
+                return;
+            }
+
+            // The transaction status must reflect provider truth discovered
+            // above, even though no new refund was issued in this request.
+            $cumulative = $this->refundedAmountFor($locked);
+            $old = $locked->toArray();
+
+            if ($cumulative >= (int) $locked->amount_paise) {
+                $locked->fill(['status' => 'refunded']);
+            } elseif ($cumulative > 0 && $locked->status === 'paid') {
+                $locked->fill(['status' => 'partially_refunded']);
+            }
+
+            if ($locked->isDirty('status')) {
+                $locked->save();
+            }
+
+            \App\Models\AuditLog::log('payment_refund_reconciled', $locked, $old, [
+                'payment_transaction_id' => $locked->id,
+                'provider' => $providerName,
+                'reconciled_refund_ids' => array_map(
+                    static fn (PaymentRefund $r): ?string => $r->provider_refund_id,
+                    $inserted
+                ),
+                'reconciled_amount_paise' => array_sum(
+                    array_map(static fn (PaymentRefund $r): int => (int) $r->amount_paise, $inserted)
+                ),
+                'currency' => (string) $locked->currency,
+                'initiated_by' => $adminId,
+            ]);
+        });
+    }
+
+    /**
+     * Administrator-initiated outbound refund (P1-A).
+     *
+     * Unknown-outcome safety (Blocker 2): the gateway offers NO
+     * provider-side idempotency for refunds (no Idempotency-Key support;
+     * `receipt`/`notes` are correlation aids only, verified against the
+     * installed SDK + Razorpay docs). A lost response after gateway
+     * acceptance therefore looks identical to a definite failure. To ensure
+     * such an ambiguous outcome can never silently become a second refund,
+     * every attempt runs in two phases:
+     *
+     * Phase 1 — reconcile: under lock, fetch the authoritative provider
+     * refund list and persist any provider refunds missing from the local
+     * ledger (source `reconciled`, original logical identity restored from
+     * `notes.idempotency_key`). If provider state is unreachable the request
+     * fails closed (retryable) instead of issuing blind.
+     *
+     * Phase 2 — issue: under lock, re-check the remaining amount (now
+     * including reconciled orphans), replay same-key duplicates, and only
+     * then call the gateway.
+     *
+     * Further guarantees:
+     * - Only paid/partially_refunded transactions are refundable; uncaptured,
+     *   failed, or already-refunded rows are rejected.
+     * - The amount is validated (> 0, never above the remaining refundable
+     *   amount computed from previously recorded refunds). A null amount
+     *   refunds exactly the remaining balance — never the original captured
+     *   amount again after a prior partial.
+     * - The payment row is locked (lockForUpdate) before the remaining amount
+     *   is calculated and re-checked, so two simultaneous requests cannot both
+     *   conclude the same amount is refundable.
+     * - Replaying the same idempotency key returns the original refund row
+     *   instead of refunding twice (unique key backstop on races). A reused
+     *   key with a different explicit amount is a 409 conflict.
+     * - Definite provider failure persists no successful refund row and
+     *   fabricates no provider refund id; the failure is audit-logged via the
+     *   existing AuditLog convention plus server-side diagnostics, and the
+     *   request stays retryable.
+     * - Enrollment access is never touched: revoking access after a refund is
+     *   an explicit admin decision, not an automatic side effect.
+     *
+     * @param  array{idempotency_key?: ?string, reason?: ?string}  $options
+     *
+     * @throws PaymentRefundException with a client-safe reason code
+     */
+    public function initiateRefund(
+        PaymentTransaction $transaction,
+        ?int $amountPaise,
+        int $adminId,
+        array $options = []
+    ): PaymentRefund {
+        $this->ensureProductionPaymentConfigured();
+
+        $providerName = $this->providerName();
+        $requestedKey = isset($options['idempotency_key']) && is_string($options['idempotency_key']) && $options['idempotency_key'] !== ''
+            ? substr($options['idempotency_key'], 0, 120)
+            : null;
+        $reason = isset($options['reason']) && is_string($options['reason']) ? substr(trim($options['reason']), 0, 500) : null;
+
+        try {
+            // Phase 1 commits independently: reconciled (true) provider state
+            // must survive even when phase 2 then rejects the request.
+            $this->reconcileProviderRefunds($transaction, $providerName, $adminId);
+
+            return DB::transaction(function () use ($transaction, $amountPaise, $adminId, $providerName, $requestedKey, $reason) {
+                // Lock the payment row first: every concurrent refund for this
+                // payment serializes here, and the remaining-amount re-check
+                // below runs inside the lock.
+                $locked = PaymentTransaction::where('id', $transaction->id)->lockForUpdate()->first();
+
+                if ($locked === null) {
+                    throw new PaymentRefundException('payment_not_found', (string) $transaction->payment_id);
+                }
+
+                if ($locked->provider !== $providerName) {
+                    throw new PaymentRefundException('payment_not_found', (string) $locked->payment_id);
+                }
+
+                $key = $requestedKey ?? 'refund_'.Str::random(32);
+
+                // Same-key replay first: an exact duplicate of a completed
+                // logical request returns the original row even when the
+                // transaction has since reached `refunded` (e.g. the retry
+                // that reconciled the orphan which completed the refund).
+                // A reused key for a different payment or a different
+                // explicit amount is a conflict, never a silent replay.
+                $duplicate = PaymentRefund::where('provider', $providerName)
+                    ->where('idempotency_key', $key)
+                    ->first();
+
+                if ($duplicate !== null) {
+                    if ((int) $duplicate->payment_transaction_id !== (int) $locked->id) {
+                        throw new PaymentRefundException('idempotency_key_conflict', (string) $locked->payment_id);
+                    }
+
+                    if ($amountPaise !== null && (int) $duplicate->amount_paise !== $amountPaise) {
+                        throw new PaymentRefundException('idempotency_key_conflict', (string) $locked->payment_id);
+                    }
+
+                    return $duplicate;
+                }
+
+                if (! in_array($locked->status, ['paid', 'partially_refunded'], true)) {
+                    throw new PaymentRefundException(
+                        $locked->status === 'refunded' ? 'already_refunded' : 'not_refundable',
+                        (string) $locked->payment_id
+                    );
+                }
+
+                if ((string) $locked->payment_id === '') {
+                    throw new PaymentRefundException('not_refundable', '');
+                }
+
+                $remaining = $this->remainingRefundableFor($locked);
+
+                if ($remaining <= 0) {
+                    throw new PaymentRefundException('already_refunded', (string) $locked->payment_id);
+                }
+
+                $amount = $amountPaise ?? $remaining;
+
+                if ($amount <= 0) {
+                    throw new PaymentRefundException('invalid_amount', (string) $locked->payment_id);
+                }
+
+                if ($amount > $remaining) {
+                    throw new PaymentRefundException('amount_exceeds_remaining', (string) $locked->payment_id);
+                }
+
+                try {
+                    $result = $this->provider()->refundPayment(
+                        (string) $locked->payment_id,
+                        $amount,
+                        ['idempotency_key' => $key, 'currency' => (string) $locked->currency]
+                    );
+                } catch (PaymentNotConfiguredException $e) {
+                    throw new PaymentRefundException('provider_not_configured', (string) $locked->payment_id);
+                } catch (PaymentProviderException $e) {
+                    throw new PaymentRefundException('provider_failed', (string) $locked->payment_id);
+                }
+
+                if ($result->refundId === '') {
+                    Log::warning('payment.refund.missing_refund_id', [
+                        'provider' => $providerName,
+                        'payment_id' => (string) $locked->payment_id,
+                    ]);
+
+                    throw new PaymentRefundException('provider_failed', (string) $locked->payment_id);
+                }
+
+                try {
+                    $refund = PaymentRefund::create([
+                        'payment_transaction_id' => $locked->id,
+                        'provider' => $providerName,
+                        'provider_refund_id' => $result->refundId,
+                        'idempotency_key' => $key,
+                        'initiated_by' => $adminId,
+                        'amount_paise' => $amount,
+                        'currency' => (string) $locked->currency,
+                        'status' => PaymentRefund::STATUS_SUCCEEDED,
+                        'source' => PaymentRefund::SOURCE_ADMIN,
+                        'metadata' => array_filter(['reason' => $reason]),
+                    ]);
+                } catch (QueryException $e) {
+                    if (! $this->isUniqueViolation($e)) {
+                        throw $e;
+                    }
+
+                    // Same-key race: the winner already committed; return its
+                    // row instead of refunding twice.
+                    $winner = PaymentRefund::where('provider', $providerName)
+                        ->where('idempotency_key', $key)
+                        ->first();
+
+                    if ($winner !== null && (int) $winner->payment_transaction_id === (int) $locked->id) {
+                        return $winner;
+                    }
+
+                    throw new PaymentRefundException('idempotency_key_conflict', (string) $locked->payment_id);
+                }
+
+                $cumulative = $this->refundedAmountFor($locked);
+                $newStatus = $cumulative >= (int) $locked->amount_paise ? 'refunded' : 'partially_refunded';
+                $old = $locked->toArray();
+
+                $locked->fill(['status' => $newStatus]);
+                $locked->save();
+
+                // Single audited admin action (safe fields only: no secrets,
+                // no gateway payloads, no customer PII beyond internal ids).
+                \App\Models\AuditLog::log('payment_refund_initiated', $locked, $old, [
+                    'payment_transaction_id' => $locked->id,
+                    'provider' => $providerName,
+                    'provider_refund_id' => $result->refundId,
+                    'amount_paise' => $amount,
+                    'currency' => (string) $locked->currency,
+                    'remaining_refundable_paise' => max(0, (int) $locked->amount_paise - $cumulative),
+                    'initiated_by' => $adminId,
+                    'reason' => $reason,
+                ]);
+
+                return $refund->fresh() ?? $refund;
+            });
+        } catch (PaymentRefundException $e) {
+            // Failed attempts are audit-logged under the existing convention
+            // (no second mechanism) without persisting a refund row, so a
+            // retry with the same logical key re-attempts the provider instead
+            // of replaying a failure. Provider-side failure details stay in
+            // server logs; the reason code stays client-safe.
+            if (in_array($e->reasonCode(), ['provider_failed', 'provider_not_configured'], true)) {
+                Log::warning('payment.refund.rejected', [
+                    'reason' => $e->reasonCode(),
+                    'payment_transaction_id' => $transaction->id,
+                    'admin_id' => $adminId,
+                ]);
+
+                \App\Models\AuditLog::log('payment_refund_failed', $transaction, null, [
+                    'payment_transaction_id' => $transaction->id,
+                    'reason' => $e->reasonCode(),
+                    'initiated_by' => $adminId,
+                ]);
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Reconcile an inbound provider refund webhook against the outbound
+     * refund ledger. When the provider refund id was already recorded by an
+     * administrator-initiated refund, the webhook is acknowledged without
+     * creating a duplicate row; otherwise the refund is recorded as
+     * webhook-sourced and the existing terminal-state rules apply.
+     */
+    public function reconcileInboundRefund(
+        string $provider,
+        string $providerRefundId,
+        string $paymentId,
+        ?int $amountPaise,
+        array $context = []
+    ): ?PaymentTransaction {
+        if ($providerRefundId !== '') {
+            $existing = PaymentRefund::where('provider', $provider)
+                ->where('provider_refund_id', $providerRefundId)
+                ->first();
+
+            if ($existing !== null) {
+                return $existing->transaction;
+            }
+        }
+
+        $transaction = $this->findByProviderAndPayment($provider, $paymentId);
+
+        if ($transaction === null) {
+            return null;
+        }
+
+        // Record the provider refund exactly once (provider retries of the
+        // same delivery hit the unique index and fall through to the stored
+        // row instead of double-counting).
+        if ($providerRefundId !== '') {
+            try {
+                PaymentRefund::create([
+                    'payment_transaction_id' => $transaction->id,
+                    'provider' => $provider,
+                    'provider_refund_id' => $providerRefundId,
+                    'idempotency_key' => 'webhook_'.$providerRefundId,
+                    'initiated_by' => null,
+                    'amount_paise' => (int) ($amountPaise ?? $transaction->amount_paise),
+                    'currency' => (string) $transaction->currency,
+                    'status' => PaymentRefund::STATUS_SUCCEEDED,
+                    'source' => PaymentRefund::SOURCE_WEBHOOK,
+                    'metadata' => [],
+                ]);
+            } catch (QueryException $e) {
+                if (! $this->isUniqueViolation($e)) {
+                    throw $e;
+                }
+                // Concurrent duplicate delivery already recorded it.
+            }
+        }
+
+        return $this->recordRefund($paymentId, $context);
     }
 
     /**

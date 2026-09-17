@@ -145,12 +145,18 @@ class PaymentWebhookController extends Controller
 
                 return response()->json(['error' => 'No payment id in event.'], 422);
             }
-            $transaction = $payments->recordRefund($refundPaymentId, [
-                'provider' => $provider,
-                'event' => $eventName,
-                'refund_id' => (string) ($entity['id'] ?? ''),
-                'webhook_received_at' => now()->toISOString(),
-            ]);
+            $transaction = $payments->reconcileInboundRefund(
+                $provider,
+                (string) ($entity['id'] ?? ''),
+                $refundPaymentId,
+                isset($entity['amount']) && is_numeric($entity['amount']) ? (int) $entity['amount'] : null,
+                [
+                    'provider' => $provider,
+                    'event' => $eventName,
+                    'refund_id' => (string) ($entity['id'] ?? ''),
+                    'webhook_received_at' => now()->toISOString(),
+                ]
+            );
         } else {
             $transaction = $payments->processWebhookPayment($provider, $entity, $status);
         }

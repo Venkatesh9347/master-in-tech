@@ -471,4 +471,21 @@ class FakePaymentProvider implements PaymentProviderInterface
 
         return $this->paymentEntity;
     }
+
+    public function refundPayment(string $paymentId, ?int $amountPaise = null, array $options = []): \App\Services\Payment\Data\ProviderRefundResult
+    {
+        return new \App\Services\Payment\Data\ProviderRefundResult(
+            provider: $this->orderProvider,
+            refundId: 'fake_rfnd_test',
+            paymentId: $paymentId,
+            amountPaise: (int) ($amountPaise ?? 0),
+            currency: 'INR',
+            status: 'processed',
+        );
+    }
+
+    public function fetchRefunds(string $paymentId): ?array
+    {
+        return [];
+    }
 }

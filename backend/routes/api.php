@@ -50,6 +50,7 @@ use App\Http\Controllers\Api\TutorQuizController;
 use App\Http\Controllers\Api\VideoPlaybackController;
 use App\Http\Controllers\Api\VideoUploadController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\AdminPaymentController;
 use App\Http\Controllers\Api\PaymentWebhookController;
 use App\Http\Controllers\Api\LiveKitWebhookController;
 use App\Models\LessonProgress;
@@ -690,6 +691,9 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
 
     // Admin Student Enrollments & Course Assignment Management
     Route::get('/admin/enrollments/stats', [AdminEnrollmentController::class, 'stats']);
+
+    // Admin Payment Refunds (outbound, admin-only, audited; never revokes enrollment)
+    Route::post('/admin/payments/{payment}/refund', [AdminPaymentController::class, 'refund']);
     Route::get('/admin/enrollments', [AdminEnrollmentController::class, 'index']);
     Route::get('/admin/students/{user}/enrollments', [AdminEnrollmentController::class, 'studentEnrollments']);
     Route::post('/admin/enrollments', [AdminEnrollmentController::class, 'store']);
