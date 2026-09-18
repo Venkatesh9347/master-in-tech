@@ -68,7 +68,15 @@ jobs:
           php artisan migrate --force --no-interaction
 
       - name: Run backend test suite
-        run: php artisan test
+        run: php vendor/bin/phpunit --log-junit storage/logs/phpunit.xml
+
+      - name: Upload PHPUnit diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpunit-junit-backend
+          path: backend/storage/logs/phpunit.xml
+          if-no-files-found: error
 
   frontend:
     name: Frontend (Node ${{ matrix.node }})
