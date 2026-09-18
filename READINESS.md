@@ -1,6 +1,6 @@
 # MasterInTech — End-to-End Readiness
 
-**Branch:** `integration/master-intech-complete` · **Release HEAD:** `9fbd328` ("security: close release remediation findings"; S-01/S-02A/S-03/S-04 + Disclosure + NEW-SEC-01/02/03, 8 modified + 4 new test files)
+**Branch:** `integration/master-intech-complete` · **Release HEAD:** `1a71b84` ("chore: harden legacy materials and video storage"; checkpoint chain P1-A → P1-C → P1-E → P1-F → P1-G → P1-B → P2-1, see §1c)
 **Scope:** Repository-only readiness. This document records what is **verified in-repo**, what is **pending**, and the **external/deployment blockers** that cannot be resolved inside this repository (no credentials/infrastructure provisioned here).
 
 > Security/correctness posture: every P0/P1 finding remediated in-repo is applied, and the S-01/S-02A/S-03/S-04 + Admin-Exception-Disclosure + NEW-SEC-01/02/03 remediation queue is complete and verified (see §7). Test suite is green. No `.env`/real secrets are committed (all `.env` files are gitignored and untracked).
@@ -9,7 +9,7 @@
 
 ## 1. Verified in-repo items (FIXED)
 
-Automated evidence: **backend** `phpunit` → **738 tests / 4283 assertions passing**; **frontend** `tsc --noEmit` → clean.
+Automated evidence (latest verified repository baseline): **backend** `phpunit` → **909 tests / 5240 assertions passing**; **frontend** `vitest run` → **73 tests / 11 files passing**, `tsc -b` → clean, `vite build` → succeeds.
 
 | Area | Finding | Fix (file) |
 |------|---------|-----------|
@@ -58,6 +58,26 @@ Automated evidence: **backend** `phpunit` → **738 tests / 4283 assertions pass
 | **NEW-SEC-03** | Login account-enumeration oracle | unified generic 422 for bad-credentials/blocked/unapproved states (`AuthController::login`); `LoginEnumerationTest` (5 tests) |
 
 ---
+
+## 1c. Later checkpoints (verified, newest first)
+
+| Checkpoint | Scope | Evidence |
+|---|---|---|
+| P2-1 storage hardening | legacy materials migration command, orphan HLS-dir reaper, live-chat 150 cap | 17 focused tests; full suite green |
+| P1-B pagination | server-paginated high-growth admin lists + shared pager | `PaginationTest` (20 tests); full suite green |
+| P1-G revoked certificates | active-only certificate counting in mock eligibility | 8 focused tests; full suite green |
+| P1-F eligibility pagination | roster pagination + batched N+1 + exact filtered pagination | 19 + 11 + 4 tests; full suite green |
+| P1-E assignment pagination | submissions index pagination | 12 + 4 tests; full suite green |
+| P1-C certificate revocation | active → revoked, verification/download guards, audit | 18 tests; full suite green |
+| P1-A outbound refunds | provider abstraction, idempotency, reconciliation, admin endpoint | 27 tests; full suite green |
+
+## 1d. Product decision required (NOT implemented)
+
+**Course prerequisites — PRODUCT DECISION REQUIRED.** `courses.prerequisites`
+is free-text/JSON marketing data only; the repository defines no
+course-to-course prerequisite relationship, no ALL-vs-ANY semantics, no
+prerequisite completion rule, and no administrator override behavior.
+Do not implement prerequisite enforcement speculatively.
 
 ## 2. Classification: NOT-A-REAL-ISSUE / BY-DESIGN (no change)
 
@@ -117,11 +137,12 @@ These require real infrastructure and credential provisioning — deliberately *
 cd backend
 composer install
 php artisan migrate:fresh --seed
-php vendor/bin/phpunit            # expect 738 tests / 4283 assertions
+php vendor/bin/phpunit            # expect 909 tests / 5186 assertions
 
 # frontend
 cd ../frontend
 npm install
 npx tsc --noEmit                  # expect exit 0
+npx vitest run                    # expect 73 tests / 11 files passing
 npm run dev
 ```

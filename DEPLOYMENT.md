@@ -266,8 +266,13 @@ php artisan queue:work --sleep=1 --tries=3        # foreground
 
 ## 12. Scheduler / cron
 
-One scheduled command exists: `mit:prune-stale-sessions`
-(prunes stale playback sessions every day at 03:00):
+Three scheduled maintenance commands exist (see `routes/console.php`):
+
+| Command | Schedule | Purpose |
+|---|---|---|
+| `mit:prune-stale-sessions` | daily 03:00 | Delete expired video playback sessions and login OTPs |
+| `mit:migrate-legacy-materials --apply` | daily 03:15 | Move legacy public class-material files to private storage after byte-identical verification |
+| `mit:prune-orphan-video-dirs --apply` | daily 03:45 | Delete orphaned per-asset HLS directories with no `VideoAsset` row |
 
 ```bash
 # Option A - keep a single supervising process alive:
@@ -277,7 +282,21 @@ php artisan schedule:work
 # * * * * * cd /path/to/backend && php artisan schedule:run >> /dev/null 2>&1
 ```
 
-`mit:prune-stale-sessions` runs guard rails (`withoutOverlapping`,
+Exactly one scheduler tick must fire the Laravel schedule (one `schedule:work`
+process or one cron line per node; `onOneServer` + `withoutOverlapping`
+dedupe multi-node ticks). Each command additionally guards itself with the
+shared distributed lock (`RedisHealthService`, graceful single-process
+fallback), so only one runner executes the work.
+
+Behavior notes:
+
+- All three commands are **idempotent**: re-running a tick that already
+  converged is a no-op summary.
+- The two storage commands are **dry-run by default** (`--apply` performs
+  deletions, and only after verification: byte-identical SHA-256 copies for
+  materials; row-absence + root containment + 24h grace for video dirs).
+  Manual runs without `--apply` only report what would change.
+- `mit:prune-stale-sessions` runs guard rails (`withoutOverlapping`,
 `onOneServer`, distributed cache lock) so a single runner is safe even on
 multi-node deployments.
 
@@ -350,6 +369,20 @@ confirm endpoint and the webhook converge on the same paid-transition logic
 (stored `payment_id` association + enrollment activation), so exactly one
 `course_enrollments` row is created regardless of which event arrives first.
 `PAYMENT_IDEMPOTENCY=true` gives at-most-once order creation.
+
+**Outbound refunds (admin-initiated).** `POST /api/admin/payments/{payment}/refund`
+(admin-only) issues full refunds (omit `amount`) or partial refunds (amount in
+currency subunits) through the same provider abstraction. Behavior implemented
+in code: the remaining refundable amount is calculated under a row lock from
+previously recorded refunds; repeated requests with the same idempotency key
+return the original refund instead of refunding twice; before issuing, the
+service reconciles authoritative provider refund state so an ambiguous
+prior outcome (gateway accepted, response lost) is recorded rather than
+refunded a second time; provider failures persist no successful refund and
+never fabricate a provider refund id; error responses carry only a reason
+code (no credentials, payloads, or traces); successful refunds are audited
+and never revoke enrollment automatically. Inbound `refund.*` webhooks
+reconcile against the same ledger instead of duplicating rows.
 
 ---
 
@@ -585,7 +618,7 @@ fresh one.
 | Rates blocked after moving behind LB | `TRUSTED_PROXIES` mis-set / 0.0.0.0 spoof — §23 |
 | HSTS/secure-cookie warnings behind proxy | Set `SECURITY_HSTS_FORCE=true` and TLS terminator + `TRUSTED_PROXIES` |
 | `config:cache` and env changes seem ignored | Re-run `php artisan optimize:clear` after editing `.env` — §24 |
-| 528→544… test count | Suite updated; see `READMEINESS.md` for the verified-baseline record |
+| test count differs from an older note | Suite grows with checkpoints; latest verified baseline is backend 909 tests / 5186 assertions — see `READINESS.md` |
 
 ---
 
@@ -597,23 +630,36 @@ fresh one.
   callers. `backend/bootstrap/app.php` additionally sanitizes API error
   responses regardless of this flag, but the flag must still be `false`.)
 - [ ] `APP_KEY` set (and `APP_PREVIOUS_KEYS` during rotation)
+- [ ] `APP_URL` + `FRONTEND_URL` = real HTTPS origins
 - [ ] `DB_*` point at the managed database; `php artisan migrate --force`
   applied
+- [ ] Pre-deployment backup taken (database + `storage/app/private` +
+  secrets) — see §30
 - [ ] `php artisan storage:link` run; `storage/` + `bootstrap/cache` writable
-- [ ] Queue worker running/mastered (systemd/supervisor)
-- [ ] Scheduler running (`schedule:work` or cron line from §12)
-- [ ] `ffmpeg`/`ffprobe` on `PATH` (or `FFMPEG_BINARY`/`FFPROBE_BINARY`)
+- [ ] Queue worker running/mastered (systemd/supervisor); failed-job
+  monitoring in place
+- [ ] Scheduler running (`schedule:work` or cron line from §12) covering all
+  three maintenance commands
+- [ ] `ffmpeg`/`ffprobe` on `PATH` (or `FFMPEG_BINARY`/`FFPROBE_BINARY`);
+  private video storage writable; disk capacity planned; upload limit reviewed
 - [ ] `LIVEKIT_URL` + `LIVEKIT_API_KEY`/`API_SECRET` set; webhook configured
-- [ ] `PAYMENT_PROVIDER=razorpay` and Razorpay webhook secret configured
-- [ ] Mailer credentials set (`MAIL_*`)
+  and tested
+- [ ] `PAYMENT_PROVIDER=razorpay` and Razorpay webhook secret configured;
+  webhook delivery tested
+- [ ] Mailer credentials set (`MAIL_*`); test delivery works through the
+  queue worker
 - [ ] `AI_PROVIDER` is `stub`, `openai` with `OPENAI_API_KEY`, or `ollama`
   with a reachable daemon (`OLLAMA_BASE_URL`)
 - [ ] `CORS_ALLOWED_ORIGINS`, `SANCTUM_STATEFUL_DOMAINS` = real hosts
+- [ ] `SESSION_SECURE_COOKIE=true`, `SESSION_DOMAIN` set for the deployment
 - [ ] `TRUSTED_PROXIES` = the TLS-hop IPs (and `SECURITY_HSTS_FORCE=true`)
+- [ ] Web-server upload/request size + timeout limits reviewed
 - [ ] Frontend built with `VITE_API_URL=https://api.yourdomain.com/api`
   (production-mode build rejects missing value)
 - [ ] SPA rewrite in place on the static host
-- [ ] `GET /api/health` → 200 + `database.status: ok` from the LB’s domain
+- [ ] Monitoring: Laravel logs aggregated, `failed_jobs` watched,
+  `GET /api/health` → 200 + `database.status: ok` from the LB's domain,
+  scheduler and transcoding failures visible
 - [ ] Seeders untouched in prod (`SEED_ALLOW_PRODUCTION` unset/false)
 
 ---
@@ -647,3 +693,58 @@ What is explicitly NOT claimed:
   Clear Key **for development/testing only** — Clear Key is not production
   protection since the key travels to the browser in the clear.
 - [ ] No `.env*`/keys committed (`git status` clean of secrets)
+
+---
+
+## 30. Backup, restore & rollback
+
+No backup tooling ships in this repository; the procedures below are
+operator responsibilities using the host/provider's standard facilities.
+Retention periods are **operator-defined** (no retention policy exists in
+code). Backups must live off the application host.
+
+### Database
+
+- Take regular dumps of the production database (frequency and retention
+  are operator-defined; keep several generations).
+- Always take a **pre-deployment backup** immediately before running
+  `php artisan migrate --force` on production.
+- Restore by loading a dump into an empty database, then run
+  `php artisan migrate --force` to confirm schema state; verify with
+  `GET /api/health` (`database.status: ok`) and row-count spot checks.
+- Migrations are forward-only by convention — production rollback means
+  restoring the pre-deployment dump, never `migrate:rollback`.
+
+### Private storage
+
+Back up the whole `storage/app/private` tree: uploaded materials,
+lesson video sources, HLS output/segments, AES key material, call
+recordings, and any other private disk content. HLS output and sources
+follow the production storage strategy for the configured disk
+(`local_hls` on host volumes, or the S3-compatible bucket when
+`VIDEO_SECURITY_DRIVER=s3`): back up whichever backend is authoritative,
+including the bucket when S3 is used. Restore by putting the tree back
+before starting the web/worker processes, then verify a private download
+and an HLS manifest load.
+
+### Environment / secrets
+
+- Keep versioned, access-controlled backups of the production backend
+  `.env` and `frontend/.env.production` outside the repository.
+- Never commit secrets (see §5 scope note).
+- During rollback, restore the previous secrets configuration alongside
+  the previous code: a new `APP_KEY` without `APP_PREVIOUS_KEYS`
+  invalidates existing sessions/cookies.
+
+### Rollback
+
+- **Application:** redeploy the previous release commit for backend and
+  frontend (rebuild frontend `dist/` from the pinned commit with the same
+  `VITE_API_URL`).
+- **Database:** restore the pre-deployment dump (forward-only migrations).
+- **Storage:** restore `storage/app/private` from backup when the release
+  touched stored content or migrations affecting file references.
+- **Queue:** stop/drain workers before deploy; failed jobs persist in the
+  `failed_jobs` table across releases — review and retry after rollback.
+- **Environment:** restore the previous secrets set; run
+  `php artisan optimize:clear` after any `.env` change on host deploys.
