@@ -241,9 +241,13 @@ class LiveClassController extends Controller
 
         $this->authorizeCourseAccess($user, $liveClass->course);
 
+        // Bounded chat window matching the classroom chat endpoint: at most
+        // the oldest 150 messages are serialized in one response. History is
+        // retained (nothing is deleted); ordering is unchanged.
         $messages = LiveClassMessage::where('live_class_id', $liveClass->id)
             ->with(['user:id,name,role,avatar'])
             ->orderBy('created_at', 'asc')
+            ->take(150)
             ->get();
 
         return response()->json($messages);

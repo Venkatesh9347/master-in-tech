@@ -29,3 +29,15 @@ Schedule::command('mit:prune-stale-sessions')
     ->dailyAt('03:00')
     ->withoutOverlapping(240)
     ->onOneServer();
+
+// P2 storage hygiene (verify-before-delete, idempotent, lock-guarded):
+// legacy class-material files move off the public disk, and orphaned
+// per-asset HLS directories (row deleted, segments left behind) are reaped.
+Schedule::command('mit:migrate-legacy-materials --apply')
+    ->dailyAt('03:15')
+    ->withoutOverlapping(240)
+    ->onOneServer();
+Schedule::command('mit:prune-orphan-video-dirs --apply')
+    ->dailyAt('03:45')
+    ->withoutOverlapping(240)
+    ->onOneServer();
