@@ -68,8 +68,37 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Missing models: generic 404. The framework default message
             // leaks the model class name, so it must not be echoed.
+            // NOTE: kept as defense in depth; in practice the framework
+            // converts these to NotFoundHttpException (handled next) before
+            // render callbacks run.
             if ($e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
                 return response()->json(['message' => 'Not found.'], 404);
+            }
+
+            // S-01b: findOrFail/firstOrFail (and implicit binding) failures
+            // arrive here as NotFoundHttpException carrying the framework's
+            // "No query results for model [App\Models\X]" message, because
+            // prepareException() converts ModelNotFoundException first. Only
+            // normalize those back to a generic 404 — intentional abort(404)
+            // calls with app-authored messages keep their contract below.
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {
+                $previous = $e->getPrevious();
+
+                if ($previous instanceof \Illuminate\Database\Eloquent\ModelNotFoundException
+                    || str_contains($e->getMessage(), 'No query results for model')) {
+                    return response()->json(['message' => 'Not found.'], 404);
+                }
+            }
+
+            // API unauthenticated without a JSON Accept header: the auth
+            // middleware attempts a browser-style redirect to a `login`
+            // route that does not exist in this API-only app. Answer JSON
+            // 401 for api/* requests instead of a 500. Matched exactly so
+            // genuine routing bugs elsewhere still surface as 500s.
+            if ($e instanceof \Symfony\Component\Routing\Exception\RouteNotFoundException
+                && $request->is('api/*')
+                && $e->getMessage() === 'Route [login] not defined.') {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
             }
 
             // HTTP exceptions (abort(), throttling, method-not-allowed,
