@@ -16,16 +16,9 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(\App\Services\Ai\Contracts\LlmProviderInterface::class, function () {
-            $provider = config('ai.default_provider', 'stub');
-
-            return match ($provider) {
-                'stub' => new \App\Services\Ai\Providers\StubLlmProvider(),
-                'openai' => new \App\Services\Ai\Providers\OpenAiProvider(),
-                'ollama' => new \App\Services\Ai\Providers\OllamaProvider(),
-                default => throw new \RuntimeException(
-                    "Unsupported AI_PROVIDER [{$provider}]. Supported providers: \"stub\", \"openai\", \"ollama\"."
-                ),
-            };
+            return \App\Services\Ai\AiProviderFactory::make(
+                (string) config('ai.default_provider', 'stub')
+            );
         });
 
         $this->app->bind(\App\Services\Payment\PaymentProviderInterface::class, function () {

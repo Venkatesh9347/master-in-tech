@@ -11,6 +11,7 @@ use App\Models\QuizQuestion;
 use App\Models\Section;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -26,6 +27,17 @@ use Tests\TestCase;
 class RateLimitEnforcementTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Test-storage hygiene: the playback-auth limiter test reaches the
+        // controller, which writes enc.key files via the video disk; isolate
+        // them on a wiped fake so nothing persists in development storage.
+        Storage::fake('local');
+        config(['video.storage_disk' => 'local']);
+    }
 
     private function createCourse(array $attributes = []): Course
     {

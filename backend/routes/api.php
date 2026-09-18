@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\AdminCorporatePartnerController;
 use App\Http\Controllers\Api\AdminCrmController;
 use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\AiChatController;
+use App\Http\Controllers\Api\AiAdminController;
 use App\Http\Controllers\Api\AdminEnrollmentController;
 use App\Http\Controllers\Api\AdminEventController;
 use App\Http\Controllers\Api\AdminLiveClassroomController;
@@ -693,9 +694,13 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
     Route::get('/admin/enrollments/stats', [AdminEnrollmentController::class, 'stats']);
 
     // Admin Payment Refunds (outbound, admin-only, audited; never revokes enrollment)
+    Route::get('/admin/payments', [AdminPaymentController::class, 'index']);
+    Route::get('/admin/payments/{payment}', [AdminPaymentController::class, 'show']);
     Route::post('/admin/payments/{payment}/refund', [AdminPaymentController::class, 'refund']);
 
     // Admin Certificate Revocation (explicit active -> revoked, audited)
+    Route::get('/admin/certificates', [CertificateController::class, 'index']);
+    Route::get('/admin/certificates/{certificate}', [CertificateController::class, 'adminShow']);
     Route::post('/admin/certificates/{certificate}/revoke', [CertificateController::class, 'revoke']);
     Route::get('/admin/enrollments', [AdminEnrollmentController::class, 'index']);
     Route::get('/admin/students/{user}/enrollments', [AdminEnrollmentController::class, 'studentEnrollments']);
@@ -767,6 +772,9 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
     // Admin CMS — Website Settings
     Route::get('/admin/settings', [AdminCmsController::class, 'settings']);
     Route::put('/admin/settings', [AdminCmsController::class, 'updateSettings']);
+
+    // AI-0 foundation status (read-only; secrets never exposed)
+    Route::get('/admin/ai/status', [AiAdminController::class, 'status']);
 
     // Admin CMS — Navigation Items
     Route::get('/admin/navigation', [AdminCmsController::class, 'navigation']);

@@ -1,6 +1,6 @@
 # MasterInTech — End-to-End Readiness
 
-**Branch:** `integration/master-intech-complete` · **Release HEAD:** `1a71b84` ("chore: harden legacy materials and video storage"; checkpoint chain P1-A → P1-C → P1-E → P1-F → P1-G → P1-B → P2-1, see §1c)
+**Branch:** `integration/master-intech-complete` · **Latest committed HEAD:** `58a5faa` ("fix: harden API exception responses"). Checkpoint chain P1-A → P1-C → P1-E → P1-F → P1-G → P1-B → P2-1 (see §1c) plus, since `1a71b84`: API exception hardening, migration compatibility hardening, the Admin Refund Console + Admin Certificate Revocation Console (backend read endpoints + frontend desks), and the AI-0 foundation incl. legacy-chat kill-switch remediation (currently **uncommitted working tree** — not part of any committed release). No production infrastructure exists; no production deployment has occurred.
 **Scope:** Repository-only readiness. This document records what is **verified in-repo**, what is **pending**, and the **external/deployment blockers** that cannot be resolved inside this repository (no credentials/infrastructure provisioned here).
 
 > Security/correctness posture: every P0/P1 finding remediated in-repo is applied, and the S-01/S-02A/S-03/S-04 + Admin-Exception-Disclosure + NEW-SEC-01/02/03 remediation queue is complete and verified (see §7). Test suite is green. No `.env`/real secrets are committed (all `.env` files are gitignored and untracked).
@@ -9,7 +9,7 @@
 
 ## 1. Verified in-repo items (FIXED)
 
-Automated evidence (latest verified repository baseline): **backend** `phpunit` → **909 tests / 5240 assertions passing**; **frontend** `vitest run` → **73 tests / 11 files passing**, `tsc -b` → clean, `vite build` → succeeds.
+Automated evidence (latest verified working-tree baseline): **backend** `php artisan test` → **967 tests / 5488 assertions, 0 failures, 0 errors**; **frontend** `vitest run` → **91 tests / 13 files, 91 passed**, `npx tsc -b` → clean (exit 0), `npm run lint` → 0 errors (7 pre-existing warnings in unrelated test files), `npm run build` → succeeds.
 
 | Area | Finding | Fix (file) |
 |------|---------|-----------|
@@ -63,6 +63,11 @@ Automated evidence (latest verified repository baseline): **backend** `phpunit` 
 
 | Checkpoint | Scope | Evidence |
 |---|---|---|
+| AI-0 foundation + legacy-chat kill switch (working tree) | provider gateway (OpenAI/Gemini/Anthropic/Ollama/Stub), usage/cost tracking, admin AI status; legacy `/api/ai/chat` gated with single usage row | `AiGatewayTest` (28 tests) + `AiChatTest` kill-switch/usage additions (4 tests); full suite green |
+| P2 certificate console (working tree) | admin certificate list/detail read endpoints + revocation desk UI | `AdminCertificateListTest` (10 tests) + `AdminCertificates.test.tsx` (12 tests); full suite green |
+| P2 refund console (working tree) | admin payment list/detail read endpoints + refund desk UI | `AdminPaymentListTest` + `AdminRefunds.test.tsx`; full suite green |
+| API exception hardening | sanitized API error envelope independent of `APP_DEBUG` | committed HEAD `58a5faa`; full suite green |
+| Migration compatibility | course_id migration legacy-compatible | committed `c333551`; full suite green |
 | P2-1 storage hardening | legacy materials migration command, orphan HLS-dir reaper, live-chat 150 cap | 17 focused tests; full suite green |
 | P1-B pagination | server-paginated high-growth admin lists + shared pager | `PaginationTest` (20 tests); full suite green |
 | P1-G revoked certificates | active-only certificate counting in mock eligibility | 8 focused tests; full suite green |
@@ -137,12 +142,12 @@ These require real infrastructure and credential provisioning — deliberately *
 cd backend
 composer install
 php artisan migrate:fresh --seed
-php vendor/bin/phpunit            # expect 909 tests / 5186 assertions
+php vendor/bin/phpunit            # expect 967 tests / 5488 assertions, 0 failures, 0 errors
 
 # frontend
 cd ../frontend
 npm install
 npx tsc --noEmit                  # expect exit 0
-npx vitest run                    # expect 73 tests / 11 files passing
+npx vitest run                    # expect 91 tests / 13 files, 91 passed
 npm run dev
 ```

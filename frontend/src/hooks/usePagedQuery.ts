@@ -50,6 +50,10 @@ export function usePagedQuery<T>(
 
   // Stable serialization of filter params (sorted keys, blanks dropped).
   // A primitive string dep: identical filters never retrigger the effect.
+  // `serializedParams` is a plain render-scope string so the memo dep list
+  // stays an array of simple expressions; the memo still recomputes exactly
+  // when the serialized filters change.
+  const serializedParams = JSON.stringify(params, Object.keys(params).sort())
   const paramsKey = useMemo(() => {
     const entries = Object.keys(params)
       .sort()
@@ -62,10 +66,16 @@ export function usePagedQuery<T>(
       }, {})
     return JSON.stringify(entries)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseUrl, JSON.stringify(params, Object.keys(params).sort())])
+  }, [baseUrl, serializedParams])
 
   const callbacksRef = useRef(options)
-  callbacksRef.current = options
+
+  // Keep the latest callbacks without retriggering the fetch effect. Written
+  // in an effect (never during render); every read happens in async promise
+  // handlers, which always run after effects, so the ref is always current.
+  useEffect(() => {
+    callbacksRef.current = options
+  })
 
   const prevKeyRef = useRef(paramsKey)
   const requestIdRef = useRef(0)

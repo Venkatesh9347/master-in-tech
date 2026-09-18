@@ -6,14 +6,20 @@ use App\Models\AiConversation;
 use App\Models\AiMessage;
 use App\Models\User;
 use App\Services\Ai\Contracts\LlmProviderInterface;
-use App\Services\Ai\Data\LlmChatResult;
 use App\Services\Ai\Exceptions\AiProviderException;
 use Illuminate\Support\Str;
 
 class AiOrchestratorService
 {
+    /**
+     * The injected provider pins request attribution (provider name/model);
+     * the actual provider invocation always goes through the gateway so the
+     * AI_ENABLED kill switch, usage recording, and error semantics apply
+     * exactly once — the orchestrator never calls a provider directly.
+     */
     public function __construct(
         private readonly LlmProviderInterface $provider,
+        private readonly AiGatewayService $gateway,
     ) {}
 
     /**
@@ -27,6 +33,10 @@ class AiOrchestratorService
             throw new AiProviderException('Message cannot be empty.', 'AI_VALIDATION_ERROR', 422);
         }
 
+        // Kill switch before any persistence: a disabled request must leave
+        // no conversation, no messages, no provider contact, and no usage row.
+        $this->gateway->ensureEnabled();
+
         $conversation = $this->resolveConversation($user, $message, $conversationId);
 
         $userMessage = AiMessage::create([
@@ -37,16 +47,26 @@ class AiOrchestratorService
 
         $providerMessages = $this->buildProviderMessages($conversation);
 
-        $result = $this->provider->chat($providerMessages, [
+        // Single gateway-mediated provider invocation: enforces AI_ENABLED,
+        // records exactly one AiUsage row, and normalizes errors. The
+        // provider/model are pinned to this conversation's attribution so
+        // resolution behavior matches the previous direct call.
+        $result = $this->gateway->chat($providerMessages, [
+            'provider' => $this->provider->getName(),
             'model' => $conversation->model,
             'max_tokens' => config('ai.max_tokens'),
+            'operation' => 'chat',
+            'user' => $user,
         ]);
 
         $assistantMessage = AiMessage::create([
             'ai_conversation_id' => $conversation->id,
             'role' => 'assistant',
-            'content' => $result->content,
-            'metadata' => $result->metadata,
+            'content' => $result->text,
+            'metadata' => [
+                'provider' => $result->provider,
+                'ai_usage_id' => $result->usageId,
+            ],
         ]);
 
         if (empty($conversation->title)) {
@@ -61,7 +81,7 @@ class AiOrchestratorService
 
         return [
             'conversation' => $conversation->load('messages'),
-            'reply' => $result->content,
+            'reply' => $result->text,
             'user_message' => $userMessage,
             'assistant_message' => $assistantMessage,
         ];

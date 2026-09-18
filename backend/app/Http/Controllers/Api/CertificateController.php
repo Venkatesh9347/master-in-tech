@@ -281,6 +281,67 @@ class CertificateController extends Controller
     }
 
     /**
+     * Admin certificate listing backing the revocation console (read-only).
+     *
+     * Safe projection only: internal id, code, status, timestamps, reason,
+     * revoking admin id, and user/course identity. Never exposes pdf_path,
+     * audit blobs, or storage internals. Filters apply before pagination;
+     * ordering is deterministic (id desc), matching the admin ledger
+     * convention.
+     */
+    public function index(Request $request)
+    {
+        $validated = $request->validate([
+            'status' => ['nullable', 'string', 'max:40'],
+            'course_id' => ['nullable', 'integer', 'min:1'],
+            'search' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $query = Certificate::query()
+            ->with(['user:id,name,email', 'course:id,title'])
+            ->when($validated['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+            ->when($validated['course_id'] ?? null, fn ($q, $courseId) => $q->where('course_id', $courseId))
+            ->when($validated['search'] ?? null, function ($q, $term) {
+                $like = '%' . $term . '%';
+                $q->where(fn ($w) => $w->where('certificate_code', 'like', $like)
+                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', $like)->orWhere('email', 'like', $like))
+                    ->orWhereHas('course', fn ($c) => $c->where('title', 'like', $like)));
+            })
+            ->orderBy('id', 'desc');
+
+        $paginator = $query->paginate($this->perPage($request));
+
+        $paginator->getCollection()->transform(fn (Certificate $certificate) => $this->adminCertificatePayload($certificate));
+
+        return response()->json($paginator);
+    }
+
+    /**
+     * Admin certificate detail backing the revocation console (read-only).
+     *
+     * Explicit lookup (not implicit binding) so unknown ids return a generic
+     * 404 without disclosing model internals. Same safe projection as the
+     * listing plus the revoking administrator's display name.
+     */
+    public function adminShow($certificateId)
+    {
+        $certificate = Certificate::with(['user:id,name,email', 'course:id,title', 'revokedBy:id,name'])
+            ->where('id', $certificateId)
+            ->first();
+
+        if ($certificate === null) {
+            return response()->json(['message' => 'Not found.'], 404);
+        }
+
+        $payload = $this->adminCertificatePayload($certificate);
+        $payload['revoked_by_user'] = $certificate->revokedBy
+            ? $certificate->revokedBy->only(['id', 'name'])
+            : null;
+
+        return response()->json(['certificate' => $payload]);
+    }
+
+    /**
      * Revoke a certificate (admin-only, route middleware).
      *
      * Explicit, append-only active -> revoked transition under a row lock so
@@ -357,6 +418,26 @@ class CertificateController extends Controller
                 'certificate' => $this->revocationPayload($locked->fresh() ?? $locked),
             ]);
         });
+    }
+
+    /**
+     * Admin listing/detail representation (safe fields only: no pdf_path,
+     * audit metadata, or storage internals).
+     */
+    private function adminCertificatePayload(Certificate $certificate): array
+    {
+        return [
+            'id' => $certificate->id,
+            'certificate_code' => $certificate->certificate_code,
+            'status' => $certificate->status ?? Certificate::STATUS_ACTIVE,
+            'issued_at' => $certificate->issued_at?->toISOString(),
+            'revoked_at' => $certificate->revoked_at?->toISOString(),
+            'revoked_by' => $certificate->revoked_by,
+            'revocation_reason' => $certificate->revocation_reason,
+            'user' => $certificate->user ? $certificate->user->only(['id', 'name', 'email']) : null,
+            'course' => $certificate->course ? $certificate->course->only(['id', 'title']) : null,
+            'created_at' => $certificate->created_at?->toISOString(),
+        ];
     }
 
     /**

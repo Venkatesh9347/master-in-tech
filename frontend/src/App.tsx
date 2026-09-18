@@ -92,6 +92,8 @@ const AdminEventForm = lazy(() => import("./pages/AdminEventForm"));
 const AdminEventRegistrations = lazy(() => import("./pages/AdminEventRegistrations"));
 const AdminCurriculum = lazy(() => import("./pages/AdminCurriculum"));
 const AdminSubmissions = lazy(() => import("./pages/AdminSubmissions"));
+const AdminRefunds = lazy(() => import("./pages/admin/AdminRefunds"));
+const AdminCertificates = lazy(() => import("./pages/admin/AdminCertificates"));
 
 // Lightweight Suspense Fallback Loader
 function PageLoadingFallback() {
@@ -228,6 +230,8 @@ function App() {
                 <Route path="events/:id/registrations" element={<AdminEventRegistrations />} />
                 <Route path="courses/:courseId/curriculum" element={<AdminCurriculum />} />
                 <Route path="submissions" element={<AdminSubmissions />} />
+                <Route path="refunds" element={<AdminRefunds />} />
+                <Route path="certificates" element={<AdminCertificates />} />
                 <Route path="grading" element={<Navigate to="/admin/submissions" replace />} />
               </Route>
 

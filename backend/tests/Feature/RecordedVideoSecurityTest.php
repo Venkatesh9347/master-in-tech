@@ -11,6 +11,7 @@ use App\Models\VideoAsset;
 use App\Models\VideoPlaybackSession;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class RecordedVideoSecurityTest extends TestCase
@@ -27,6 +28,12 @@ class RecordedVideoSecurityTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Test-storage hygiene: playback/key endpoints write enc.key files
+        // via the video disk; isolate them on a wiped fake so no persistent
+        // artifacts accumulate in the development storage tree.
+        Storage::fake('local');
+        config(['video.storage_disk' => 'local']);
 
         $this->instructor = User::factory()->create([
             'name' => 'Dr. Video Engineer',

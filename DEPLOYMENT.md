@@ -68,7 +68,7 @@ curl http://127.0.0.1:8001/up          # HTTP 200
 Run the test suite:
 
 ```bash
-php artisan test                       # ~540 tests
+php artisan test                       # 967 tests / 5488 assertions, 0 failures, 0 errors
 ```
 
 ---
@@ -403,11 +403,27 @@ Without a reachable mailer, OTP/notification emails fail (and queued
 
 ## 17. AI configuration
 
-Supported `AI_PROVIDER` values — **exactly three**:
+AI is **optional infrastructure, disabled by default** (`AI_ENABLED=false`).
+`AI_ENABLED=false` disables both new gateway consumers and the legacy
+`POST /api/ai/chat` assistant endpoint: neither path contacts a provider
+while disabled. It is not part of core LMS transaction processing: no AI
+calls originate from models, migrations, middleware, auth, payments,
+enrollments, or certificate issuance. All provider credentials are
+**server-side only** (backend `.env`) — never in the frontend, API
+responses, logs, audit logs, or database records.
+
+Supported `AI_PROVIDER` values — **exactly five**:
 
 - `stub` — offline placeholder (default, no credentials).
 - `openai` — requires `OPENAI_API_KEY` (`OPENAI_BASE_URL` and `OPENAI_MODEL`
   select endpoint/model; `OPENAI_TIMEOUT` tunes client timeouts).
+- `gemini` — requires `GEMINI_API_KEY` (`GEMINI_BASE_URL`,
+  default `https://generativelanguage.googleapis.com/v1beta`, and
+  `GEMINI_MODEL`, default `gemini-2.0-flash`; `GEMINI_TIMEOUT` tunes
+  client timeouts).
+- `anthropic` — requires `ANTHROPIC_API_KEY` (`ANTHROPIC_BASE_URL`,
+  default `https://api.anthropic.com/v1`, and `ANTHROPIC_MODEL`, default
+  `claude-3-5-haiku-latest`; `ANTHROPIC_TIMEOUT` tunes client timeouts).
 - `ollama` — self-hosted local daemon, no API key (`OLLAMA_BASE_URL`
   default `http://127.0.0.1:11434`, `OLLAMA_MODEL` default `llama3.1`,
   `OLLAMA_TIMEOUT` default 120s). Optional: nothing in the application
@@ -416,6 +432,29 @@ Supported `AI_PROVIDER` values — **exactly three**:
 
 Any other value **fails loudly** at service resolution — it never silently
 falls back to another provider, so a typo cannot silently re-route traffic.
+
+### AI-0 foundation gateway (for future features)
+
+- Application code must call `App\Services\Ai\AiGatewayService`
+  (`generate()` / `chat()`), never vendor SDKs or provider adapters
+  directly. The gateway checks `AI_ENABLED`, resolves provider/model,
+  enforces per-provider HTTP timeouts (single attempt, no retries),
+  normalizes the response (`AiResult`: provider, model, text, token
+  usage, request id, latency, finish reason), records usage, and
+  normalizes errors. Embeddings/vector/RAG are explicitly out of scope.
+- Non-secret runtime toggles (`ai.enabled`, `ai.default_provider`,
+  `ai.default_model`, group `ai`) are managed through the existing
+  website-settings endpoint (`PUT /admin/settings`, audited); API keys
+  stay in server environment and are never readable from settings.
+- Effective (secret-free) configuration is visible at
+  `GET /api/admin/ai/status` (admin-only).
+- Every gateway call writes one `ai_usages` row (provider, model,
+  operation, nullable user, token counts, estimated cost, latency,
+  success/error code, request hash). Prompts, responses, and keys are
+  never persisted. Cost estimates come from the `ai.pricing` config
+  table (placeholders — verify current provider pricing before relying
+  on them); unknown models simply estimate nothing and never fail the
+  request.
 
 ---
 
@@ -618,7 +657,7 @@ fresh one.
 | Rates blocked after moving behind LB | `TRUSTED_PROXIES` mis-set / 0.0.0.0 spoof — §23 |
 | HSTS/secure-cookie warnings behind proxy | Set `SECURITY_HSTS_FORCE=true` and TLS terminator + `TRUSTED_PROXIES` |
 | `config:cache` and env changes seem ignored | Re-run `php artisan optimize:clear` after editing `.env` — §24 |
-| test count differs from an older note | Suite grows with checkpoints; latest verified baseline is backend 909 tests / 5186 assertions — see `READINESS.md` |
+| test count differs from an older note | Suite grows with checkpoints; latest verified baseline is backend 967 tests / 5488 assertions, frontend 91 tests / 13 files — see `READINESS.md` |
 
 ---
 

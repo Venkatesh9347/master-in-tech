@@ -52,6 +52,13 @@ class E1VideoPipelineTest extends TestCase
     {
         parent::setUp();
 
+        // Test-storage hygiene: run the whole transcoding workflow against
+        // an isolated fake `local` disk (a real local adapter rooted at a
+        // wiped temp tree, so FFmpeg/ffprobe/Symfony Process keep working
+        // with real paths) instead of the development storage tree. The
+        // existing $assetDirs cleanup below still runs as defense in depth.
+        Storage::fake('local');
+
         $this->admin = User::factory()->create(['role' => 'admin']);
         $this->tutor = User::factory()->create(['role' => 'tutor']);
         $this->student = User::factory()->create(['role' => 'student']);
@@ -117,6 +124,10 @@ class E1VideoPipelineTest extends TestCase
             @unlink($extra);
         }
         self::$extraFixtures = [];
+
+        // Wipe the isolated fake disk so even the final test's scratch
+        // artifacts do not persist (each setUp already starts wiped).
+        Storage::fake('local');
 
         parent::tearDownAfterClass();
     }

@@ -38,6 +38,8 @@ export default function AdminLayout() {
     { label: 'Media Library', to: '/admin/media', icon: '🖼️' },
     { label: 'Events', to: '/admin/events', icon: '📅' },
     { label: 'Grading', to: '/admin/submissions', icon: '📝' },
+    { label: 'Refunds', to: '/admin/refunds', icon: '💸' },
+    { label: 'Certificates', to: '/admin/certificates', icon: '🎓' },
     { label: 'Audit Logs', to: '/admin/audit-logs', icon: '📋' },
   ]
 

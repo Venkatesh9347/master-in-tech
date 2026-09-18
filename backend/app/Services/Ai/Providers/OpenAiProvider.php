@@ -77,6 +77,21 @@ class OpenAiProvider implements LlmProviderInterface
                 'provider' => $this->getName(),
                 'usage' => data_get($response->json(), 'usage'),
             ],
+            inputTokens: $this->intOrNull(data_get($response->json(), 'usage.prompt_tokens')),
+            outputTokens: $this->intOrNull(data_get($response->json(), 'usage.completion_tokens')),
+            totalTokens: $this->intOrNull(data_get($response->json(), 'usage.total_tokens')),
+            requestId: $this->stringOrNull(data_get($response->json(), 'id')),
+            finishReason: $this->stringOrNull(data_get($response->json(), 'choices.0.finish_reason')),
         );
+    }
+
+    private function intOrNull(mixed $value): ?int
+    {
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function stringOrNull(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
     }
 }
