@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -21,13 +22,12 @@ class Batch3DataIntegrityTest extends TestCase
 
     public function test_class_sessions_tutor_id_has_foreign_key_to_users(): void
     {
-        $fks = DB::select("PRAGMA foreign_key_list('class_sessions')");
-
-        $tutorFk = collect($fks)->first(fn ($fk) => $fk->from === 'tutor_id');
+        $tutorFk = collect(Schema::getForeignKeys('class_sessions'))
+            ->first(fn ($fk) => $fk['columns'] === ['tutor_id']);
 
         $this->assertNotNull($tutorFk, 'class_sessions must declare a foreign key on tutor_id');
-        $this->assertSame('users', $tutorFk->table);
-        $this->assertSame('id', $tutorFk->to);
+        $this->assertSame('users', $tutorFk['foreign_table']);
+        $this->assertSame(['id'], $tutorFk['foreign_columns']);
     }
 
     public function test_class_session_with_nonexistent_tutor_is_rejected_by_database(): void
@@ -93,14 +93,25 @@ class Batch3DataIntegrityTest extends TestCase
             'status' => 'active',
         ]);
 
-        $this->expectException(QueryException::class);
-        $this->expectExceptionMessage('UNIQUE constraint failed');
+        try {
+            DB::transaction(fn () => BatchStudent::create([
+                'batch_id' => $batch->id,
+                'user_id' => $student->id,
+                'status' => 'active',
+            ]));
 
-        BatchStudent::create([
-            'batch_id' => $batch->id,
-            'user_id' => $student->id,
-            'status' => 'active',
-        ]);
+            $this->fail('Duplicate active membership should be rejected.');
+        } catch (QueryException $e) {
+            $this->assertContains($e->getCode(), ['23000', '23505']);
+        }
+
+        $this->assertSame(
+            1,
+            BatchStudent::where('batch_id', $batch->id)
+                ->where('user_id', $student->id)
+                ->where('status', 'active')
+                ->count()
+        );
     }
 
     public function test_historical_non_active_memberships_can_coexist(): void

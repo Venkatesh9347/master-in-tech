@@ -25,6 +25,8 @@ class HealthApiTest extends TestCase
 
     public function test_api_health_reports_database_error_without_leaking_details(): void
     {
+        $expectedDriver = config('database.default');
+
         DB::shouldReceive('select')
             ->once()
             ->with('select 1')
@@ -35,7 +37,7 @@ class HealthApiTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('status', 'ok')
             ->assertJsonPath('database.status', 'error')
-            ->assertJsonPath('database.driver', 'sqlite')
+            ->assertJsonPath('database.driver', $expectedDriver)
             ->assertJsonMissingPath('message')
             ->assertJsonMissingPath('exception')
             ->assertJsonMissingPath('trace');
