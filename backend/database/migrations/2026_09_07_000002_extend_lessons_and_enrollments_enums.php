@@ -65,17 +65,23 @@ return new class extends Migration
 
     private function pgsql(array $lessonTypes, array $enrollmentStatuses): void
     {
-        DB::statement('ALTER TABLE lessons DROP CONSTRAINT IF EXISTS lessons_type_check');
+        // Laravel's Schema Builder emits the CHECK inline inside
+        // ALTER COLUMN ... TYPE on PostgreSQL, which is invalid syntax.
+        // Manage the transition with explicit statements instead; value
+        // lists come from the method parameters so up() and down() stay
+        // symmetric. The IF EXISTS guard keeps reruns safe.
+        $lessonList = implode(',', array_map(fn ($value) => "'{$value}'", $lessonTypes));
+        $statusList = implode(',', array_map(fn ($value) => "'{$value}'", $enrollmentStatuses));
 
-        Schema::table('lessons', function (Blueprint $table) use ($lessonTypes) {
-            $table->enum('type', $lessonTypes)->default('text')->change();
-        });
+        DB::statement('ALTER TABLE lessons DROP CONSTRAINT IF EXISTS lessons_type_check');
+        DB::statement('ALTER TABLE lessons ALTER COLUMN type TYPE varchar(255)');
+        DB::statement("ALTER TABLE lessons ADD CONSTRAINT lessons_type_check CHECK (type IN ({$lessonList}))");
+        DB::statement("ALTER TABLE lessons ALTER COLUMN type SET DEFAULT 'text'");
 
         DB::statement('ALTER TABLE course_enrollments DROP CONSTRAINT IF EXISTS course_enrollments_status_check');
-
-        Schema::table('course_enrollments', function (Blueprint $table) use ($enrollmentStatuses) {
-            $table->enum('status', $enrollmentStatuses)->default('active')->change();
-        });
+        DB::statement('ALTER TABLE course_enrollments ALTER COLUMN status TYPE varchar(255)');
+        DB::statement("ALTER TABLE course_enrollments ADD CONSTRAINT course_enrollments_status_check CHECK (status IN ({$statusList}))");
+        DB::statement("ALTER TABLE course_enrollments ALTER COLUMN status SET DEFAULT 'active'");
     }
 
     private function mysql(array $lessonTypes, array $enrollmentStatuses): void
