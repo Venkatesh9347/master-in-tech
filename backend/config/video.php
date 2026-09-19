@@ -20,7 +20,7 @@ return [
     | Short-lived TTL prevents permanent token sharing and URL scraping.
     |
     */
-    'token_ttl_seconds' => env('VIDEO_TOKEN_TTL', 300), // 5 minutes default
+    'token_ttl_seconds' => (int) env('VIDEO_TOKEN_TTL', 300), // 5 minutes default
 
     /*
     |--------------------------------------------------------------------------
