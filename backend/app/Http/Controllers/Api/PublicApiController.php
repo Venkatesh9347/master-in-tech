@@ -55,7 +55,7 @@ class PublicApiController extends Controller
             ->take(6)
             ->get();
 
-        $events = Event::where('is_published', true)
+        $events = Event::where('status', 'published')
             ->orderBy('event_date', 'asc')
             ->take(3)
             ->get();

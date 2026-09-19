@@ -208,7 +208,7 @@ class MockInterviewService
     private static function notOverrideCondition($query): void
     {
         $query->where(function ($o): void {
-            $o->whereNull('spe.is_admin_override')->orWhere('spe.is_admin_override', '<>', 1);
+            $o->whereNull('spe.is_admin_override')->orWhere('spe.is_admin_override', false);
         });
     }
 
@@ -280,13 +280,13 @@ class MockInterviewService
                 ->whereColumn('e.user_id', 'users.id')
                 ->where(function ($t): void {
                     $t->where(function ($a): void {
-                        $a->whereRaw('(SELECT COUNT(*) FROM lessons AS l WHERE l.course_id = e.course_id AND l.is_published = 1) > 0')
+                        $a->whereRaw('(SELECT COUNT(*) FROM lessons AS l WHERE l.course_id = e.course_id AND l.is_published IS TRUE) > 0')
                             ->where(function ($b): void {
-                                $b->whereRaw('(SELECT COUNT(*) FROM lesson_progress AS lp WHERE lp.user_id = e.user_id AND lp.course_id = e.course_id AND lp.completed = 1) >= (SELECT COUNT(*) FROM lessons AS l2 WHERE l2.course_id = e.course_id AND l2.is_published = 1)')
-                                    ->orWhereRaw('(SELECT COUNT(*) FROM lesson_progress AS lp WHERE lp.user_id = e.user_id AND lp.course_id = e.course_id AND lp.completed = 1) * 100.0 / (SELECT COUNT(*) FROM lessons AS l2 WHERE l2.course_id = e.course_id AND l2.is_published = 1) >= 99.95');
+                                $b->whereRaw('(SELECT COUNT(*) FROM lesson_progress AS lp WHERE lp.user_id = e.user_id AND lp.course_id = e.course_id AND lp.completed IS TRUE) >= (SELECT COUNT(*) FROM lessons AS l2 WHERE l2.course_id = e.course_id AND l2.is_published IS TRUE)')
+                                    ->orWhereRaw('(SELECT COUNT(*) FROM lesson_progress AS lp WHERE lp.user_id = e.user_id AND lp.course_id = e.course_id AND lp.completed IS TRUE) * 100.0 / (SELECT COUNT(*) FROM lessons AS l2 WHERE l2.course_id = e.course_id AND l2.is_published IS TRUE) >= 99.95');
                             });
                     })->orWhere(function ($a): void {
-                        $a->whereRaw('(SELECT COUNT(*) FROM lessons AS l WHERE l.course_id = e.course_id AND l.is_published = 1) = 0')
+                        $a->whereRaw('(SELECT COUNT(*) FROM lessons AS l WHERE l.course_id = e.course_id AND l.is_published IS TRUE) = 0')
                             ->where(function ($b): void {
                                 $b->where('e.progress_percentage', '>=', 100)
                                     ->orWhere('e.status', 'completed');

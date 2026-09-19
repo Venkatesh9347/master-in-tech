@@ -13,6 +13,7 @@ use App\Services\Payment\Exceptions\PaymentRefundException;
 use App\Services\Payment\Exceptions\PaymentVerificationException;
 use App\Services\Payment\Providers\RazorpayProvider;
 use App\Services\Payment\Providers\StubPaymentProvider;
+use Illuminate\Database\Eloquent\JsonEncodingException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -455,27 +456,40 @@ class PaymentService
             return ['event' => $event, 'duplicate' => false];
         }
 
-        try {
-            $event = PaymentWebhookEvent::create([
-                'provider' => $provider,
-                'provider_event_id' => $providerEventId,
-                'event_type' => $eventType,
-                'payload' => $payload,
-                'status' => PaymentWebhookEvent::STATUS_RECEIVED,
-            ]);
+        // Atomic insert-if-absent: a single statement the database serializes
+        // on the unique index, so concurrent duplicate deliveries converge on
+        // one row. Unlike insert-then-catch, this never raises a unique
+        // violation — which matters on PostgreSQL, where a failed statement
+        // aborts the enclosing transaction and would break the fetch below
+        // (SQLSTATE 25P02). Eloquent model events/casts are bypassed here,
+        // so every column is provided explicitly exactly as the model would
+        // persist it (including timestamps and JSON-encoded payload).
+        $now = now();
+        $encodedPayload = json_encode($payload);
 
-            return ['event' => $event, 'duplicate' => false];
-        } catch (QueryException $e) {
-            if (! $this->isUniqueViolation($e)) {
-                throw $e;
-            }
-
-            $existing = PaymentWebhookEvent::where('provider', $provider)
-                ->where('provider_event_id', $providerEventId)
-                ->firstOrFail();
-
-            return ['event' => $existing, 'duplicate' => true];
+        if ($encodedPayload === false) {
+            throw JsonEncodingException::forAttribute(
+                new PaymentWebhookEvent(),
+                'payload',
+                (string) json_last_error_msg()
+            );
         }
+
+        $inserted = PaymentWebhookEvent::insertOrIgnore([
+            'provider' => $provider,
+            'provider_event_id' => $providerEventId,
+            'event_type' => $eventType,
+            'payload' => $encodedPayload,
+            'status' => PaymentWebhookEvent::STATUS_RECEIVED,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $event = PaymentWebhookEvent::where('provider', $provider)
+            ->where('provider_event_id', $providerEventId)
+            ->firstOrFail();
+
+        return ['event' => $event, 'duplicate' => $inserted === 0];
     }
 
     /**
