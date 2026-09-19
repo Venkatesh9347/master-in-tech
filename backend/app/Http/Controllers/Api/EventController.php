@@ -26,8 +26,15 @@ class EventController extends Controller
      */
     public function show($id)
     {
-        $event = Event::where('id', $id)
-            ->orWhere('slug', $id)
+        // PG-safe id-or-slug (see CourseController::show): never compare a
+        // non-numeric slug against the bigint id column (SQLSTATE 22P02).
+        $event = Event::where(function ($q) use ($id) {
+            if (is_numeric($id)) {
+                $q->where('id', (int) $id)->orWhere('slug', $id);
+            } else {
+                $q->where('slug', $id);
+            }
+        })
             ->firstOrFail();
 
         if ($event->status !== 'published') {

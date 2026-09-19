@@ -16,7 +16,15 @@ class SectionController extends Controller
      */
     public function index(Request $request, $course)
     {
-        $courseModel = $course instanceof Course ? $course : Course::where('id', $course)->orWhere('slug', $course)->firstOrFail();
+        // PG-safe id-or-slug (see CourseController::show): never compare a
+        // non-numeric slug against the bigint id column (SQLSTATE 22P02).
+        $courseModel = $course instanceof Course ? $course : Course::where(function ($q) use ($course) {
+            if (is_numeric($course)) {
+                $q->where('id', (int) $course)->orWhere('slug', $course);
+            } else {
+                $q->where('slug', $course);
+            }
+        })->firstOrFail();
         $user = $request->user();
         $isManager = $user && (in_array($user->role, ['admin', 'super_admin'], true) || (int) $courseModel->instructor_id === (int) $user->id);
 

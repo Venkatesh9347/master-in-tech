@@ -54,7 +54,10 @@ class LiveClassroomParticipant extends Model
     {
         if ($this->joined_at && ! $this->left_at) {
             $now = now();
-            $duration = max(0, $this->joined_at->diffInSeconds($now));
+            // Carbon 3 diffInSeconds() returns a float; duration_seconds is an
+            // integer column and Eloquent integer casts apply on read only, so
+            // normalize explicitly (truncation matches the hardened call sites).
+            $duration = max(0, (int) $this->joined_at->diffInSeconds($now));
             $this->update([
                 'left_at' => $now,
                 'duration_seconds' => $this->duration_seconds + $duration,

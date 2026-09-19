@@ -122,8 +122,16 @@ class CourseController extends Controller
         $user = $this->getAuthenticatedUser($request);
         $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
-        $course = Course::where('id', $id)
-            ->orWhere('slug', $id)
+        // PG-safe id-or-slug: a non-numeric slug must never be compared
+        // against the bigint id column (SQLSTATE 22P02). Numeric values
+        // keep the legacy id-OR-slug match so numeric slugs still resolve.
+        $course = Course::where(function ($q) use ($id) {
+            if (is_numeric($id)) {
+                $q->where('id', (int) $id)->orWhere('slug', $id);
+            } else {
+                $q->where('slug', $id);
+            }
+        })
             ->withCount(['sections', 'lessons', 'enrollments', 'reviews'])
             ->withAvg('reviews', 'rating')
             ->first();

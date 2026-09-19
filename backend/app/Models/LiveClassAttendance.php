@@ -62,7 +62,10 @@ class LiveClassAttendance extends Model
     public function recordLeave(): void
     {
         $leftTime = now();
-        $duration = $this->joined_at ? max(0, $this->joined_at->diffInSeconds($leftTime)) : 0;
+        // Carbon 3 diffInSeconds() returns a float; duration_seconds is an
+        // integer column and Eloquent integer casts apply on read only, so
+        // normalize explicitly (truncation matches the hardened call sites).
+        $duration = $this->joined_at ? max(0, (int) $this->joined_at->diffInSeconds($leftTime)) : 0;
 
         $this->update([
             'left_at' => $leftTime,

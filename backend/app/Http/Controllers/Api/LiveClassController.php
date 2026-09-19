@@ -522,7 +522,9 @@ class LiveClassController extends Controller
         $now = now();
         $activeAttendances = $liveClass->attendances()->whereNull('left_at')->get();
         foreach ($activeAttendances as $attendance) {
-            $duration = $attendance->joined_at ? max(0, $attendance->joined_at->diffInSeconds($now)) : 0;
+            // Carbon 3 diffInSeconds() returns a float; normalize to int for
+            // the integer duration_seconds column (truncation, as elsewhere).
+            $duration = $attendance->joined_at ? max(0, (int) $attendance->joined_at->diffInSeconds($now)) : 0;
             $attendance->update([
                 'left_at' => $now,
                 'duration_seconds' => $attendance->duration_seconds + $duration,

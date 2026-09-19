@@ -63,8 +63,13 @@ class AdminClassSessionController extends Controller
         if ($request->filled('search')) {
             $search = trim($request->search);
             $query->where(function ($q) use ($search) {
-                $q->where('id', $search)
-                    ->orWhere('title', 'like', "%{$search}%")
+                // PG-safe: a non-numeric search term must never be compared
+                // against the bigint id column (SQLSTATE 22P02).
+                if (is_numeric($search)) {
+                    $q->where('id', (int) $search);
+                }
+
+                $q->orWhere('title', 'like', "%{$search}%")
                     ->orWhere('meeting_id', 'like', "%{$search}%")
                     ->orWhereHas('course', fn ($cq) => $cq->where('title', 'like', "%{$search}%")
                         ->orWhere('code', 'like', "%{$search}%")
@@ -198,8 +203,13 @@ class AdminClassSessionController extends Controller
         if ($request->filled('search')) {
             $search = trim($request->search);
             $query->where(function ($q) use ($search) {
-                $q->where('id', $search)
-                    ->orWhere('title', 'like', "%{$search}%")
+                // PG-safe: a non-numeric search term must never be compared
+                // against the bigint id column (SQLSTATE 22P02).
+                if (is_numeric($search)) {
+                    $q->where('id', (int) $search);
+                }
+
+                $q->orWhere('title', 'like', "%{$search}%")
                     ->orWhere('meeting_id', 'like', "%{$search}%")
                     ->orWhereHas('course', fn ($cq) => $cq->where('title', 'like', "%{$search}%")
                         ->orWhere('code', 'like', "%{$search}%")

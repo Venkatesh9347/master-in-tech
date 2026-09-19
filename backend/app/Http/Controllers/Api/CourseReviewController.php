@@ -15,7 +15,15 @@ class CourseReviewController extends Controller
      */
     public function index($courseId)
     {
-        $course = Course::where('id', $courseId)->orWhere('slug', $courseId)->first();
+        // PG-safe id-or-slug (see CourseController::show): never compare a
+        // non-numeric slug against the bigint id column (SQLSTATE 22P02).
+        $course = Course::where(function ($q) use ($courseId) {
+            if (is_numeric($courseId)) {
+                $q->where('id', (int) $courseId)->orWhere('slug', $courseId);
+            } else {
+                $q->where('slug', $courseId);
+            }
+        })->first();
 
         if (! $course) {
             return response()->json(['message' => 'Course not found'], 404);
@@ -41,7 +49,14 @@ class CourseReviewController extends Controller
     public function store(Request $request, $courseId)
     {
         $user = $request->user();
-        $course = Course::where('id', $courseId)->orWhere('slug', $courseId)->first();
+        // PG-safe id-or-slug (see CourseController::show).
+        $course = Course::where(function ($q) use ($courseId) {
+            if (is_numeric($courseId)) {
+                $q->where('id', (int) $courseId)->orWhere('slug', $courseId);
+            } else {
+                $q->where('slug', $courseId);
+            }
+        })->first();
 
         if (! $course) {
             return response()->json(['message' => 'Course not found'], 404);
