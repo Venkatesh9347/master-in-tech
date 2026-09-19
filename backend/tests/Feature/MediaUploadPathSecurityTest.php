@@ -97,7 +97,8 @@ class MediaUploadPathSecurityTest extends TestCase
             'special chars' => ['folder!name'],
             'overlong' => [str_repeat('a', 51)],
             'encoded dots' => ['%2e%2e%2f'],
-            'encoded backslash' => ['..%2f', '..%5c'],
+            'encoded slash' => ['..%2f'],
+            'encoded backslash' => ['..%5c'],
         ];
     }
 
