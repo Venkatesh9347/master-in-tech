@@ -65,13 +65,15 @@ return new class extends Migration
 
     private function pgsql(array $lessonTypes, array $enrollmentStatuses): void
     {
+        DB::statement('ALTER TABLE lessons DROP CONSTRAINT IF EXISTS lessons_type_check');
+
         Schema::table('lessons', function (Blueprint $table) use ($lessonTypes) {
-            $table->dropEnumConstraint('type');
             $table->enum('type', $lessonTypes)->default('text')->change();
         });
 
+        DB::statement('ALTER TABLE course_enrollments DROP CONSTRAINT IF EXISTS course_enrollments_status_check');
+
         Schema::table('course_enrollments', function (Blueprint $table) use ($enrollmentStatuses) {
-            $table->dropEnumConstraint('status');
             $table->enum('status', $enrollmentStatuses)->default('active')->change();
         });
     }

@@ -56,7 +56,10 @@ return new class extends Migration
                 $table->json('metadata')->nullable();
                 $table->timestamps();
 
-                $table->index(['live_classroom_session_id', 'user_id']);
+                $table->index(
+                    ['live_classroom_session_id', 'user_id'],
+                    'live_classroom_participants_session_user_index'
+                );
                 $table->index('role');
             });
         }

@@ -73,7 +73,10 @@ return new class extends Migration
                 $table->timestamps();
 
                 $table->index(['class_session_id', 'status']);
-                $table->index(['live_classroom_session_id', 'status']);
+                $table->index(
+                    ['live_classroom_session_id', 'status'],
+                    'classroom_permission_requests_session_status_index'
+                );
             });
         }
 
@@ -106,7 +109,10 @@ return new class extends Migration
                 $table->timestamp('created_at')->useCurrent();
 
                 $table->index(['class_session_id', 'created_at']);
-                $table->index(['live_classroom_session_id', 'created_at']);
+                $table->index(
+                    ['live_classroom_session_id', 'created_at'],
+                    'classroom_moderation_events_session_created_at_index'
+                );
             });
         }
     }
