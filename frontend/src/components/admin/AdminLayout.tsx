@@ -40,6 +40,7 @@ export default function AdminLayout() {
     { label: 'Grading', to: '/admin/submissions', icon: '📝' },
     { label: 'Refunds', to: '/admin/refunds', icon: '💸' },
     { label: 'Certificates', to: '/admin/certificates', icon: '🎓' },
+    { label: 'Webhooks', to: '/admin/webhooks', icon: '🔔' },
     { label: 'Audit Logs', to: '/admin/audit-logs', icon: '📋' },
   ]
 

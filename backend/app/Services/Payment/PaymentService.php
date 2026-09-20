@@ -13,6 +13,7 @@ use App\Services\Payment\Exceptions\PaymentRefundException;
 use App\Services\Payment\Exceptions\PaymentVerificationException;
 use App\Services\Payment\Providers\RazorpayProvider;
 use App\Services\Payment\Providers\StubPaymentProvider;
+use App\Services\WebhookDispatcherService;
 use Illuminate\Database\Eloquent\JsonEncodingException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -362,7 +363,12 @@ class PaymentService
 
         $transactionId = (int) $transaction->id;
 
-        return DB::transaction(function () use ($transactionId, $paymentId, $status, $context) {
+        // Outbound Phase-9 webhooks fire only on a fresh terminal transition
+        // committed below — idempotent replays change nothing and emit nothing.
+        $paidTransition = false;
+        $refundedTransition = false;
+
+        $result = DB::transaction(function () use ($transactionId, $paymentId, $status, $context, &$paidTransition, &$refundedTransition) {
             // B3-9: row-level lock makes paid/refunded races last-writer-safe
             // under the terminal-state rules below (no TOCTOU downgrade).
             $transaction = PaymentTransaction::where('id', $transactionId)->lockForUpdate()->first();
@@ -413,6 +419,15 @@ class PaymentService
             }
 
             $transaction->save();
+
+            if ($transaction->wasChanged('status') && in_array($newStatus, ['paid', 'refunded'], true)) {
+                if ($newStatus === 'paid') {
+                    $paidTransition = true;
+                } else {
+                    $refundedTransition = true;
+                }
+            }
+
             \App\Models\AuditLog::log('payment_' . $newStatus, $transaction, $old, $transaction->fresh()->toArray());
 
             // A verified paid transition grants course access. Runs exactly once per
@@ -426,6 +441,37 @@ class PaymentService
 
             return $transaction;
         });
+
+        // After commit: outbound webhooks observe committed state only. The
+        // dispatcher persists its own ledger and queues delivery with
+        // afterCommit semantics, so a later rollback emits nothing.
+        if ($paidTransition && $result instanceof PaymentTransaction) {
+            $this->dispatchOutboundPaymentEvent($result, WebhookDispatcherService::EVENT_PAYMENT_PAID);
+        }
+
+        if ($refundedTransition && $result instanceof PaymentTransaction) {
+            $this->dispatchOutboundPaymentEvent($result, WebhookDispatcherService::EVENT_PAYMENT_REFUNDED);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Emit an outbound payment webhook for a freshly committed transition.
+     * Payload carries internal ids/amounts only — no secrets or PII beyond
+     * what the existing audit convention records.
+     */
+    private function dispatchOutboundPaymentEvent(PaymentTransaction $transaction, string $event): void
+    {
+        app(WebhookDispatcherService::class)->dispatch($event, [
+            'payment_transaction_id' => (int) $transaction->id,
+            'provider' => (string) $transaction->provider,
+            'order_id' => (string) $transaction->order_id,
+            'payment_id' => (string) $transaction->payment_id,
+            'amount_paise' => (int) $transaction->amount_paise,
+            'currency' => (string) $transaction->currency,
+            'status' => (string) $transaction->status,
+        ]);
     }
 
     /**
@@ -756,7 +802,11 @@ class PaymentService
             // must survive even when phase 2 then rejects the request.
             $this->reconcileProviderRefunds($transaction, $providerName, $adminId);
 
-            return DB::transaction(function () use ($transaction, $amountPaise, $adminId, $providerName, $requestedKey, $reason) {
+            // Outbound Phase-9 webhooks fire only on a fresh transition into
+            // terminal refunded committed below — replays emit nothing.
+            $becameRefunded = false;
+
+            $refund = DB::transaction(function () use ($transaction, $amountPaise, $adminId, $providerName, $requestedKey, $reason, &$becameRefunded) {
                 // Lock the payment row first: every concurrent refund for this
                 // payment serializes here, and the remaining-amount re-check
                 // below runs inside the lock.
@@ -880,6 +930,12 @@ class PaymentService
                 $locked->fill(['status' => $newStatus]);
                 $locked->save();
 
+                // Rows already at terminal refunded are rejected above, so
+                // reaching a refunded save here is always a fresh transition.
+                if ($newStatus === 'refunded') {
+                    $becameRefunded = true;
+                }
+
                 // Single audited admin action (safe fields only: no secrets,
                 // no gateway payloads, no customer PII beyond internal ids).
                 \App\Models\AuditLog::log('payment_refund_initiated', $locked, $old, [
@@ -895,6 +951,14 @@ class PaymentService
 
                 return $refund->fresh() ?? $refund;
             });
+
+            // After commit: observe the committed refunded transition only.
+            if ($becameRefunded) {
+                $fresh = $transaction->fresh() ?? $transaction;
+                $this->dispatchOutboundPaymentEvent($fresh, WebhookDispatcherService::EVENT_PAYMENT_REFUNDED);
+            }
+
+            return $refund;
         } catch (PaymentRefundException $e) {
             // Failed attempts are audit-logged under the existing convention
             // (no second mechanism) without persisting a refund row, so a

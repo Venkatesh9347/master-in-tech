@@ -2,11 +2,23 @@
 
 namespace App\Models;
 
+use App\Services\WebhookDispatcherService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CourseEnrollment extends Model
 {
+    protected static function booted(): void
+    {
+        // Outbound Phase-9 seam: every created enrollment emits exactly one
+        // enrollment.created event. The dispatcher persists its ledger inside
+        // the surrounding transaction and queues delivery after commit, so a
+        // rolled-back creation emits nothing.
+        static::created(function (CourseEnrollment $enrollment): void {
+            WebhookDispatcherService::dispatchOutboundEnrollmentCreated($enrollment);
+        });
+    }
+
     protected $fillable = [
         'user_id',
         'course_id',

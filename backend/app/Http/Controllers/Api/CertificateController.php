@@ -158,6 +158,7 @@ class CertificateController extends Controller
         // only on actual issuance.
         if ($issuedCertificate instanceof Certificate) {
             \App\Services\NotificationService::certificateIssued($issuedCertificate);
+            \App\Services\WebhookDispatcherService::dispatchOutboundCertificateIssued($issuedCertificate);
         }
 
         return $response;

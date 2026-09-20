@@ -94,6 +94,7 @@ const AdminCurriculum = lazy(() => import("./pages/AdminCurriculum"));
 const AdminSubmissions = lazy(() => import("./pages/AdminSubmissions"));
 const AdminRefunds = lazy(() => import("./pages/admin/AdminRefunds"));
 const AdminCertificates = lazy(() => import("./pages/admin/AdminCertificates"));
+const AdminWebhooks = lazy(() => import("./pages/admin/AdminWebhooks"));
 
 // Lightweight Suspense Fallback Loader
 function PageLoadingFallback() {
@@ -232,6 +233,7 @@ function App() {
                 <Route path="submissions" element={<AdminSubmissions />} />
                 <Route path="refunds" element={<AdminRefunds />} />
                 <Route path="certificates" element={<AdminCertificates />} />
+                <Route path="webhooks" element={<AdminWebhooks />} />
                 <Route path="grading" element={<Navigate to="/admin/submissions" replace />} />
               </Route>
 

@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\AdminMockInterviewController;
 use App\Http\Controllers\Api\AdminPlacementController;
 use App\Http\Controllers\Api\AdminTutorPermissionController;
 use App\Http\Controllers\Api\AdminUserController;
+use App\Http\Controllers\Api\AdminWebhookController;
 use App\Http\Controllers\Api\AssignmentController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CallRecordingController;
@@ -702,6 +703,15 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
     Route::get('/admin/certificates', [CertificateController::class, 'index']);
     Route::get('/admin/certificates/{certificate}', [CertificateController::class, 'adminShow']);
     Route::post('/admin/certificates/{certificate}/revoke', [CertificateController::class, 'revoke']);
+
+    // Admin Outbound Webhooks (Phase 9: subscriptions + delivery ledger)
+    Route::get('/admin/webhook-subscriptions', [AdminWebhookController::class, 'indexSubscriptions']);
+    Route::post('/admin/webhook-subscriptions', [AdminWebhookController::class, 'storeSubscription']);
+    Route::get('/admin/webhook-subscriptions/{subscription}', [AdminWebhookController::class, 'showSubscription']);
+    Route::put('/admin/webhook-subscriptions/{subscription}', [AdminWebhookController::class, 'updateSubscription']);
+    Route::delete('/admin/webhook-subscriptions/{subscription}', [AdminWebhookController::class, 'destroySubscription']);
+    Route::get('/admin/webhook-deliveries', [AdminWebhookController::class, 'indexDeliveries']);
+    Route::post('/admin/webhook-deliveries/{delivery}/retry', [AdminWebhookController::class, 'retryDelivery']);
     Route::get('/admin/enrollments', [AdminEnrollmentController::class, 'index']);
     Route::get('/admin/students/{user}/enrollments', [AdminEnrollmentController::class, 'studentEnrollments']);
     Route::post('/admin/enrollments', [AdminEnrollmentController::class, 'store']);

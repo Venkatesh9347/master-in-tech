@@ -787,3 +787,28 @@ and an HLS manifest load.
   `failed_jobs` table across releases — review and retry after rollback.
 - **Environment:** restore the previous secrets set; run
   `php artisan optimize:clear` after any `.env` change on host deploys.
+
+---
+
+## 31. Outbound webhooks (Phase 9)
+
+Administrator-configured HTTPS endpoints can subscribe to business events.
+Supported events: `payment.paid`, `payment.refunded`, `enrollment.created`,
+`certificate.issued`.
+
+- **Delivery:** one immutable `webhook_deliveries` ledger row per matching
+  active subscription, sent by a queued job (`SendWebhookDeliveryJob`) only
+  after the business transaction commits. Business failures roll the ledger
+  row back with the transaction — nothing is sent.
+- **Signature:** `X-Webhook-Signature: HMAC-SHA256(secret, timestamp.body)`,
+  with `X-Webhook-Event`, `X-Webhook-Timestamp` (unix seconds, 300s
+  tolerance), and `X-Webhook-Delivery` (ledger id) headers. Verify with a
+  constant-time comparison and reject stale timestamps.
+- **Retry:** exponential backoff after failures (60s, 5m, 15m, 60m), max 5
+  attempts, then dead-lettered. Dead/failed rows are manually retryable from
+  `/admin/webhooks`; delivered rows are never resent. Requires the queue
+  worker (§11) to be running — without it, deliveries stay `pending`.
+- **Management:** `/admin/webhooks` (subscriptions CRUD + deliveries +
+  retry). Secrets are write-only (never returned by the API). Target URLs
+  must be HTTPS outside local/dev and must not point at internal
+  destinations (localhost, loopback, private/link-local ranges).
