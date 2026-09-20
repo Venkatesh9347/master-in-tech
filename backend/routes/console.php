@@ -41,3 +41,11 @@ Schedule::command('mit:prune-orphan-video-dirs --apply')
     ->dailyAt('03:45')
     ->withoutOverlapping(240)
     ->onOneServer();
+
+// Phase 9-C2: due CRM follow-up occurrences emit stable followup.due domain
+// events every minute. Bounded 10-minute overlap lock: a single pass scans
+// pending rows and publishes (no heavy work inside the tick).
+Schedule::command('mit:process-due-crm-followups')
+    ->everyMinute()
+    ->withoutOverlapping(10)
+    ->onOneServer();

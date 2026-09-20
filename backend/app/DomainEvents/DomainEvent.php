@@ -21,12 +21,15 @@ final class DomainEvent
 
     /**
      * @param array<string, mixed> $payload
+     * @param string|null $id Optional deterministic ID (e.g. scheduler-
+     *        generated occurrences). Omitted → random UUID, as before.
      */
     public function __construct(
         public readonly string $name,
-        public readonly array $payload = []
+        public readonly array $payload = [],
+        ?string $id = null
     ) {
-        $this->id = (string) Str::uuid();
+        $this->id = $id ?? (string) Str::uuid();
         $this->occurredAt = CarbonImmutable::now()->toISOString();
     }
 }

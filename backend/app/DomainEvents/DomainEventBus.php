@@ -24,11 +24,13 @@ class DomainEventBus
     private array $listeners = [];
 
     /**
-     * Publish a canonical event to its registered consumers.
+     * Publish a canonical event to its registered consumers. An explicit
+     * event ID may be supplied for scheduler-generated occurrences that
+     * must be stable across repeated evaluations.
      */
-    public static function record(string $name, array $payload = []): void
+    public static function record(string $name, array $payload = [], ?string $eventId = null): void
     {
-        app(static::class)->dispatch(new DomainEvent($name, $payload));
+        app(static::class)->dispatch(new DomainEvent($name, $payload, $eventId));
     }
 
     public function listen(string $event, callable $listener): void

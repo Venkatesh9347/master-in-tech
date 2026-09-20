@@ -74,6 +74,12 @@ class AppServiceProvider extends ServiceProvider
             \App\Services\WebhookDispatcherService::EVENT_PAYMENT_REFUNDED,
             [\App\Automation\CrmAutomation::class, 'handle']
         );
+
+        // Scheduler-generated due-follow-up occurrences (stable event IDs).
+        $bus->listen(
+            \App\Automation\CrmAutomation::EVENT_FOLLOWUP_DUE,
+            [\App\Automation\CrmAutomation::class, 'handle']
+        );
     }
 
     private function configureAuthRateLimiters(): void

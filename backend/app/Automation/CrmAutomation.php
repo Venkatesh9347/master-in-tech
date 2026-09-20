@@ -5,6 +5,7 @@ namespace App\Automation;
 use App\DomainEvents\DomainEvent;
 use App\Models\CourseEnrollment;
 use App\Models\CrmActivity;
+use App\Models\CrmFollowUp;
 use App\Models\Enquiry;
 use App\Models\PaymentTransaction;
 use App\Models\User;
@@ -24,6 +25,9 @@ final class CrmAutomation
 {
     public const HANDLER_ENQUIRY_SYNC = 'crm.enquiry-sync';
     public const HANDLER_REFUND_NOTE = 'crm.refund-note';
+    public const HANDLER_FOLLOWUP_DUE = 'crm.followup-due';
+
+    public const EVENT_FOLLOWUP_DUE = 'followup.due';
 
     /**
      * Terminal enquiry states an automation run must never reopen.
@@ -43,8 +47,67 @@ final class CrmAutomation
         match ($event->name) {
             WebhookDispatcherService::EVENT_ENROLLMENT_CREATED => self::syncEnquiryOnEnrollment($event),
             WebhookDispatcherService::EVENT_PAYMENT_REFUNDED => self::noteRefundOnEnquiry($event),
+            self::EVENT_FOLLOWUP_DUE => self::noteFollowUpDue($event),
             default => null,
         };
+    }
+
+    /**
+     * Follow-up due → exactly one timeline activity for the due follow-up.
+     * Informational only: enquiry status, assignment, and follow-up status
+     * are never touched, and no further domain event is emitted.
+     */
+    private static function noteFollowUpDue(DomainEvent $event): void
+    {
+        $followUp = CrmFollowUp::find((int) ($event->payload['follow_up_id'] ?? 0));
+
+        // The follow-up may have been completed/cancelled after the
+        // scheduler selected it; anything but pending safely no-ops.
+        if ($followUp === null || $followUp->status !== CrmFollowUp::STATUS_PENDING) {
+            return;
+        }
+
+        AutomationRunner::run(
+            self::HANDLER_FOLLOWUP_DUE,
+            $event,
+            CrmFollowUp::class,
+            (int) $followUp->id,
+            function () use ($followUp, $event): void {
+                // B1: the scheduler re-presents the same stable event every
+                // minute, so a retry after a partial failure (activity
+                // committed, success unmarked) must not create a second
+                // activity. The trigger_event_id is unique per occurrence.
+                $alreadyNoted = CrmActivity::where('enquiry_id', (int) $followUp->enquiry_id)
+                    ->where('activity_type', 'follow_up')
+                    ->whereJsonContains('metadata->trigger_event_id', $event->id)
+                    ->exists();
+
+                if ($alreadyNoted) {
+                    return;
+                }
+
+                CrmActivity::create([
+                    'enquiry_id' => (int) $followUp->enquiry_id,
+                    'user_id' => null,
+                    'activity_type' => 'follow_up',
+                    'title' => "Follow-up due: {$followUp->title}",
+                    'description' => "Follow-up #{$followUp->id} became due and requires attention.",
+                    'metadata' => [
+                        'follow_up_id' => (int) $followUp->id,
+                        'trigger_event_id' => $event->id,
+                        'scheduled_at' => $followUp->scheduled_at?->toISOString(),
+                    ],
+                ]);
+
+                \App\Models\AuditLog::log(
+                    'automation_followup_due',
+                    $followUp,
+                    null,
+                    ['follow_up_id' => (int) $followUp->id, 'enquiry_id' => (int) $followUp->enquiry_id],
+                    self::actor()
+                );
+            }
+        );
     }
 
     /**
