@@ -155,10 +155,20 @@ class CertificateController extends Controller
         });
 
         // F1: transaction committed (or no certificate was minted); notify
-        // only on actual issuance.
+        // only on actual issuance. The webhook delivery goes through the
+        // domain-event bus (Phase 9-B) like every other outbound seam.
         if ($issuedCertificate instanceof Certificate) {
             \App\Services\NotificationService::certificateIssued($issuedCertificate);
-            \App\Services\WebhookDispatcherService::dispatchOutboundCertificateIssued($issuedCertificate);
+            \App\DomainEvents\DomainEventBus::record(
+                \App\Services\WebhookDispatcherService::EVENT_CERTIFICATE_ISSUED,
+                [
+                    'certificate_id' => (int) $issuedCertificate->id,
+                    'user_id' => (int) $issuedCertificate->user_id,
+                    'course_id' => (int) $issuedCertificate->course_id,
+                    'certificate_code' => (string) $issuedCertificate->certificate_code,
+                    'issued_at' => $issuedCertificate->issued_at?->toISOString(),
+                ]
+            );
         }
 
         return $response;

@@ -2,9 +2,8 @@
 
 namespace App\Services;
 
+use App\DomainEvents\DomainEvent;
 use App\Jobs\SendWebhookDeliveryJob;
-use App\Models\Certificate;
-use App\Models\CourseEnrollment;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
 use Illuminate\Support\Facades\Http;
@@ -56,32 +55,13 @@ class WebhookDispatcherService
     public const HEADER_SIGNATURE = 'X-Webhook-Signature';
 
     /**
-     * Outbound seam: certificate issued (call only after commit, only on
-     * actual issuance). Payload carries internal ids only.
+     * Domain-event bus consumer (Phase 9-B): the sole entry point from
+     * business seams. Delegates to dispatch() unchanged, so delivery
+     * semantics, ledger shape, and job behavior are identical.
      */
-    public static function dispatchOutboundCertificateIssued(Certificate $certificate): void
+    public static function handleDomainEvent(DomainEvent $event): void
     {
-        app(static::class)->dispatch(self::EVENT_CERTIFICATE_ISSUED, [
-            'certificate_id' => (int) $certificate->id,
-            'user_id' => (int) $certificate->user_id,
-            'course_id' => (int) $certificate->course_id,
-            'certificate_code' => (string) $certificate->certificate_code,
-            'issued_at' => $certificate->issued_at?->toISOString(),
-        ]);
-    }
-
-    /**
-     * Outbound seam: enrollment created (fires from the model hook for every
-     * creation path; safe inside transactions per dispatch() semantics).
-     */
-    public static function dispatchOutboundEnrollmentCreated(CourseEnrollment $enrollment): void
-    {
-        app(static::class)->dispatch(self::EVENT_ENROLLMENT_CREATED, [
-            'enrollment_id' => (int) $enrollment->id,
-            'user_id' => (int) $enrollment->user_id,
-            'course_id' => (int) $enrollment->course_id,
-            'status' => (string) $enrollment->status,
-        ]);
+        app(static::class)->dispatch($event->name, $event->payload);
     }
 
     /**

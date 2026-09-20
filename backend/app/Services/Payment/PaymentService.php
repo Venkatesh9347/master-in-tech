@@ -12,6 +12,7 @@ use App\Services\Payment\Exceptions\PaymentProviderException;
 use App\Services\Payment\Exceptions\PaymentRefundException;
 use App\Services\Payment\Exceptions\PaymentVerificationException;
 use App\Services\Payment\Providers\RazorpayProvider;
+use App\DomainEvents\DomainEventBus;
 use App\Services\Payment\Providers\StubPaymentProvider;
 use App\Services\WebhookDispatcherService;
 use Illuminate\Database\Eloquent\JsonEncodingException;
@@ -458,12 +459,14 @@ class PaymentService
 
     /**
      * Emit an outbound payment webhook for a freshly committed transition.
-     * Payload carries internal ids/amounts only — no secrets or PII beyond
-     * what the existing audit convention records.
+     * Published on the domain-event bus (Phase 9-B); the registered webhook
+     * consumer fans out to subscriptions. Payload carries internal
+     * ids/amounts only — no secrets or PII beyond what the existing audit
+     * convention records.
      */
     private function dispatchOutboundPaymentEvent(PaymentTransaction $transaction, string $event): void
     {
-        app(WebhookDispatcherService::class)->dispatch($event, [
+        DomainEventBus::record($event, [
             'payment_transaction_id' => (int) $transaction->id,
             'provider' => (string) $transaction->provider,
             'order_id' => (string) $transaction->order_id,

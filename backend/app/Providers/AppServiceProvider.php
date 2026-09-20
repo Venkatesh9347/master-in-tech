@@ -27,6 +27,10 @@ class AppServiceProvider extends ServiceProvider
                 default => new \App\Services\Payment\Providers\StubPaymentProvider(),
             };
         });
+
+        // Phase 9-B: one bus instance per application lifecycle so listeners
+        // are registered exactly once (no accumulation across tests/workers).
+        $this->app->singleton(\App\DomainEvents\DomainEventBus::class);
     }
 
     /**
@@ -34,6 +38,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->registerDomainEventListeners();
+
         $this->configureAuthRateLimiters();
 
         ResetPassword::createUrlUsing(function ($user, string $token) {
@@ -43,6 +49,20 @@ class AppServiceProvider extends ServiceProvider
                 .$token
                 .'?email='.urlencode($user->email);
         });
+    }
+
+    /**
+     * Phase 9-B: explicit domain-event listener registration. The outbound
+     * webhook consumer is currently the only listener; future CRM/automation
+     * consumers register here without touching business seams.
+     */
+    private function registerDomainEventListeners(): void
+    {
+        $bus = $this->app->make(\App\DomainEvents\DomainEventBus::class);
+
+        foreach (\App\Services\WebhookDispatcherService::SUPPORTED_EVENTS as $event) {
+            $bus->listen($event, [\App\Services\WebhookDispatcherService::class, 'handleDomainEvent']);
+        }
     }
 
     private function configureAuthRateLimiters(): void
