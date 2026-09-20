@@ -18,14 +18,18 @@ class ClassroomChatController extends Controller
      */
     protected function resolveSession(int|string $id): array
     {
-        $classSession = ClassSession::with(['course', 'tutor', 'currentHost'])->find($id);
-        if ($classSession) {
-            return [$classSession, 'class_session_id', $classSession->id];
-        }
+        // PG-safe: a non-numeric room name must never reach the bigint id
+        // lookups below (SQLSTATE 22P02); it resolves via room_id instead.
+        if (is_numeric($id)) {
+            $classSession = ClassSession::with(['course', 'tutor', 'currentHost'])->find($id);
+            if ($classSession) {
+                return [$classSession, 'class_session_id', $classSession->id];
+            }
 
-        $liveSession = LiveClassroomSession::with(['course', 'tutor', 'batch', 'currentHost'])->find($id);
-        if ($liveSession) {
-            return [$liveSession, 'live_classroom_session_id', $liveSession->id];
+            $liveSession = LiveClassroomSession::with(['course', 'tutor', 'batch', 'currentHost'])->find($id);
+            if ($liveSession) {
+                return [$liveSession, 'live_classroom_session_id', $liveSession->id];
+            }
         }
 
         $liveByRoom = LiveClassroomSession::with(['course', 'tutor', 'batch', 'currentHost'])

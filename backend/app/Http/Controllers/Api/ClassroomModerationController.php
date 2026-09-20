@@ -20,16 +20,20 @@ class ClassroomModerationController extends Controller
      */
     protected function resolveSession(int|string $id): array
     {
-        // Try ClassSession first
-        $classSession = ClassSession::with(['course', 'tutor', 'currentHost'])->find($id);
-        if ($classSession) {
-            return [$classSession, 'class_session_id', $classSession->id];
-        }
+        // PG-safe: a non-numeric room name must never reach the bigint id
+        // lookups below (SQLSTATE 22P02); it resolves via room_id instead.
+        if (is_numeric($id)) {
+            // Try ClassSession first
+            $classSession = ClassSession::with(['course', 'tutor', 'currentHost'])->find($id);
+            if ($classSession) {
+                return [$classSession, 'class_session_id', $classSession->id];
+            }
 
-        // Try LiveClassroomSession
-        $liveSession = LiveClassroomSession::with(['course', 'tutor', 'batch', 'currentHost'])->find($id);
-        if ($liveSession) {
-            return [$liveSession, 'live_classroom_session_id', $liveSession->id];
+            // Try LiveClassroomSession
+            $liveSession = LiveClassroomSession::with(['course', 'tutor', 'batch', 'currentHost'])->find($id);
+            if ($liveSession) {
+                return [$liveSession, 'live_classroom_session_id', $liveSession->id];
+            }
         }
 
         // Try by room_id
