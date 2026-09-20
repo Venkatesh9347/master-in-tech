@@ -32,13 +32,18 @@ class AuditLog extends Model
         return $this->belongsTo(User::class);
     }
 
-    public static function log(string $action, $model = null, ?array $oldValues = null, ?array $newValues = null): self
+    /**
+     * @param array{id: int|null, name: string}|null $actor Explicit actor
+     *        attribution for non-request origins (e.g. automation). When
+     *        omitted, the ambient request user is used as before.
+     */
+    public static function log(string $action, $model = null, ?array $oldValues = null, ?array $newValues = null, ?array $actor = null): self
     {
         $user = auth('sanctum')->user() ?? auth()->user();
 
         return static::create([
-            'user_id' => $user?->id,
-            'user_name' => $user?->name ?? 'System',
+            'user_id' => $actor['id'] ?? $user?->id,
+            'user_name' => $actor['name'] ?? $user?->name ?? 'System',
             'action' => $action,
             'auditable_type' => $model ? get_class($model) : null,
             'auditable_id' => $model?->id,

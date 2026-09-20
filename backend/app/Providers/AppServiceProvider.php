@@ -63,6 +63,17 @@ class AppServiceProvider extends ServiceProvider
         foreach (\App\Services\WebhookDispatcherService::SUPPORTED_EVENTS as $event) {
             $bus->listen($event, [\App\Services\WebhookDispatcherService::class, 'handleDomainEvent']);
         }
+
+        // Code-defined CRM automation (no rules engine, no UI): hardcoded
+        // handlers subscribed only to the events they consume.
+        $bus->listen(
+            \App\Services\WebhookDispatcherService::EVENT_ENROLLMENT_CREATED,
+            [\App\Automation\CrmAutomation::class, 'handle']
+        );
+        $bus->listen(
+            \App\Services\WebhookDispatcherService::EVENT_PAYMENT_REFUNDED,
+            [\App\Automation\CrmAutomation::class, 'handle']
+        );
     }
 
     private function configureAuthRateLimiters(): void
