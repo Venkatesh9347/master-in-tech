@@ -1,6 +1,6 @@
 # MasterInTech — End-to-End Readiness
 
-**Branch:** `integration/master-intech-complete` · **Latest committed HEAD:** `58a5faa` ("fix: harden API exception responses"). Checkpoint chain P1-A → P1-C → P1-E → P1-F → P1-G → P1-B → P2-1 (see §1c) plus, since `1a71b84`: API exception hardening, migration compatibility hardening, the Admin Refund Console + Admin Certificate Revocation Console (backend read endpoints + frontend desks), and the AI-0 foundation incl. legacy-chat kill-switch remediation (currently **uncommitted working tree** — not part of any committed release). No production infrastructure exists; no production deployment has occurred.
+**Branch:** `integration/master-intech-complete` · **Latest committed HEAD:** `94013b1bf33d4f9d594a20a46db45d14408b79ee` ("feat: add new enquiry first follow-up automation"). Checkpoint chain P1-A → P1-C → P1-E → P1-F → P1-G → P1-B → P2-1 (see §1c) plus, since `1a71b84`: API exception hardening, migration compatibility hardening, the Admin Refund Console + Admin Certificate Revocation Console (backend read endpoints + frontend desks), the AI-0 foundation incl. legacy-chat kill-switch remediation, the DB portability chain (migration compatibility, boolean/raw-SQL, webhook ledger, event-status and classroom room-name fixes), and Phase 9 outbound webhooks + domain event bus + CRM automation (C1/C2/D1) — all committed. No production infrastructure exists; no production deployment has occurred. P12 is PARTIAL; P13 is NOT STARTED.
 **Scope:** Repository-only readiness. This document records what is **verified in-repo**, what is **pending**, and the **external/deployment blockers** that cannot be resolved inside this repository (no credentials/infrastructure provisioned here).
 
 > Security/correctness posture: every P0/P1 finding remediated in-repo is applied, and the S-01/S-02A/S-03/S-04 + Admin-Exception-Disclosure + NEW-SEC-01/02/03 remediation queue is complete and verified (see §7). Test suite is green. No `.env`/real secrets are committed (all `.env` files are gitignored and untracked).
@@ -9,7 +9,7 @@
 
 ## 1. Verified in-repo items (FIXED)
 
-Automated evidence (latest verified working-tree baseline): **backend** `php artisan test` → **967 tests / 5488 assertions, 0 failures, 0 errors**; **frontend** `vitest run` → **91 tests / 13 files, 91 passed**, `npx tsc -b` → clean (exit 0), `npm run lint` → 0 errors (7 pre-existing warnings in unrelated test files), `npm run build` → succeeds.
+Automated evidence (latest verified working-tree baseline): **backend** `php artisan test` → **1035 tests / 5772 assertions, 0 failures, 0 errors**; **frontend** `vitest run` → **91 tests / 13 files, 91 passed**, `npx tsc -b` → clean (exit 0), `npm run lint` → 0 errors (7 pre-existing warnings in unrelated test files), `npm run build` → succeeds. Exact-SHA CI for the current HEAD has not been independently observed from this environment; remote workflow results must be checked before any release.
 
 | Area | Finding | Fix (file) |
 |------|---------|-----------|
@@ -63,9 +63,9 @@ Automated evidence (latest verified working-tree baseline): **backend** `php art
 
 | Checkpoint | Scope | Evidence |
 |---|---|---|
-| AI-0 foundation + legacy-chat kill switch (working tree) | provider gateway (OpenAI/Gemini/Anthropic/Ollama/Stub), usage/cost tracking, admin AI status; legacy `/api/ai/chat` gated with single usage row | `AiGatewayTest` (28 tests) + `AiChatTest` kill-switch/usage additions (4 tests); full suite green |
-| P2 certificate console (working tree) | admin certificate list/detail read endpoints + revocation desk UI | `AdminCertificateListTest` (10 tests) + `AdminCertificates.test.tsx` (12 tests); full suite green |
-| P2 refund console (working tree) | admin payment list/detail read endpoints + refund desk UI | `AdminPaymentListTest` + `AdminRefunds.test.tsx`; full suite green |
+| AI-0 foundation + legacy-chat kill switch (committed) | provider gateway (OpenAI/Gemini/Anthropic/Ollama/Stub), usage/cost tracking, admin AI status; legacy `/api/ai/chat` gated with single usage row | `AiGatewayTest` (28 tests) + `AiChatTest` kill-switch/usage additions (4 tests); full suite green |
+| P2 certificate console (committed) | admin certificate list/detail read endpoints + revocation desk UI | `AdminCertificateListTest` (10 tests) + `AdminCertificates.test.tsx` (12 tests); full suite green |
+| P2 refund console (committed) | admin payment list/detail read endpoints + refund desk UI | `AdminPaymentListTest` + `AdminRefunds.test.tsx`; full suite green |
 | API exception hardening | sanitized API error envelope independent of `APP_DEBUG` | committed HEAD `58a5faa`; full suite green |
 | Migration compatibility | course_id migration legacy-compatible | committed `c333551`; full suite green |
 | P2-1 storage hardening | legacy materials migration command, orphan HLS-dir reaper, live-chat 150 cap | 17 focused tests; full suite green |
@@ -114,7 +114,7 @@ These require real infrastructure and credential provisioning — deliberately *
 | **LiveKit** (realtime classroom) | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | backend `.env` (production) |
 | **Razorpay** (payments) | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | backend `.env` (production) + `PAYMENT_PROVIDER=razorpay`; webhook signature verification, idempotency ledger, and amount binding already implemented in code |
 | **SMTP / email** (OTP, session invites) | `MAIL_MAILER`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS` | backend `.env` (production) |
-| **Local AI model inference** (Ollama) | `AI_PROVIDER=ollama`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (default `http://localhost:11434`) | backend `.env`; add `ollama` provider to `AiOrchestratorService`/`config/ai.php` |
+| **Local AI model inference** (Ollama) | `AI_PROVIDER=ollama`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (default `http://localhost:11434`) | backend `.env` (provider implemented: `OllamaProvider` + `config/ai.php` entries) |
 | **Google OAuth** | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | backend `.env` + frontend `VITE_GOOGLE_CLIENT_ID` |
 | **Frontend build origin** | `VITE_API_URL` must be **HTTPS** API origin in production | frontend `.env.production` (not committed) |
 | **CORS production origins** | `CORS_ALLOWED_ORIGINS` → real frontend domain(,s) | backend `.env` |
@@ -142,7 +142,7 @@ These require real infrastructure and credential provisioning — deliberately *
 cd backend
 composer install
 php artisan migrate:fresh --seed
-php vendor/bin/phpunit            # expect 967 tests / 5488 assertions, 0 failures, 0 errors
+php vendor/bin/phpunit            # expect 1035 tests / 5772 assertions, 0 failures, 0 errors
 
 # frontend
 cd ../frontend

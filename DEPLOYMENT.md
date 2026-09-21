@@ -68,7 +68,7 @@ curl http://127.0.0.1:8001/up          # HTTP 200
 Run the test suite:
 
 ```bash
-php artisan test                       # 967 tests / 5488 assertions, 0 failures, 0 errors
+php artisan test                       # 1035 tests / 5772 assertions, 0 failures, 0 errors
 ```
 
 ---
@@ -657,7 +657,7 @@ fresh one.
 | Rates blocked after moving behind LB | `TRUSTED_PROXIES` mis-set / 0.0.0.0 spoof — §23 |
 | HSTS/secure-cookie warnings behind proxy | Set `SECURITY_HSTS_FORCE=true` and TLS terminator + `TRUSTED_PROXIES` |
 | `config:cache` and env changes seem ignored | Re-run `php artisan optimize:clear` after editing `.env` — §24 |
-| test count differs from an older note | Suite grows with checkpoints; latest verified baseline is backend 967 tests / 5488 assertions, frontend 91 tests / 13 files — see `READINESS.md` |
+| test count differs from an older note | Suite grows with checkpoints; latest verified baseline is backend 1035 tests / 5772 assertions, frontend 91 tests / 13 files — see `READINESS.md` |
 
 ---
 
@@ -687,7 +687,8 @@ fresh one.
   webhook delivery tested
 - [ ] Mailer credentials set (`MAIL_*`); test delivery works through the
   queue worker
-- [ ] `AI_PROVIDER` is `stub`, `openai` with `OPENAI_API_KEY`, or `ollama`
+- [ ] `AI_PROVIDER` is `stub`, `openai` with `OPENAI_API_KEY`, `gemini`
+  with `GEMINI_API_KEY`, `anthropic` with `ANTHROPIC_API_KEY`, or `ollama`
   with a reachable daemon (`OLLAMA_BASE_URL`)
 - [ ] `CORS_ALLOWED_ORIGINS`, `SANCTUM_STATEFUL_DOMAINS` = real hosts
 - [ ] `SESSION_SECURE_COOKIE=true`, `SESSION_DOMAIN` set for the deployment
