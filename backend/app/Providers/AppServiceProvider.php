@@ -80,6 +80,12 @@ class AppServiceProvider extends ServiceProvider
             \App\Automation\CrmAutomation::EVENT_FOLLOWUP_DUE,
             [\App\Automation\CrmAutomation::class, 'handle']
         );
+
+        // New-enquiry first follow-up (both public and admin creation paths).
+        $bus->listen(
+            \App\Automation\CrmAutomation::EVENT_ENQUIRY_CREATED,
+            [\App\Automation\CrmAutomation::class, 'handle']
+        );
     }
 
     private function configureAuthRateLimiters(): void

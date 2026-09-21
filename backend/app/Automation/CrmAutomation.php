@@ -26,6 +26,9 @@ final class CrmAutomation
     public const HANDLER_ENQUIRY_SYNC = 'crm.enquiry-sync';
     public const HANDLER_REFUND_NOTE = 'crm.refund-note';
     public const HANDLER_FOLLOWUP_DUE = 'crm.followup-due';
+    public const HANDLER_FIRST_FOLLOWUP = 'crm.first-followup';
+
+    public const EVENT_ENQUIRY_CREATED = 'enquiry.created';
 
     public const EVENT_FOLLOWUP_DUE = 'followup.due';
 
@@ -48,8 +51,77 @@ final class CrmAutomation
             WebhookDispatcherService::EVENT_ENROLLMENT_CREATED => self::syncEnquiryOnEnrollment($event),
             WebhookDispatcherService::EVENT_PAYMENT_REFUNDED => self::noteRefundOnEnquiry($event),
             self::EVENT_FOLLOWUP_DUE => self::noteFollowUpDue($event),
+            self::EVENT_ENQUIRY_CREATED => self::createFirstFollowUp($event),
             default => null,
         };
+    }
+
+    /**
+     * New enquiry → exactly one first follow-up, scheduled T+1 day from the
+     * enquiry creation instant, assigned to the enquiry owner if any.
+     * Informational automation only: enquiry status and assignment are never
+     * touched, and no further domain event is emitted.
+     */
+    private static function createFirstFollowUp(DomainEvent $event): void
+    {
+        $enquiry = Enquiry::find((int) ($event->payload['enquiry_id'] ?? 0));
+
+        // Follow the established automation terminal policy: terminal states
+        // never gain automated follow-ups (e.g. an admin-created closed lead).
+        if ($enquiry === null || in_array($enquiry->status, self::TERMINAL_ENQUIRY_STATUSES, true)) {
+            return;
+        }
+
+        AutomationRunner::run(
+            self::HANDLER_FIRST_FOLLOWUP,
+            $event,
+            Enquiry::class,
+            (int) $enquiry->id,
+            function () use ($enquiry, $event): void {
+                // First means first: any existing follow-up (manual initial
+                // follow-up included) already satisfies the requirement.
+                $alreadyExists = CrmFollowUp::where('enquiry_id', (int) $enquiry->id)->exists();
+
+                if ($alreadyExists) {
+                    return;
+                }
+
+                $scheduledAt = ($enquiry->created_at ?? now())->copy()->addDay();
+                $ownerId = $enquiry->assigned_counsellor_id === null
+                    ? null
+                    : (int) $enquiry->assigned_counsellor_id;
+
+                $followUp = CrmFollowUp::create([
+                    'enquiry_id' => (int) $enquiry->id,
+                    'assigned_to' => $ownerId,
+                    'created_by' => null,
+                    'scheduled_at' => $scheduledAt,
+                    'status' => CrmFollowUp::STATUS_PENDING,
+                    'title' => 'First follow-up with prospective candidate',
+                    'notes' => 'Automatically scheduled after enquiry submission. Contact the candidate to introduce MasterInTech program details and ascertain candidate goals.',
+                ]);
+
+                CrmActivity::create([
+                    'enquiry_id' => (int) $enquiry->id,
+                    'user_id' => null,
+                    'activity_type' => 'follow_up',
+                    'title' => "First follow-up scheduled: {$followUp->title}",
+                    'description' => "First follow-up #{$followUp->id} automatically scheduled for new enquiry #{$enquiry->id}.",
+                    'metadata' => [
+                        'follow_up_id' => (int) $followUp->id,
+                        'trigger_event_id' => $event->id,
+                    ],
+                ]);
+
+                \App\Models\AuditLog::log(
+                    'automation_first_followup',
+                    $enquiry,
+                    null,
+                    ['enquiry_id' => (int) $enquiry->id, 'follow_up_id' => (int) $followUp->id],
+                    self::actor()
+                );
+            }
+        );
     }
 
     /**

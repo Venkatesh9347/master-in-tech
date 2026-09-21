@@ -281,6 +281,18 @@ class AdminCrmController extends Controller
 
         AuditLog::log('created_crm_lead', $lead, null, $lead->toArray());
 
+        // Phase 9-D1: announce the new lead (autocommit path — no
+        // surrounding transaction). Automation skips when a first follow-up
+        // already exists (e.g. one was scheduled with next_follow_up_date).
+        \App\DomainEvents\DomainEventBus::record(
+            \App\Automation\CrmAutomation::EVENT_ENQUIRY_CREATED,
+            [
+                'enquiry_id' => (int) $lead->id,
+                'assigned_to' => $lead->assigned_counsellor_id === null ? null : (int) $lead->assigned_counsellor_id,
+                'created_at' => $lead->created_at?->toISOString(),
+            ]
+        );
+
         return response()->json([
             'message' => "Lead for {$lead->name} created successfully.",
             'lead' => $lead,

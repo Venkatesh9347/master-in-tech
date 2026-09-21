@@ -120,6 +120,19 @@ class EnquiryController extends Controller
             'note' => $noteText,
         ]);
 
+        // Phase 9-D1: announce the new enquiry (autocommit path — no
+        // surrounding transaction). Code-defined automation may schedule
+        // the first follow-up; duplicate submissions reuse the existing
+        // enquiry above and never reach this line.
+        \App\DomainEvents\DomainEventBus::record(
+            \App\Automation\CrmAutomation::EVENT_ENQUIRY_CREATED,
+            [
+                'enquiry_id' => (int) $enquiry->id,
+                'assigned_to' => null,
+                'created_at' => $enquiry->created_at?->toISOString(),
+            ]
+        );
+
         return response()->json([
             'message' => 'Thank you for your enquiry! Our academic admissions advisor will contact you shortly.',
             'enquiry' => $enquiry->load(['course', 'user']),
