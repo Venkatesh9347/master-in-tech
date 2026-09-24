@@ -172,6 +172,8 @@ class LiveClassController extends Controller
         $user = $request->user();
         $liveClass = LiveClass::findOrFail($id);
 
+        $this->authorizeCourseAccess($user, $liveClass->course);
+
         $attendance = LiveClassAttendance::where('live_class_id', $liveClass->id)
             ->where('user_id', $user->id)
             ->first();
@@ -193,9 +195,17 @@ class LiveClassController extends Controller
         $user = $request->user();
         $liveClass = LiveClass::findOrFail($id);
 
+        $this->authorizeCourseAccess($user, $liveClass->course);
+
         $attendance = LiveClassAttendance::where('live_class_id', $liveClass->id)
             ->where('user_id', $user->id)
             ->firstOrFail();
+
+        if ($attendance->is_removed) {
+            throw ValidationException::withMessages([
+                'attendance' => ['You have been removed from this live classroom by the instructor.'],
+            ]);
+        }
 
         $attendance->update([
             'is_hand_raised' => true,
@@ -216,9 +226,17 @@ class LiveClassController extends Controller
         $user = $request->user();
         $liveClass = LiveClass::findOrFail($id);
 
+        $this->authorizeCourseAccess($user, $liveClass->course);
+
         $attendance = LiveClassAttendance::where('live_class_id', $liveClass->id)
             ->where('user_id', $user->id)
             ->firstOrFail();
+
+        if ($attendance->is_removed) {
+            throw ValidationException::withMessages([
+                'attendance' => ['You have been removed from this live classroom by the instructor.'],
+            ]);
+        }
 
         $attendance->update([
             'is_hand_raised' => false,

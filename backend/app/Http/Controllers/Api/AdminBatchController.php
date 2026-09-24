@@ -784,6 +784,19 @@ class AdminBatchController extends Controller
                     'left_at' => now(),
                     'notes' => ($active->notes ? trim($active->notes) . ' ' : '') . 'Removed from batch on ' . now()->toDateTimeString(),
                 ]);
+
+                // Lifecycle audit trail: every other membership mutation
+                // (enrolled / transferred / discontinued / rejoined) records
+                // a BatchTransfer row read by history(). Removals must appear
+                // in batch history too, otherwise the trail is incomplete.
+                BatchTransfer::create([
+                    'user_id' => $user->id,
+                    'from_batch_id' => $batch->id,
+                    'to_batch_id' => null,
+                    'action_type' => 'removed',
+                    'reason' => 'Removed from batch ' . $batch->code,
+                    'performed_by' => auth()->id(),
+                ]);
             }
         });
 

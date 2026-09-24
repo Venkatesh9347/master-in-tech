@@ -289,6 +289,48 @@ class LiveClassroomPhase1Test extends TestCase
         $this->assertDatabaseMissing('live_classroom_sessions', ['id' => $newSessionId]);
     }
 
+    public function test_admin_cannot_assign_non_tutor_as_live_classroom_host(): void
+    {
+        $token = $this->authenticate($this->admin);
+
+        $payload = [
+            'batch_id' => $this->batchA->id,
+            'tutor_id' => $this->enrolledStudent->id,
+            'title' => 'Hijacked Host Session',
+            'scheduled_date' => now()->addDay()->toDateString(),
+            'start_time' => '14:00',
+            'end_time' => '16:00',
+        ];
+
+        // A student must never gain host powers through session assignment.
+        $rejected = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/admin/live-classroom/sessions', $payload);
+
+        $rejected->assertStatus(422)
+            ->assertJsonValidationErrors(['tutor_id']);
+        $this->assertDatabaseMissing('live_classroom_sessions', ['title' => 'Hijacked Host Session']);
+
+        // Updating an existing session to a non-tutor is rejected alike.
+        $updateRejected = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->putJson("/api/admin/live-classroom/sessions/{$this->sessionA->id}", [
+                'tutor_id' => $this->enrolledStudent->id,
+            ]);
+
+        $updateRejected->assertStatus(422)
+            ->assertJsonValidationErrors(['tutor_id']);
+        $this->assertEquals($this->assignedTutor->id, $this->sessionA->fresh()->tutor_id);
+
+        // A genuine tutor is accepted.
+        $accepted = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/admin/live-classroom/sessions', array_merge($payload, [
+                'tutor_id' => $this->assignedTutor->id,
+                'title' => 'Legitimate Host Session',
+            ]));
+
+        $accepted->assertStatus(201)
+            ->assertJsonPath('session.tutor_id', $this->assignedTutor->id);
+    }
+
     protected function resetSanctumGuard(): void
     {
         $this->app['auth']->forgetGuards();

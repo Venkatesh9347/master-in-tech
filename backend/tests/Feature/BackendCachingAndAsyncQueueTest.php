@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\OtpService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -222,5 +223,38 @@ class BackendCachingAndAsyncQueueTest extends TestCase
 
         // Stale OTP must NOT be sent
         Mail::assertNotSent(StudentLoginOtpMail::class);
+    }
+
+    /**
+     * 8. SendOtpEmailJob defers to transaction commit like its sibling jobs:
+     * a dispatch inside a rolled-back transaction must never send.
+     */
+    public function test_send_otp_email_job_is_deferred_until_transaction_commit(): void
+    {
+        Mail::fake();
+
+        $student = User::factory()->create(['email' => 'student.aftercommit@masterintech.test']);
+
+        StudentLoginOtp::create([
+            'user_id' => $student->id,
+            'temp_token_hash' => hash('sha256', 'commit_token'),
+            'otp_hash' => Hash::make('445566'),
+            'attempts' => 0,
+            'max_attempts' => 3,
+            'expires_at' => now()->addSeconds(30),
+            'resend_available_at' => now()->addSeconds(30),
+        ]);
+
+        DB::beginTransaction();
+        SendOtpEmailJob::dispatch($student->id, '445566', 30);
+        DB::rollBack();
+
+        Mail::assertNothingSent();
+
+        // Outside a transaction the job still runs immediately.
+        SendOtpEmailJob::dispatch($student->id, '445566', 30);
+        Mail::assertSent(StudentLoginOtpMail::class, function (StudentLoginOtpMail $mail) use ($student) {
+            return $mail->hasTo($student->email) && $mail->otp === '445566';
+        });
     }
 }

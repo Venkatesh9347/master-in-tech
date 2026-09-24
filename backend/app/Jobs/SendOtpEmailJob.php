@@ -39,6 +39,13 @@ class SendOtpEmailJob implements ShouldQueue
         $this->userId = $userId;
         $this->otp = $otp;
         $this->expirySeconds = $expirySeconds;
+
+        // Dispatch only after the surrounding database transaction commits
+        // (Queueable already declares $afterCommit; assigning here avoids a
+        // trait property collision) — like SendTemplatedMailJob and
+        // TranscodeVideoAssetJob — so a rolled-back caller can never trigger
+        // an OTP email for state that never persisted.
+        $this->afterCommit = true;
     }
 
     /**

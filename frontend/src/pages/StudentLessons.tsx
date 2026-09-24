@@ -298,6 +298,7 @@ export default function StudentLessons() {
   const handleClaimOrViewCertificate = async () => {
     if (!courseId || generatingCert) return
     setGeneratingCert(true)
+    setActionError(null)
     try {
       const res = await API.post<{ certificate?: { certificate_code?: string } }>(
         `/courses/${courseId}/certificate`
@@ -306,10 +307,18 @@ export default function StudentLessons() {
       if (code) {
         navigate(`/student/certificates/${code}`)
       } else {
-        navigate(`/student/certificates/MIT-2026-${courseId}99`)
+        // Never invent a certificate identifier: without a server-issued
+        // code there is no valid certificate URL to navigate to.
+        setActionError(
+          'Certificate is not available yet. Please complete all lessons and try again.'
+        )
       }
-    } catch {
-      navigate(`/student/certificates/MIT-2026-${courseId}99`)
+    } catch (err: unknown) {
+      const response = err as { response?: { data?: { message?: string } } }
+      setActionError(
+        response.response?.data?.message ||
+          'Certificate is not available yet. Please complete all lessons and try again.'
+      )
     } finally {
       setGeneratingCert(false)
     }

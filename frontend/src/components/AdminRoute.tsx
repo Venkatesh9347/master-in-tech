@@ -13,7 +13,7 @@ export default function AdminRoute() {
       navigate("/login", { replace: true, state: { from: location } });
     } else if (user.role === "tutor" || user.role === "faculty") {
       navigate("/tutor", { replace: true });
-    } else if (user.role === "counsellor") {
+    } else if (user.role === "counsellor" || user.role === "telecaller" || user.role === "course_advisor") {
       navigate("/admin/crm", { replace: true });
     } else if (user.role !== "admin" && user.role !== "super_admin") {
       navigate("/student", { replace: true });
@@ -33,7 +33,7 @@ export default function AdminRoute() {
 
   if (!user) return null;
   if (user.role === "tutor" || user.role === "faculty") return null;
-  if (user.role === "counsellor") return null;
+  if (user.role === "counsellor" || user.role === "telecaller" || user.role === "course_advisor") return null;
   if (user.role !== "admin" && user.role !== "super_admin") return null;
 
   return <Outlet />;

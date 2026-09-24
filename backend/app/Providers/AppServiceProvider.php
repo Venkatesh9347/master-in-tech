@@ -16,8 +16,12 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(\App\Services\Ai\Contracts\LlmProviderInterface::class, function () {
+            // Effective default provider: the ai.default_provider website
+            // setting wins when present, else the AI_PROVIDER default —
+            // the same resolution the gateway uses, so orchestrated chats
+            // honor the runtime override instead of silently pinning config.
             return \App\Services\Ai\AiProviderFactory::make(
-                (string) config('ai.default_provider', 'stub')
+                $this->app->make(\App\Services\Ai\AiGatewayService::class)->defaultProvider()
             );
         });
 

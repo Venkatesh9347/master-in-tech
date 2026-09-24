@@ -220,8 +220,10 @@ class StudentGoogleOtpAuthTest extends TestCase
                 'masked_phone' => '+91 ******9999',
             ]);
 
-        // The unknown-response temp token is generic and cannot be verified,
-        // because no account/OTP record was ever created for it.
+        // The unknown-response temp token opens a fake pre-auth session:
+        // verify/resend must answer exactly like a registered number's
+        // session, otherwise the generic dispatch would re-enumerate
+        // accounts one step later.
         $unknownToken = $unregRes->json('temp_token');
         $this->assertNotEquals($tempToken, $unknownToken);
 
@@ -229,7 +231,9 @@ class StudentGoogleOtpAuthTest extends TestCase
             'temp_token' => $unknownToken,
             'otp' => '123456',
         ]);
-        $unverifiedRes->assertStatus(422);
+        $unverifiedRes->assertStatus(422)
+            ->assertJsonValidationErrors(['otp'])
+            ->assertJsonFragment(['Incorrect verification code. 2 attempt(s) remaining.']);
     }
 
     public function test_public_registration_endpoint_is_disabled(): void
@@ -483,5 +487,128 @@ class StudentGoogleOtpAuthTest extends TestCase
         }
 
         $this->assertEquals(429, $lastStatus, 'OTP verification must be throttled after exceeding the per-IP limit.');
+    }
+
+    public function test_unknown_number_verify_matches_registered_number_failure_sequence(): void
+    {
+        // HIGH-5: a fake pre-auth session must walk the identical failure
+        // sequence as a real session (remaining attempts, then lockout),
+        // otherwise verify() re-enumerates registered numbers.
+        User::factory()->create([
+            'name' => 'Real Student',
+            'email' => 'real.student@example.com',
+            'role' => 'student',
+            'status' => 'active',
+            'phone' => '+919876543211',
+        ]);
+
+        $realRes = $this->postJson('/api/auth/mobile/send-otp', ['phone' => '+919876543211']);
+        $realToken = $realRes->json('temp_token');
+
+        $fakeRes = $this->postJson('/api/auth/mobile/send-otp', ['phone' => '+910000000000']);
+        $fakeToken = $fakeRes->json('temp_token');
+
+        foreach (['111111', '222222'] as $i => $wrongOtp) {
+            $expectedRemaining = 2 - $i;
+
+            $realFail = $this->postJson('/api/auth/mobile/verify-otp', [
+                'temp_token' => $realToken,
+                'otp' => $wrongOtp,
+            ]);
+            $fakeFail = $this->postJson('/api/auth/mobile/verify-otp', [
+                'temp_token' => $fakeToken,
+                'otp' => $wrongOtp,
+            ]);
+
+            $realFail->assertStatus(422);
+            $fakeFail->assertStatus(422);
+            $this->assertEquals(
+                $realFail->json('errors.otp.0'),
+                $fakeFail->json('errors.otp.0'),
+                'Fake-session verify response must equal the real-session response.'
+            );
+            $this->assertStringContainsString("{$expectedRemaining} attempt(s) remaining", (string) $fakeFail->json('errors.otp.0'));
+        }
+
+        // Third wrong guess locks both sessions identically.
+        $realLock = $this->postJson('/api/auth/mobile/verify-otp', [
+            'temp_token' => $realToken,
+            'otp' => '333333',
+        ]);
+        $fakeLock = $this->postJson('/api/auth/mobile/verify-otp', [
+            'temp_token' => $fakeToken,
+            'otp' => '333333',
+        ]);
+
+        $realLock->assertStatus(422);
+        $fakeLock->assertStatus(422);
+        $this->assertEquals($realLock->json('errors.otp.0'), $fakeLock->json('errors.otp.0'));
+        $this->assertStringContainsString('Maximum verification attempts exceeded', (string) $fakeLock->json('errors.otp.0'));
+
+        // No OTP row and no user were ever created for the unknown number.
+        $this->assertDatabaseMissing('student_login_otps', [
+            'temp_token_hash' => hash('sha256', $fakeToken),
+        ]);
+        $this->assertDatabaseMissing('users', ['phone' => '+910000000000']);
+    }
+
+    public function test_unknown_number_resend_matches_registered_number_cooldown_and_rotation(): void
+    {
+        User::factory()->create([
+            'name' => 'Resend Student',
+            'email' => 'resend.student@example.com',
+            'role' => 'student',
+            'status' => 'active',
+            'phone' => '+919876543212',
+        ]);
+
+        $realRes = $this->postJson('/api/auth/mobile/send-otp', ['phone' => '+919876543212']);
+        $realToken = $realRes->json('temp_token');
+
+        $fakeRes = $this->postJson('/api/auth/mobile/send-otp', ['phone' => '+910000000001']);
+        $fakeToken = $fakeRes->json('temp_token');
+
+        // Immediate resend hits the cooldown on both sessions alike.
+        $realCool = $this->postJson('/api/auth/otp/resend', ['temp_token' => $realToken]);
+        $fakeCool = $this->postJson('/api/auth/otp/resend', ['temp_token' => $fakeToken]);
+
+        $realCool->assertStatus(422);
+        $fakeCool->assertStatus(422);
+        $this->assertArrayHasKey('resend', (array) $realCool->json('errors'));
+        $this->assertArrayHasKey('resend', (array) $fakeCool->json('errors'));
+
+        // After the cooldown both sessions rotate to a fresh token.
+        $this->travel(31)->seconds();
+
+        $realRot = $this->postJson('/api/auth/otp/resend', ['temp_token' => $realToken]);
+        $fakeRot = $this->postJson('/api/auth/otp/resend', ['temp_token' => $fakeToken]);
+
+        $realRot->assertStatus(200);
+        $fakeRot->assertStatus(200);
+        $this->assertNotEquals($fakeToken, $fakeRot->json('temp_token'));
+        $fakeRot->assertJsonStructure(['temp_token', 'expires_in', 'resend_cooldown']);
+
+        // The rotated fake token verifies with the same wrong-code message.
+        $fakeVerify = $this->postJson('/api/auth/mobile/verify-otp', [
+            'temp_token' => $fakeRot->json('temp_token'),
+            'otp' => '444444',
+        ]);
+        $fakeVerify->assertStatus(422)
+            ->assertJsonFragment(['Incorrect verification code. 2 attempt(s) remaining.']);
+    }
+
+    public function test_unknown_number_session_expires_like_registered_session(): void
+    {
+        $fakeRes = $this->postJson('/api/auth/mobile/send-otp', ['phone' => '+910000000002']);
+        $fakeToken = $fakeRes->json('temp_token');
+
+        $this->travel(31)->seconds();
+
+        $fakeVerify = $this->postJson('/api/auth/mobile/verify-otp', [
+            'temp_token' => $fakeToken,
+            'otp' => '555555',
+        ]);
+        $fakeVerify->assertStatus(422)
+            ->assertJsonFragment(['Verification code has expired (30-second limit). Please click Resend Code.']);
     }
 }

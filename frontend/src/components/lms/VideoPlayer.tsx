@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import SecureVideoPlayer from './SecureVideoPlayer';
 import type { Lesson } from '../../types/lms';
 
@@ -5,6 +6,120 @@ interface VideoPlayerProps {
   lesson: Lesson;
   courseId?: number;
   onProgress?: (currentTime: number, duration: number) => void;
+}
+
+const YOUTUBE_ORIGIN = 'https://www.youtube-nocookie.com';
+
+/**
+ * Metered YouTube embed (IFrame Player API over postMessage, no extra
+ * dependency). Playback time/duration flow into the standard onProgress
+ * heartbeat so the backend 90% watch gate sees real evidence — an
+ * unplayed embed records nothing and completion stays blocked, exactly
+ * like the secure player path. Anything unrecognized is ignored (fail
+ * closed: no fabricated progress).
+ *
+ * The channel uses unambiguous single-key command events: after the
+ * player reports onReady we poll getDuration/getCurrentTime, and the
+ * player answers each poll with an infoDelivery payload. Playback end
+ * (onStateChange 0) reports a final full watch from the last known
+ * duration.
+ */
+function YouTubeEmbed({
+  embedUrl,
+  title,
+  onProgress,
+}: {
+  embedUrl: string;
+  title: string;
+  onProgress?: (currentTime: number, duration: number) => void;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const onProgressRef = useRef(onProgress);
+  const lastKnown = useRef<{ t: number; d: number }>({ t: 0, d: 0 });
+
+  useEffect(() => {
+    onProgressRef.current = onProgress;
+  }, [onProgress]);
+
+  useEffect(() => {
+    lastKnown.current = { t: 0, d: 0 };
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const post = (message: Record<string, unknown>) => {
+      try {
+        iframeRef.current?.contentWindow?.postMessage(JSON.stringify(message), YOUTUBE_ORIGIN);
+      } catch {
+        // Cross-origin post failures must never break the lesson view.
+      }
+    };
+
+    const reportProgress = (t: number, d: number) => {
+      if (Number.isFinite(t) && Number.isFinite(d) && d > 0 && t >= 0) {
+        lastKnown.current = { t, d };
+        onProgressRef.current?.(t, d);
+      }
+    };
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== YOUTUBE_ORIGIN) return;
+
+      let parsed: unknown;
+      try {
+        parsed = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+      if (!parsed || typeof parsed !== 'object') return;
+      const data = parsed as { event?: unknown; info?: unknown };
+      if (typeof data.event !== 'string') return;
+
+      if (data.event === 'onReady') {
+        // Open the metering channel with unambiguous single-key command
+        // events; the player answers each poll with an infoDelivery
+        // payload carrying currentTime/duration.
+        post({ event: 'getDuration', id: 1 });
+        post({ event: 'getCurrentTime', id: 1 });
+        if (pollTimer === null) {
+          pollTimer = setInterval(() => {
+            post({ event: 'getDuration', id: 1 });
+            post({ event: 'getCurrentTime', id: 1 });
+          }, 5000);
+        }
+      } else if (data.event === 'infoDelivery') {
+        const info = data.info as { currentTime?: unknown; duration?: unknown } | null;
+        const t = typeof info?.currentTime === 'number' ? info.currentTime : NaN;
+        const d = typeof info?.duration === 'number' ? info.duration : NaN;
+        reportProgress(t, d);
+      } else if (data.event === 'onStateChange' && data.info === 0) {
+        // Playback ended: report full watch from the last known duration.
+        const { t, d } = lastKnown.current;
+        if (d > 0) {
+          onProgressRef.current?.(d, d);
+        } else if (t > 0) {
+          onProgressRef.current?.(t, t);
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      if (pollTimer !== null) clearInterval(pollTimer);
+    };
+  }, [embedUrl]);
+
+  return (
+    <div className="w-full aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-lg ring-1 ring-slate-800 flex items-center justify-center">
+      <iframe
+        ref={iframeRef}
+        src={embedUrl}
+        title={title}
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+        className="w-full h-full border-0"
+      />
+    </div>
+  );
 }
 
 export default function VideoPlayer({ lesson, courseId, onProgress }: VideoPlayerProps) {
@@ -21,7 +136,8 @@ export default function VideoPlayer({ lesson, courseId, onProgress }: VideoPlaye
       /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/
     );
     if (ytMatch && ytMatch[1]) {
-      return `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?rel=0&autoplay=0`;
+      // enablejsapi=1 opens the postMessage metering channel consumed above.
+      return `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?rel=0&autoplay=0&enablejsapi=1`;
     }
     const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
     if (vimeoMatch && vimeoMatch[1]) {
@@ -31,20 +147,25 @@ export default function VideoPlayer({ lesson, courseId, onProgress }: VideoPlaye
   };
 
   const embedUrl = isExternalEmbed ? getEmbedUrl(videoUrl) : null;
+  const isYouTube = embedUrl !== null && embedUrl.includes('youtube-nocookie.com');
 
   return (
     <div className="flex flex-col space-y-6">
       {/* Video Viewport Stage */}
       {embedUrl ? (
-        <div className="w-full aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-lg ring-1 ring-slate-800 flex items-center justify-center">
-          <iframe
-            src={embedUrl}
-            title={lesson.title}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-            className="w-full h-full border-0"
-          />
-        </div>
+        isYouTube ? (
+          <YouTubeEmbed embedUrl={embedUrl} title={lesson.title} onProgress={onProgress} />
+        ) : (
+          <div className="w-full aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-lg ring-1 ring-slate-800 flex items-center justify-center">
+            <iframe
+              src={embedUrl}
+              title={lesson.title}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              className="w-full h-full border-0"
+            />
+          </div>
+        )
       ) : (
         <SecureVideoPlayer
           lesson={lesson}

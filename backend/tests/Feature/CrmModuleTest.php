@@ -254,6 +254,45 @@ class CrmModuleTest extends TestCase
             ]);
     }
 
+    public function test_crm_duplicate_semantics_no_response_blocks_lost_releases(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $course = $this->createCourse(['title' => 'Semantics Course', 'code' => 'SEM']);
+
+        Sanctum::actingAs($admin);
+
+        $lead = Enquiry::create([
+            'name' => 'Semantics Lead',
+            'email' => 'semantics@example.com',
+            'phone' => '9988776655',
+            'status' => Enquiry::STATUS_NO_RESPONSE,
+            'course_id' => $course->id,
+        ]);
+
+        // A no_response lead is still active and blocks a duplicate lead.
+        $this->postJson('/api/admin/crm/leads', [
+            'name' => 'Semantics Duplicate',
+            'email' => 'semantics@example.com',
+            'phone' => '9988776655',
+            'course_id' => $course->id,
+        ])->assertStatus(422)
+            ->assertJsonFragment([
+                'message' => 'An active lead already exists for this candidate.',
+            ]);
+
+        // A dead lost lead releases the duplicate guard.
+        $lead->update(['status' => Enquiry::STATUS_LOST]);
+
+        $this->postJson('/api/admin/crm/leads', [
+            'name' => 'Semantics Fresh',
+            'email' => 'semantics@example.com',
+            'phone' => '9988776655',
+            'course_id' => $course->id,
+        ])->assertStatus(201);
+
+        $this->assertEquals(2, Enquiry::where('email', 'semantics@example.com')->where('course_id', $course->id)->count());
+    }
+
     public function test_lead_editing_and_automatic_timeline_tracking(): void
     {
         $admin = User::factory()->create(['role' => 'admin']);

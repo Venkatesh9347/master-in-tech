@@ -33,7 +33,7 @@ class StudentClassSessionController extends Controller
 
         ClassSession::syncRealtimeStatuses();
         $query = ClassSession::whereIn('course_id', function ($sq) use ($user) {
-                $sq->select('course_id')->from('course_enrollments')->where('user_id', $user->id)->where('status', 'active');
+                $sq->select('course_id')->from('course_enrollments')->where('user_id', $user->id)->whereIn('status', ['active', 'completed']);
             })
             ->select([
                 'id', 'course_id', 'tutor_id', 'quiz_id', 'title', 'description',
@@ -76,7 +76,7 @@ class StudentClassSessionController extends Controller
         $currentTime = $now->format('H:i');
 
         $query = ClassSession::whereIn('course_id', function ($sq) use ($user) {
-                $sq->select('course_id')->from('course_enrollments')->where('user_id', $user->id)->where('status', 'active');
+                $sq->select('course_id')->from('course_enrollments')->where('user_id', $user->id)->whereIn('status', ['active', 'completed']);
             })
             ->where('scheduled_date', $today)
             ->whereIn('status', ['scheduled', 'live'])
@@ -122,7 +122,7 @@ class StudentClassSessionController extends Controller
         $currentTime = $now->format('H:i');
 
         $query = ClassSession::whereIn('course_id', function ($sq) use ($user) {
-                $sq->select('course_id')->from('course_enrollments')->where('user_id', $user->id)->where('status', 'active');
+                $sq->select('course_id')->from('course_enrollments')->where('user_id', $user->id)->whereIn('status', ['active', 'completed']);
             })
             ->whereIn('status', ['scheduled', 'live'])
             ->where(function ($q) use ($today, $currentTime) {
@@ -173,7 +173,7 @@ class StudentClassSessionController extends Controller
         $currentTime = $now->format('H:i');
 
         $query = ClassSession::whereIn('course_id', function ($sq) use ($user) {
-                $sq->select('course_id')->from('course_enrollments')->where('user_id', $user->id)->where('status', 'active');
+                $sq->select('course_id')->from('course_enrollments')->where('user_id', $user->id)->whereIn('status', ['active', 'completed']);
             })
             ->where(function ($q) use ($today, $currentTime) {
                 $q->whereIn('status', ['completed', 'expired'])

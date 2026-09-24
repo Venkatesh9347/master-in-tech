@@ -337,4 +337,131 @@ class AuthenticatedStudentEnquiryTest extends TestCase
         $this->assertTrue($c1['is_enrolled']);
         $this->assertFalse($c2['is_enrolled'] ?? false);
     }
+
+    public function test_new_enquiry_allowed_if_previous_enquiry_was_lost(): void
+    {
+        $student = User::factory()->create([
+            'name' => 'Arjun Lost',
+            'email' => 'arjun.lost@example.com',
+            'phone' => '9876543210',
+            'role' => 'student',
+        ]);
+
+        Sanctum::actingAs($student);
+
+        $course = Course::create([
+            'title' => 'Lost Lead Course',
+            'slug' => 'lost-lead-course',
+            'description' => 'Lost lead course',
+            'instructor' => 'Inst Lost',
+            'duration' => '4 weeks',
+            'difficulty' => 'Beginner',
+            'is_published' => true,
+        ]);
+
+        // Previous lost enquiry is dead and must not block a fresh enquiry.
+        Enquiry::create([
+            'user_id' => $student->id,
+            'name' => $student->name,
+            'email' => $student->email,
+            'phone' => $student->phone,
+            'course_id' => $course->id,
+            'course_title' => $course->title,
+            'status' => Enquiry::STATUS_LOST,
+        ]);
+
+        $res = $this->postJson('/api/enquiries', [
+            'course_id' => $course->id,
+            'message' => 'Re-applying after earlier lost lead.',
+        ]);
+
+        $res->assertStatus(201);
+        $this->assertEquals(2, Enquiry::where('user_id', $student->id)->where('course_id', $course->id)->count());
+    }
+
+    public function test_duplicate_enquiry_blocked_while_previous_is_no_response(): void
+    {
+        $student = User::factory()->create([
+            'name' => 'Meera Silent',
+            'email' => 'meera.silent@example.com',
+            'phone' => '9876543211',
+            'role' => 'student',
+        ]);
+
+        Sanctum::actingAs($student);
+
+        $course = Course::create([
+            'title' => 'Silent Lead Course',
+            'slug' => 'silent-lead-course',
+            'description' => 'Silent lead course',
+            'instructor' => 'Inst Silent',
+            'duration' => '4 weeks',
+            'difficulty' => 'Beginner',
+            'is_published' => true,
+        ]);
+
+        // A no_response lead is still being worked and must block duplicates.
+        Enquiry::create([
+            'user_id' => $student->id,
+            'name' => $student->name,
+            'email' => $student->email,
+            'phone' => $student->phone,
+            'course_id' => $course->id,
+            'course_title' => $course->title,
+            'status' => Enquiry::STATUS_NO_RESPONSE,
+        ]);
+
+        $res = $this->postJson('/api/enquiries', [
+            'course_id' => $course->id,
+            'message' => 'Duplicate attempt.',
+        ]);
+
+        $res->assertStatus(200)
+            ->assertJsonFragment(['already_exists' => true]);
+        $this->assertEquals(1, Enquiry::where('user_id', $student->id)->where('course_id', $course->id)->count());
+    }
+
+    public function test_check_course_enquiry_reflects_canonical_active_set(): void
+    {
+        $student = User::factory()->create([
+            'name' => 'Dev Check',
+            'email' => 'dev.check@example.com',
+            'phone' => '9876543212',
+            'role' => 'student',
+        ]);
+
+        Sanctum::actingAs($student);
+
+        $course = Course::create([
+            'title' => 'Check Lead Course',
+            'slug' => 'check-lead-course',
+            'description' => 'Check lead course',
+            'instructor' => 'Inst Check',
+            'duration' => '4 weeks',
+            'difficulty' => 'Beginner',
+            'is_published' => true,
+        ]);
+
+        $enquiry = Enquiry::create([
+            'user_id' => $student->id,
+            'name' => $student->name,
+            'email' => $student->email,
+            'phone' => $student->phone,
+            'course_id' => $course->id,
+            'course_title' => $course->title,
+            'status' => Enquiry::STATUS_NO_RESPONSE,
+        ]);
+
+        // no_response counts as an active enquiry …
+        $this->getJson("/api/courses/{$course->id}/enquiry")
+            ->assertStatus(200)
+            ->assertJson(['has_enquiry' => true]);
+
+        // … while a dead lost lead does not.
+        $enquiry->update(['status' => Enquiry::STATUS_LOST]);
+
+        $this->getJson("/api/courses/{$course->id}/enquiry")
+            ->assertStatus(200)
+            ->assertJson(['has_enquiry' => false, 'enquiry' => null]);
+    }
 }

@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import type { GoogleAuthPendingSession } from '../../context/auth-context';
 
 interface GoogleAuthButtonProps {
-  onSuccess?: (session: GoogleAuthPendingSession) => void;
   onError: (errorMessage: string) => void;
 }
 
-export default function GoogleAuthButton({ onSuccess: _onSuccess, onError }: GoogleAuthButtonProps) {
+// Google sign-in uses the OAuth authorization-code redirect flow only:
+// clicking navigates to Google, which returns ?code= to /login for the
+// OTP exchange. There is no in-button credential callback.
+export default function GoogleAuthButton({ onError }: GoogleAuthButtonProps) {
   const [loading, setLoading] = useState(false);
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 

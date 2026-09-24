@@ -390,6 +390,23 @@ class LessonController extends Controller
                         'watched_percent' => $percent,
                     ], 422);
                 }
+
+                // Zero watch evidence (never played) can never satisfy the
+                // gate: without this, unwatched videos fall through with an
+                // assumed 100%. Vimeo embeds are exempt — they cannot report
+                // playback without a player SDK, so the legacy behavior
+                // stands for them (documented residual).
+                $metadata = $lesson->metadata;
+                $videoUrl = is_array($metadata) ? ($metadata['video_url'] ?? null) : null;
+                $isUnmeteredEmbed = is_string($videoUrl) && str_contains(strtolower($videoUrl), 'vimeo.com');
+
+                if ($playback <= 0 && ! $isUnmeteredEmbed && ! ($existingProgress && $existingProgress->completed)) {
+                    return response()->json([
+                        'message' => 'You must watch at least 90% of the video lesson before marking it as complete. Current progress: 0%.',
+                        'requirement_unmet' => 'video_watch_incomplete',
+                        'watched_percent' => 0,
+                    ], 422);
+                }
             }
         }
 

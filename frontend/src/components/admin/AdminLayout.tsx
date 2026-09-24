@@ -13,7 +13,8 @@ export default function AdminLayout() {
     navigate('/login')
   }
 
-  const isCounsellor = user?.role === 'counsellor'
+  const isCrmStaff =
+    user?.role === 'counsellor' || user?.role === 'telecaller' || user?.role === 'course_advisor'
 
   const adminNavLinks = [
     { label: 'Overview & Catalog', to: '/admin', icon: '📊' },
@@ -49,7 +50,7 @@ export default function AdminLayout() {
     { label: 'Leads & Enquiries', to: '/admin/enquiries', icon: '📬' },
   ]
 
-  const navLinks = isCounsellor ? counsellorNavLinks : adminNavLinks
+  const navLinks = isCrmStaff ? counsellorNavLinks : adminNavLinks
 
   useEffect(() => {
     if (activeTabRef.current) {
@@ -98,7 +99,11 @@ export default function AdminLayout() {
                     ? 'Super Administrator'
                     : user?.role === 'counsellor'
                       ? 'Admissions Counsellor'
-                      : 'Administrator'}
+                      : user?.role === 'telecaller'
+                        ? 'Telecaller'
+                        : user?.role === 'course_advisor'
+                          ? 'Course Advisor'
+                          : 'Administrator'}
                 </p>
               </div>
               <button

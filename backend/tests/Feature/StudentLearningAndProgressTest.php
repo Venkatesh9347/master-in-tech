@@ -158,7 +158,11 @@ class StudentLearningAndProgressTest extends TestCase
         ]);
 
         Sanctum::actingAs($studentA);
-        // Student A completes lesson 2 (text)
+        // Student A completes lesson 1 (video) after recording watch evidence
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/playback-progress", [
+            'current_time' => 280,
+            'duration' => 300,
+        ])->assertOk();
         $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/complete")->assertOk();
 
         // Student B's progress must remain unaffected in the database
@@ -338,8 +342,12 @@ class StudentLearningAndProgressTest extends TestCase
         $res->assertOk()
             ->assertJsonPath('current_lesson.id', $lesson1->id);
 
-        // Student opens lesson 2 and completes lesson 1
+        // Student opens lesson 2 and completes lesson 1 (with watch evidence)
         $this->postJson("/api/courses/{$course->id}/lessons/{$lesson2->id}/start")->assertOk();
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/playback-progress", [
+            'current_time' => 280,
+            'duration' => 300,
+        ])->assertOk();
         $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/complete")->assertOk();
 
         // Returns lesson 2 (last accessed incomplete)
@@ -756,5 +764,93 @@ class StudentLearningAndProgressTest extends TestCase
         // Admin can inspect learning audit logs
         $resLogs = $this->getJson("/api/admin/activity-logs");
         $resLogs->assertOk();
+    }
+
+    // 23. Video lesson cannot be completed with zero watch evidence
+    public function test_23_video_complete_without_watch_evidence_is_rejected(): void
+    {
+        [$course, $section1, $lesson1] = $this->createCourseWithCurriculum();
+        $student = User::factory()->create(['role' => 'student']);
+
+        CourseEnrollment::create(['user_id' => $student->id, 'course_id' => $course->id, 'status' => 'active', 'enrolled_at' => now()]);
+
+        Sanctum::actingAs($student);
+
+        // No playback record at all: assumed-100% fallback must not apply.
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/complete")
+            ->assertStatus(422)
+            ->assertJsonPath('requirement_unmet', 'video_watch_incomplete')
+            ->assertJsonPath('watched_percent', 0);
+
+        // Merely opening the lesson (start row with zero playback) is not evidence either.
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/start")->assertOk();
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/complete")
+            ->assertStatus(422)
+            ->assertJsonPath('requirement_unmet', 'video_watch_incomplete');
+
+        $this->assertDatabaseMissing('lesson_progress', [
+            'user_id' => $student->id,
+            'lesson_id' => $lesson1->id,
+            'completed' => true,
+        ]);
+    }
+
+    // 24. Partial evidence with unknown duration keeps the legacy leniency
+    public function test_24_video_complete_with_partial_unknown_duration_evidence_is_allowed(): void
+    {
+        [$course, $section1, $lesson1] = $this->createCourseWithCurriculum();
+        $student = User::factory()->create(['role' => 'student']);
+
+        CourseEnrollment::create(['user_id' => $student->id, 'course_id' => $course->id, 'status' => 'active', 'enrolled_at' => now()]);
+
+        Sanctum::actingAs($student);
+
+        // Heartbeat with unmeasurable duration but real playback is evidence.
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/playback-progress", [
+            'current_time' => 10,
+            'duration' => 0,
+        ])->assertOk();
+
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/complete")
+            ->assertOk()
+            ->assertJsonPath('completed', true);
+    }
+
+    // 25. Unmetered Vimeo embeds keep legacy behavior (documented residual)
+    public function test_25_vimeo_embed_complete_without_evidence_is_allowed(): void
+    {
+        [$course, $section1, $lesson1] = $this->createCourseWithCurriculum();
+        $lesson1->update(['metadata' => ['video_url' => 'https://vimeo.com/123456789']]);
+        $student = User::factory()->create(['role' => 'student']);
+
+        CourseEnrollment::create(['user_id' => $student->id, 'course_id' => $course->id, 'status' => 'active', 'enrolled_at' => now()]);
+
+        Sanctum::actingAs($student);
+
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/complete")
+            ->assertOk()
+            ->assertJsonPath('completed', true);
+    }
+
+    // 26. Already-completed video lessons stay re-completable
+    public function test_26_completed_video_recomplete_stays_allowed(): void
+    {
+        [$course, $section1, $lesson1] = $this->createCourseWithCurriculum();
+        $student = User::factory()->create(['role' => 'student']);
+
+        CourseEnrollment::create(['user_id' => $student->id, 'course_id' => $course->id, 'status' => 'active', 'enrolled_at' => now()]);
+
+        Sanctum::actingAs($student);
+
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/playback-progress", [
+            'current_time' => 280,
+            'duration' => 300,
+        ])->assertOk();
+
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/complete")->assertOk();
+        // Idempotent re-completion must keep working.
+        $this->postJson("/api/courses/{$course->id}/lessons/{$lesson1->id}/complete")
+            ->assertOk()
+            ->assertJsonPath('completed', true);
     }
 }

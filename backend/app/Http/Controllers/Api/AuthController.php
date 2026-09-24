@@ -48,15 +48,17 @@ class AuthController extends Controller
         $disabled = $user && in_array($user->status, ['disabled', 'inactive', 'suspended'], true);
 
         if (! $user || $disabled) {
-            // Generic pre-auth token that is not tied to any registered account,
-            // so it cannot be verified. Indistinguishable from a real dispatch.
+            // Fake pre-auth session (not a bare token): verify/resend must
+            // answer exactly like a real session or the generic response
+            // above would re-enumerate registered numbers one step later.
+            $fake = $otpService->createFakePreAuthSession($otpService->maskPhone($rawPhone));
             return response()->json([
                 'message' => 'A 30-second verification code has been sent to your registered mobile number.',
                 'requires_otp' => true,
-                'temp_token' => $otpService->generateTempToken(),
-                'masked_phone' => $otpService->maskPhone($rawPhone),
-                'expires_in' => (int) config('auth.otp_expiry_seconds', 30),
-                'resend_cooldown' => (int) config('auth.otp_resend_cooldown_seconds', 30),
+                'temp_token' => $fake['temp_token'],
+                'masked_phone' => $fake['masked_phone'],
+                'expires_in' => $fake['expires_in'],
+                'resend_cooldown' => $fake['resend_cooldown'],
             ]);
         }
 

@@ -182,14 +182,14 @@ class AdminCrmController extends Controller
         $phone = trim($validated['phone']);
         $courseId = isset($validated['course_id']) ? (int) $validated['course_id'] : null;
 
-        // Check if an active lead already exists with the same email and course
+        // Shared inactive set with the public enquiry duplicate check.
         $existing = Enquiry::where('email', $email)
             ->where(function ($q) use ($courseId) {
                 if ($courseId) {
                     $q->where('course_id', $courseId);
                 }
             })
-            ->whereNotIn('status', [Enquiry::STATUS_CLOSED, Enquiry::STATUS_NOT_INTERESTED, Enquiry::STATUS_LOST])
+            ->whereNotIn('status', Enquiry::INACTIVE_DUPLICATE_STATUSES)
             ->first();
 
         if ($existing) {

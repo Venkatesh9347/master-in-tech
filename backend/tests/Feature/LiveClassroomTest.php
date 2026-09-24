@@ -317,4 +317,62 @@ class LiveClassroomTest extends TestCase
                 'total_attendees' => 1,
             ]);
     }
+
+    public function test_non_enrolled_student_cannot_leave_or_raise_or_lower_hand(): void
+    {
+        $liveClass = LiveClass::create([
+            'course_id' => $this->course->id,
+            'instructor_id' => $this->tutor->id,
+            'title' => 'Gated Interactions',
+            'class_date' => now()->toDateString(),
+            'start_time' => '14:00',
+            'duration_minutes' => 60,
+            'status' => 'live',
+        ]);
+
+        // Same course-access rule as list/show/join/messages/state: 403.
+        $this->actingAs($this->unEnrolledStudent, 'sanctum')
+            ->postJson("/api/live-classes/{$liveClass->id}/leave")
+            ->assertStatus(403);
+
+        $this->actingAs($this->unEnrolledStudent, 'sanctum')
+            ->postJson("/api/live-classes/{$liveClass->id}/raise-hand")
+            ->assertStatus(403);
+
+        $this->actingAs($this->unEnrolledStudent, 'sanctum')
+            ->postJson("/api/live-classes/{$liveClass->id}/lower-hand")
+            ->assertStatus(403);
+    }
+
+    public function test_removed_student_cannot_raise_or_lower_hand(): void
+    {
+        $liveClass = LiveClass::create([
+            'course_id' => $this->course->id,
+            'instructor_id' => $this->tutor->id,
+            'title' => 'Removal Enforcement',
+            'class_date' => now()->toDateString(),
+            'start_time' => '15:00',
+            'duration_minutes' => 60,
+            'status' => 'live',
+        ]);
+
+        $this->actingAs($this->enrolledStudent, 'sanctum')
+            ->postJson("/api/live-classes/{$liveClass->id}/join")
+            ->assertStatus(200);
+
+        // Instructor removes the student (mirrors the tutor remove flow).
+        LiveClassAttendance::where('live_class_id', $liveClass->id)
+            ->where('user_id', $this->enrolledStudent->id)
+            ->update(['is_removed' => true]);
+
+        $this->actingAs($this->enrolledStudent, 'sanctum')
+            ->postJson("/api/live-classes/{$liveClass->id}/raise-hand")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['attendance']);
+
+        $this->actingAs($this->enrolledStudent, 'sanctum')
+            ->postJson("/api/live-classes/{$liveClass->id}/lower-hand")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['attendance']);
+    }
 }

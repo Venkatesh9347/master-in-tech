@@ -84,8 +84,19 @@ export default function Login() {
 
   const handlePostAuthRedirect = useCallback((loggedInUser: User) => {
     const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname;
+    // Frontline CRM staff share the backend's scoped-CRM access
+    // (counsellor/telecaller/course_advisor): their home is /admin/crm.
+    const isCrmStaff = (role?: string) =>
+      role === 'counsellor' || role === 'telecaller' || role === 'course_advisor';
+    const isCrmPath = (path?: string) =>
+      path === '/admin/crm' || path?.startsWith('/admin/crm/') ||
+      path === '/admin/enquiries' || path?.startsWith('/admin/enquiries/');
     if (from) {
       if (from.startsWith('/admin') && (loggedInUser.role === 'admin' || loggedInUser.role === 'super_admin')) {
+        navigate(from, { replace: true });
+        return;
+      }
+      if (isCrmPath(from) && (isCrmStaff(loggedInUser.role) || loggedInUser.role === 'admin' || loggedInUser.role === 'super_admin')) {
         navigate(from, { replace: true });
         return;
       }
@@ -103,7 +114,7 @@ export default function Login() {
       navigate('/admin', { replace: true });
     } else if (loggedInUser.role === 'tutor' || loggedInUser.role === 'faculty') {
       navigate('/tutor', { replace: true });
-    } else if (loggedInUser.role === 'counsellor') {
+    } else if (isCrmStaff(loggedInUser.role)) {
       navigate('/admin/crm', { replace: true });
     } else if (loggedInUser.role === 'company' || loggedInUser.role === 'recruiter') {
       navigate('/company', { replace: true });
@@ -120,11 +131,6 @@ export default function Login() {
       handlePostAuthRedirect(authUser);
     }
   }, [authUser, authLoading, pendingOtpSession, handlePostAuthRedirect]);
-
-  const handleGoogleSuccess = (session: GoogleAuthPendingSession) => {
-    setError('');
-    setPendingOtpSession(session);
-  };
 
   const handleMobileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -253,7 +259,6 @@ export default function Login() {
               {studentAuthMode === 'google' ? (
                 <div>
                   <GoogleAuthButton
-                    onSuccess={handleGoogleSuccess}
                     onError={(err) => setError(err)}
                   />
                   <p className="text-[11px] text-slate-500 text-center mt-2.5 font-medium">

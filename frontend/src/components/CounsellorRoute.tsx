@@ -11,7 +11,7 @@ export default function CounsellorRoute() {
     if (loading) return;
     if (!user) {
       navigate("/login", { replace: true, state: { from: location } });
-    } else if (!user.role || !["admin", "super_admin", "counsellor"].includes(user.role)) {
+    } else if (!user.role || !["admin", "super_admin", "counsellor", "telecaller", "course_advisor"].includes(user.role)) {
       navigate(user.role === "tutor" || user.role === "faculty" ? "/tutor" : "/student", { replace: true });
     }
   }, [user, loading, navigate, location]);
@@ -28,7 +28,7 @@ export default function CounsellorRoute() {
   }
 
   if (!user) return null;
-  if (!user.role || !["admin", "super_admin", "counsellor"].includes(user.role)) return null;
+  if (!user.role || !["admin", "super_admin", "counsellor", "telecaller", "course_advisor"].includes(user.role)) return null;
 
   return <Outlet />;
 }

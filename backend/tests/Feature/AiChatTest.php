@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AiConversation;
 use App\Models\AiMessage;
 use App\Models\User;
+use App\Models\WebsiteSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
@@ -300,5 +301,111 @@ class AiChatTest extends TestCase
             'success' => false,
             'error_code' => 'AI_PROVIDER_ERROR',
         ]);
+    }
+
+    public function test_orchestrated_chat_honors_website_setting_provider_override(): void
+    {
+        // Binding skew: the ai.default_provider setting must win over the
+        // config default for orchestrated chats, like it does for the
+        // gateway (AiGatewayTest::test_website_setting_overrides_default_provider).
+        config(['ai.enabled' => true, 'ai.default_provider' => 'openai']);
+        WebsiteSetting::set('ai.default_provider', 'stub', 'ai');
+
+        $student = $this->createStudent();
+        Sanctum::actingAs($student);
+
+        $response = $this->postJson('/api/ai/chat', ['message' => 'Hello?']);
+
+        $response->assertOk();
+        $this->assertStringContainsString('stub', (string) $response->json('reply'));
+        Http::assertNothingSent();
+        $this->assertDatabaseHas('ai_usages', [
+            'provider' => 'stub',
+            'user_id' => $student->id,
+            'success' => true,
+        ]);
+    }
+
+    public function test_new_conversation_model_uses_canonical_resolution(): void
+    {
+        // Model skew: the stored model must come from defaultModelFor()
+        // (provider config → ai.default_model setting → global default),
+        // never the hardcoded openai config path.
+        config([
+            'ai.enabled' => true,
+            'ai.default_provider' => 'openai',
+            'ai.providers.openai.api_key' => 'sk-test-key',
+            'ai.providers.openai.model' => null,
+        ]);
+        WebsiteSetting::set('ai.default_model', 'custom-model-z', 'ai');
+
+        Http::fake(['api.openai.com/*' => Http::response([
+            'model' => 'custom-model-z',
+            'choices' => [['message' => ['content' => 'Hi.']]],
+        ], 200)]);
+
+        $student = $this->createStudent();
+        Sanctum::actingAs($student);
+
+        $this->postJson('/api/ai/chat', ['message' => 'Hi?'])->assertOk();
+
+        Http::assertSent(function ($request) {
+            return $request['model'] === 'custom-model-z';
+        });
+    }
+
+    public function test_long_thread_sends_most_recent_history_window(): void
+    {
+        // History skew: beyond the 40-message window the provider must see
+        // the latest turns (including the current question), not the
+        // oldest 40 rows.
+        config([
+            'ai.enabled' => true,
+            'ai.default_provider' => 'openai',
+            'ai.providers.openai.api_key' => 'sk-test-key',
+        ]);
+        Http::fake(['api.openai.com/*' => Http::response([
+            'model' => 'gpt-4o-mini',
+            'choices' => [['message' => ['content' => 'Answer.']]],
+        ], 200)]);
+
+        $student = $this->createStudent();
+
+        $conversation = AiConversation::create([
+            'user_id' => $student->id,
+            'title' => 'Long thread',
+            'provider' => 'openai',
+            'model' => 'gpt-4o-mini',
+            'status' => 'active',
+        ]);
+
+        for ($i = 1; $i <= 25; $i++) {
+            AiMessage::create(['ai_conversation_id' => $conversation->id, 'role' => 'user', 'content' => "Seed question {$i}"]);
+            AiMessage::create(['ai_conversation_id' => $conversation->id, 'role' => 'assistant', 'content' => "Seed answer {$i}"]);
+        }
+
+        Sanctum::actingAs($student);
+
+        $postRes = $this->postJson('/api/ai/chat', [
+            'message' => 'Follow-up question',
+            'conversation_id' => $conversation->id,
+        ]);
+        $postRes->assertOk();
+
+        Http::assertSent(function ($request) {
+            $messages = $request['messages'] ?? [];
+
+            // 1 system prompt + latest 40 history rows (50 seeded + the
+            // just-saved current question = 51 total, oldest 11 dropped).
+            if (count($messages) !== 41) {
+                return false;
+            }
+
+            $contents = array_column(array_filter($messages, fn ($m) => ($m['role'] ?? '') === 'user'), 'content');
+
+            return ! in_array('Seed question 1', $contents, true)
+                && in_array('Follow-up question', $contents, true)
+                && in_array('Seed question 25', $contents, true);
+        });
     }
 }

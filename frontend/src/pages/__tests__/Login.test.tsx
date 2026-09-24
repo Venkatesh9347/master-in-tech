@@ -123,4 +123,32 @@ describe("Login deterministic navigation", () => {
     await waitFor(() => expect(screen.getByText("Invalid")).toBeTruthy());
     expect(mockNavigate).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["counsellor", "/admin/crm"],
+    ["telecaller", "/admin/crm"],
+    ["course_advisor", "/admin/crm"],
+  ] as const)("redirects already-authenticated %s to %s (no redirect loop)", async (role, path) => {
+    authState.user = { id: 10, name: "Staff", email: "staff@example.com", role } as any;
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Login />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(path, expect.objectContaining({ replace: true })));
+  });
+
+  it("returns telecaller to /admin/enquiries deep link after login", async () => {
+    authState.user = { id: 11, name: "Tele", email: "tele@example.com", role: "telecaller" } as any;
+    render(
+      <MemoryRouter
+        initialEntries={[{ pathname: "/login", state: { from: { pathname: "/admin/enquiries" } } }]}
+      >
+        <Login />
+      </MemoryRouter>
+    );
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("/admin/enquiries", expect.objectContaining({ replace: true }))
+    );
+  });
 });

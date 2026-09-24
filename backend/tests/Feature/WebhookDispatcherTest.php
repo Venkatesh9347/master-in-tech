@@ -245,4 +245,47 @@ class WebhookDispatcherTest extends TestCase
         Http::assertNothingSent();
         $this->assertSame(1, WebhookDelivery::count());
     }
+
+    public function test_plain_http_targets_follow_environment_policy(): void
+    {
+        // Local/testing/development allow HTTP (needed for local receivers);
+        // production-like environments require HTTPS at delivery time too,
+        // matching subscription validation.
+        $this->assertTrue(WebhookDispatcherService::httpAllowed());
+        $this->assertTrue(WebhookDispatcherService::isAllowedTargetUrl('http://hooks.example.com/plain'));
+        $this->assertTrue(WebhookDispatcherService::isAllowedTargetUrl('https://hooks.example.com/plain'));
+
+        $this->app->detectEnvironment(fn () => 'production');
+
+        try {
+            $this->assertFalse(WebhookDispatcherService::httpAllowed());
+            $this->assertFalse(WebhookDispatcherService::isAllowedTargetUrl('http://hooks.example.com/plain'));
+            $this->assertTrue(WebhookDispatcherService::isAllowedTargetUrl('https://hooks.example.com/plain'));
+            // SSRF rules still apply on top of the scheme policy.
+            $this->assertFalse(WebhookDispatcherService::isAllowedTargetUrl('http://127.0.0.1/plain'));
+            $this->assertFalse(WebhookDispatcherService::isAllowedTargetUrl('https://127.0.0.1/plain'));
+        } finally {
+            $this->app->detectEnvironment(fn () => 'testing');
+        }
+
+        $this->assertTrue(WebhookDispatcherService::httpAllowed());
+    }
+
+    public function test_http_delivery_succeeds_in_local_testing_environment(): void
+    {
+        Http::fake(['*' => Http::response(['ok' => true], 200)]);
+
+        $subscription = $this->subscription(['target_url' => 'http://hooks.example.com/plain']);
+
+        $delivery = WebhookDelivery::create([
+            'webhook_subscription_id' => $subscription->id,
+            'event' => WebhookDispatcherService::EVENT_PAYMENT_PAID,
+            'payload' => ['payment_id' => 'pay_plain'],
+            'status' => WebhookDelivery::STATUS_PENDING,
+            'attempts' => 0,
+        ]);
+
+        $this->assertTrue(app(WebhookDispatcherService::class)->attemptDelivery($delivery));
+        $this->assertSame(WebhookDelivery::STATUS_DELIVERED, $delivery->fresh()->status);
+    }
 }

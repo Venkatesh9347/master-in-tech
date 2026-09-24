@@ -116,7 +116,11 @@ class AiOrchestratorService
             'user_id' => $user->id,
             'title' => Str::limit($message, 80),
             'provider' => $this->provider->getName(),
-            'model' => config('ai.providers.openai.model'),
+            // Canonical model resolution (provider config → ai.default_model
+            // setting → global default), never a hardcoded provider path:
+            // the stored model is passed to the gateway, which prefers it
+            // over re-resolving.
+            'model' => $this->gateway->defaultModelFor($this->provider->getName()),
             'status' => 'active',
         ]);
     }
@@ -135,10 +139,18 @@ class AiOrchestratorService
 
         $historyLimit = (int) config('ai.max_history_messages', 40);
 
+        // Most-recent window in chronological order: the provider must see
+        // the latest turns (including the just-saved user message), not the
+        // oldest 40 rows of a long thread. reorder() drops the relation's
+        // built-in chronological order, which would otherwise win over the
+        // descending window in SQL.
         $history = $conversation->messages()
-            ->orderBy('id')
+            ->reorder()
+            ->orderByDesc('id')
             ->when($historyLimit > 0, fn ($query) => $query->limit($historyLimit))
-            ->get();
+            ->get()
+            ->sortBy('id')
+            ->values();
 
         foreach ($history as $message) {
             if (in_array($message->role, ['user', 'assistant'], true)) {

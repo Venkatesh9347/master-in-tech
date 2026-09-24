@@ -28,6 +28,21 @@ class Enquiry extends Model
     public const STATUS_NO_RESPONSE = 'no_response';
     public const STATUS_CLOSED = 'closed';
 
+    /**
+     * Duplicate-detection inactive set: leads in these statuses never block
+     * a fresh enquiry/lead for the same candidate + course. `lost` is dead
+     * (automation-terminal, excluded from due follow-ups, counted in the
+     * lost reporting family); `no_response` stays active (automation
+     * non-terminal, follow-ups still due). Shared by the public
+     * (EnquiryController) and CRM (AdminCrmController) duplicate checks so
+     * the two entry paths can never diverge again.
+     */
+    public const INACTIVE_DUPLICATE_STATUSES = [
+        self::STATUS_CLOSED,
+        self::STATUS_NOT_INTERESTED,
+        self::STATUS_LOST,
+    ];
+
     public const PIPELINE_STATUSES = [
         self::STATUS_NEW,
         self::STATUS_CONTACTED,

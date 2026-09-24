@@ -40,7 +40,7 @@ interface BatchTransferLog {
   user_id: number
   from_batch_id?: number | null
   to_batch_id?: number | null
-  action_type: 'enrolled' | 'transferred' | 'discontinued' | 'rejoined' | 'completed'
+  action_type: 'enrolled' | 'transferred' | 'discontinued' | 'rejoined' | 'completed' | 'removed'
   reason?: string | null
   created_at: string
   student?: StudentUser
@@ -1404,6 +1404,8 @@ export default function AdminBatches() {
                           <span className="text-purple-400">→</span>
                           {log.toBatch ? (
                             <span className="text-purple-300 font-bold">{log.toBatch.code}</span>
+                          ) : log.action_type === 'removed' ? (
+                            <span className="text-amber-400">Removed</span>
                           ) : (
                             <span className="text-amber-400">Discontinued</span>
                           )}

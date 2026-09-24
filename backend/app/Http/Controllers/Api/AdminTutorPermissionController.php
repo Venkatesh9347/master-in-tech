@@ -38,11 +38,28 @@ class AdminTutorPermissionController extends Controller
     }
 
     /**
+     * Tutor permission endpoints operate on tutor-role accounts only,
+     * mirroring the index() listing filter. Editing permission rows for
+     * students, staff, or administrators would write inert data that only
+     * takes effect if the account later becomes a tutor.
+     */
+    private function findTutorOrFail(int $id): User
+    {
+        $tutor = User::findOrFail($id);
+
+        if (! in_array($tutor->role, ['tutor', 'faculty', 'instructor'], true)) {
+            abort(422, 'Tutor permissions can only be managed for tutor accounts.');
+        }
+
+        return $tutor;
+    }
+
+    /**
      * Get specific tutor permissions.
      */
     public function getPermissions(Request $request, int $id): JsonResponse
     {
-        $tutor = User::findOrFail($id);
+        $tutor = $this->findTutorOrFail($id);
 
         return response()->json([
             'id' => $tutor->id,
@@ -58,7 +75,7 @@ class AdminTutorPermissionController extends Controller
      */
     public function updatePermissions(Request $request, int $id): JsonResponse
     {
-        $tutor = User::findOrFail($id);
+        $tutor = $this->findTutorOrFail($id);
 
         $validated = $request->validate([
             'permissions' => 'required|array',

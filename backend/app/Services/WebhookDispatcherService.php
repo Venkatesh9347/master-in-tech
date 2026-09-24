@@ -244,6 +244,14 @@ class WebhookDispatcherService
             return false;
         }
 
+        // Plain HTTP is acceptable only where httpAllowed() says so
+        // (local/testing/development). Production-like environments require
+        // HTTPS — the same policy subscription validation enforces at
+        // creation time, applied here so pre-existing rows stay gated too.
+        if ($scheme === 'http' && ! self::httpAllowed()) {
+            return false;
+        }
+
         // Userinfo (credentials in URL) is never acceptable.
         if (isset($parts['user']) || isset($parts['pass'])) {
             return false;

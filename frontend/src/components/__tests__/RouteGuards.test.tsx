@@ -12,6 +12,7 @@ vi.mock("react-router-dom", async () => {
 });
 
 import AdminRoute from "../AdminRoute";
+import CounsellorRoute from "../CounsellorRoute";
 import StudentRoute from "../StudentRoute";
 import TutorRoute from "../TutorRoute";
 import { AuthContext } from "../../context/auth-context";
@@ -20,6 +21,7 @@ import type { User } from "../../context/auth-context";
 const adminUser: User = { id: 1, name: "Admin", email: "admin@example.com", role: "admin" };
 const tutorUser: User = { id: 2, name: "Tutor", email: "tutor@example.com", role: "tutor" };
 const studentUser: User = { id: 3, name: "Student", email: "student@example.com", role: "student" };
+const telecallerUser: User = { id: 4, name: "Tele", email: "tele@example.com", role: "telecaller" };
 
 function renderWithAuth(ui: React.ReactNode, authValue: { user: User | null; loading: boolean }, initialPath = "/admin") {
   return render(
@@ -161,5 +163,45 @@ describe("RouteGuards", () => {
       "/tutor"
     );
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/admin", expect.objectContaining({ replace: true })));
+  });
+
+  it("CounsellorRoute allows telecaller frontline staff", async () => {
+    renderWithAuth(
+      <Routes>
+        <Route element={<CounsellorRoute />}>
+          <Route path="/admin/crm" element={<div>CRM</div>} />
+        </Route>
+      </Routes>,
+      { user: telecallerUser, loading: false },
+      "/admin/crm"
+    );
+    expect(await screen.findByText("CRM")).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("CounsellorRoute redirects student to /student", async () => {
+    renderWithAuth(
+      <Routes>
+        <Route element={<CounsellorRoute />}>
+          <Route path="/admin/crm" element={<div>CRM</div>} />
+        </Route>
+      </Routes>,
+      { user: studentUser, loading: false },
+      "/admin/crm"
+    );
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/student", expect.objectContaining({ replace: true })));
+  });
+
+  it("AdminRoute redirects telecaller to /admin/crm", async () => {
+    renderWithAuth(
+      <Routes>
+        <Route element={<AdminRoute />}>
+          <Route path="/admin" element={<div>ADMIN</div>} />
+        </Route>
+      </Routes>,
+      { user: telecallerUser, loading: false },
+      "/admin"
+    );
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/admin/crm", expect.objectContaining({ replace: true })));
   });
 });

@@ -200,7 +200,14 @@ class ComprehensiveLmsE2EVerificationTest extends TestCase
         $progressRes->assertJsonPath('total_lessons', 4);
         $progressRes->assertJsonPath('completed_lesson_count', 0);
 
-        // Complete Lesson 1 (Video)
+        // Complete Lesson 1 (Video) after recording watch evidence, as the
+        // YouTube metering heartbeat would in the classroom UI.
+        $watchRes = $this->actingAs($student, 'sanctum')
+            ->postJson("/api/courses/{$course->id}/lessons/{$videoLesson->id}/playback-progress", [
+                'current_time' => 1000,
+                'duration' => 1080,
+            ]);
+        $watchRes->assertOk();
         $complete1Res = $this->actingAs($student, 'sanctum')
             ->postJson("/api/courses/{$course->id}/lessons/{$videoLesson->id}/complete");
         $complete1Res->assertOk();

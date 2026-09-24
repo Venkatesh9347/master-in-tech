@@ -79,9 +79,12 @@ class VideoSecurityManager
 
         $playbackUrl = $driver->getPlaybackUrl($asset, $token);
 
-        // Format full registered mobile number for dynamic floating watermark
+        // Format full registered mobile number for dynamic floating watermark.
+        // Never fabricate a phone number: viewers without a registered
+        // number are identified by name + account id (unique per viewer,
+        // unlike a shared placeholder).
         $rawPhone = trim($user->phone ?? '');
-        $watermarkText = $rawPhone !== '' ? $rawPhone : "+91 9876543210 • {$user->name}";
+        $watermarkText = $rawPhone !== '' ? $rawPhone : "{$user->name} (#{$user->id})";
 
         return [
             'asset_id' => $asset->asset_id,

@@ -1,6 +1,6 @@
 import { createContext } from "react";
 
-export type UserRole = "student" | "tutor" | "admin" | "super_admin" | "faculty" | "company" | "recruiter" | "counsellor";
+export type UserRole = "student" | "tutor" | "admin" | "super_admin" | "faculty" | "company" | "recruiter" | "counsellor" | "telecaller" | "course_advisor";
 
 export interface User {
   id: number;

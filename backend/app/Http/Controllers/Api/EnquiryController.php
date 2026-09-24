@@ -80,11 +80,7 @@ class EnquiryController extends Controller
             $existingQuery->whereNull('course_id');
         }
 
-        $inactiveStatuses = [
-            Enquiry::STATUS_CLOSED,
-            Enquiry::STATUS_NOT_INTERESTED,
-            Enquiry::STATUS_NO_RESPONSE,
-        ];
+        $inactiveStatuses = Enquiry::INACTIVE_DUPLICATE_STATUSES;
 
         $existingEnquiry = $existingQuery->whereNotIn('status', $inactiveStatuses)->latest()->first();
 
@@ -152,11 +148,9 @@ class EnquiryController extends Controller
             ]);
         }
 
-        $inactiveStatuses = [
-            Enquiry::STATUS_CLOSED,
-            Enquiry::STATUS_NOT_INTERESTED,
-            Enquiry::STATUS_NO_RESPONSE,
-        ];
+        // Same inactive set as store(): has_enquiry must agree with the
+        // duplicate check or the modal and the endpoint disagree.
+        $inactiveStatuses = Enquiry::INACTIVE_DUPLICATE_STATUSES;
 
         $enquiry = Enquiry::where(function ($q) use ($user) {
                 $q->where('user_id', $user->id)

@@ -808,4 +808,52 @@ class AdminBatchManagementTest extends TestCase
             ->where('user_id', $student->id)
             ->count());
     }
+
+    public function test_remove_student_records_removal_in_batch_history(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $student = User::factory()->create(['role' => 'student', 'name' => 'Bruce Banner']);
+        $course = $this->createCourse(['title' => 'Gamma Science', 'code' => 'GAMMA']);
+
+        $batch = Batch::create([
+            'name' => 'Gamma Aug Batch',
+            'code' => 'RIT(GAMMA)BC230826',
+            'course_id' => $course->id,
+            'start_date' => '2026-08-23',
+            'status' => 'ongoing',
+        ]);
+
+        BatchStudent::create([
+            'batch_id' => $batch->id,
+            'user_id' => $student->id,
+            'status' => 'active',
+            'joined_at' => now()->subDays(5),
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        $res = $this->deleteJson("/api/admin/batches/{$batch->id}/students/{$student->id}");
+        $res->assertStatus(200);
+
+        // Removal deactivates the membership …
+        $this->assertEquals('removed', BatchStudent::where('batch_id', $batch->id)
+            ->where('user_id', $student->id)
+            ->value('status'));
+
+        // … and records a lifecycle row so batch history stays complete.
+        $this->assertDatabaseHas('batch_transfers', [
+            'user_id' => $student->id,
+            'from_batch_id' => $batch->id,
+            'to_batch_id' => null,
+            'action_type' => 'removed',
+        ]);
+
+        // The history endpoint surfaces the removal for the student.
+        $history = $this->getJson("/api/admin/batches/history?user_id={$student->id}");
+        $history->assertStatus(200);
+        $history->assertJsonFragment([
+            'user_id' => $student->id,
+            'action_type' => 'removed',
+        ]);
+    }
 }

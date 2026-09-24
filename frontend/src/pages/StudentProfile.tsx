@@ -28,12 +28,29 @@ export default function StudentProfile() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+  const [saving, setSaving] = useState(false)
   const [enrollmentsError, setEnrollmentsError] = useState(false)
 
   useEffect(() => {
     if (user?.name) setName(user.name)
     if (user?.phone) setPhone(user.phone)
   }, [user])
+
+  // Hydrate bio/location (and server-truth name/phone) from the student
+  // profile endpoint so edits never clobber fields the auth boot omits.
+  useEffect(() => {
+    API.get<{ user?: { name?: string; phone?: string; location?: string; bio?: string } }>('/student/profile')
+      .then((res) => {
+        const profile = res.data?.user
+        if (!profile) return
+        if (profile.name) setName(profile.name)
+        if (profile.phone) setPhone(profile.phone)
+        if (profile.location) setLocation(profile.location)
+        if (profile.bio) setBio(profile.bio)
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     API.get<EnrollmentItem[]>('/my-courses')
@@ -55,13 +72,52 @@ export default function StudentProfile() {
     (e) => Number(e.progress_percentage) < 100 && e.status !== 'completed'
   )
 
-  const handleProfileSave = (e: React.FormEvent) => {
+  const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    // No student profile-update endpoint exists on the API yet: saving here
-    // would fake success. The form stays readable, the action stays honest.
-    setErrorMsg(
-      'Profile editing is not available yet. Please contact support to update your details.'
-    )
+    setErrorMsg('')
+    setSuccessMsg('')
+
+    if (password && password !== confirmPassword) {
+      setErrorMsg('Passwords do not match. Please re-enter your new password.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const payload: {
+        name: string
+        phone: string
+        location: string
+        bio: string
+        password?: string
+      } = {
+        name: name.trim(),
+        phone: phone.trim(),
+        location: location.trim(),
+        bio: bio.trim(),
+      }
+      if (password) payload.password = password
+
+      const res = await API.put<{
+        message?: string
+        user?: { name?: string; location?: string; bio?: string }
+      }>('/student/profile', payload)
+
+      const updated = res.data?.user
+      if (updated?.name) setName(updated.name)
+      if (typeof updated?.location === 'string') setLocation(updated.location)
+      if (typeof updated?.bio === 'string') setBio(updated.bio)
+      setPassword('')
+      setConfirmPassword('')
+      setSuccessMsg(res.data?.message || 'Profile updated successfully.')
+    } catch (err: unknown) {
+      const response = err as { response?: { data?: { message?: string } } }
+      setErrorMsg(
+        response.response?.data?.message || 'Failed to update profile. Please try again.'
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -135,6 +191,12 @@ export default function StudentProfile() {
             {errorMsg && (
               <div className="p-4 bg-red-50 text-red-700 text-xs font-bold rounded-2xl border border-red-200">
                 ⚠️ {errorMsg}
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="p-4 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-2xl border border-emerald-200">
+                ✓ {successMsg}
               </div>
             )}
 
@@ -225,9 +287,10 @@ export default function StudentProfile() {
               <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
+                  disabled={saving}
                   className="px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-sm transition disabled:opacity-50"
                 >
-                  Save Profile Settings
+                  {saving ? 'Saving...' : 'Save Profile Settings'}
                 </button>
               </div>
             </form>

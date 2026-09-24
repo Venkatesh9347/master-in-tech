@@ -803,4 +803,60 @@ class RecordedVideoSecurityTest extends TestCase
         $this->get("/api/video-stream/{$assetId}/segments/360p_segment_002.ts?token={$q}")
             ->assertStatus(200);
     }
+
+    public function test_watermark_identifies_phoneless_viewer_truthfully(): void
+    {
+        $student = User::factory()->create([
+            'name' => 'No Phone Nina',
+            'email' => 'nina.nophone@example.com',
+            'role' => 'student',
+            'phone' => null,
+        ]);
+
+        CourseEnrollment::create([
+            'user_id' => $student->id,
+            'course_id' => $this->course->id,
+            'enrolled_at' => now(),
+            'status' => 'active',
+            'progress_percentage' => 0,
+        ]);
+
+        $response = $this->actingAs($student, 'sanctum')
+            ->postJson("/api/courses/{$this->course->id}/lessons/{$this->lesson->id}/playback-auth");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('session.watermark.mobile_number', "No Phone Nina (#{$student->id})")
+            ->assertJsonPath('session.watermark.user_id', $student->id);
+        $this->assertStringNotContainsString(
+            '+91 9876543210',
+            (string) $response->json('session.watermark.mobile_number')
+        );
+    }
+
+    public function test_upload_sourced_asset_never_serves_synthetic_segments(): void
+    {
+        // An upload-pipeline asset with no transcoded files on disk must
+        // 404 — synthetic dev bytes must never masquerade as its output.
+        VideoAsset::create([
+            'lesson_id' => $this->lesson->id,
+            'course_id' => $this->course->id,
+            'title' => $this->lesson->title,
+            'asset_id' => 'vasset_upload_missing_9',
+            'playback_id' => 'vplay_missing_0001',
+            'driver' => 'local_hls',
+            'status' => 'ready',
+            'duration_seconds' => 600,
+            'metadata' => ['source' => 'upload'],
+        ]);
+
+        $auth = $this->actingAs($this->enrolledStudent, 'sanctum')
+            ->postJson("/api/courses/{$this->course->id}/lessons/{$this->lesson->id}/playback-auth");
+        $auth->assertStatus(200);
+        $this->assertSame('vasset_upload_missing_9', $auth->json('session.asset_id'));
+        $q = urlencode((string) $auth->json('session.playback_token'));
+
+        $missing = $this->get("/api/video-stream/vasset_upload_missing_9/segments/720p_segment_000.ts?token={$q}");
+        $missing->assertStatus(404);
+        $this->assertStringNotContainsString('ENC_TS_CHUNK_', $missing->getContent());
+    }
 }

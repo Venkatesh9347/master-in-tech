@@ -255,6 +255,29 @@ class AdminUserController extends Controller
 
         $this->denyUnlessSuperAdminGrantAllowed($request, $validated['role']);
 
+        $targetIsSuperAdmin = $user->role === 'super_admin';
+        $targetStaysSuperAdmin = $validated['role'] === 'super_admin';
+
+        // Symmetric with the grant guard: super_admin membership is
+        // super_admin-controlled in both directions.
+        if ($targetIsSuperAdmin && ! $targetStaysSuperAdmin && ($request->user()?->role !== 'super_admin')) {
+            abort(403, 'Only a super administrator can revoke the super_admin role.');
+        }
+
+        // Administrators must never change their own role: self-demotion
+        // locks the actor out of Admin Studio with no recovery path.
+        if ((int) $request->user()->id === (int) $user->id) {
+            abort(403, 'You cannot change your own role. Ask another administrator.');
+        }
+
+        // The platform must always retain at least one privileged account.
+        $targetIsPrivileged = in_array($user->role, ['admin', 'super_admin'], true);
+        $targetStaysPrivileged = in_array($validated['role'], ['admin', 'super_admin'], true);
+        if ($targetIsPrivileged && ! $targetStaysPrivileged
+            && ! User::where('id', '!=', $user->id)->whereIn('role', ['admin', 'super_admin'])->exists()) {
+            abort(403, 'This is the last administrator account and cannot be demoted.');
+        }
+
         $oldRole = $user->role;
 
         // HIGH-7: explicit policy-controlled role update bypasses mass assignment.
@@ -283,6 +306,18 @@ class AdminUserController extends Controller
     {
         if ($request->user()->id === $user->id) {
             return response()->json(['message' => 'Cannot delete your own administrator account.'], 403);
+        }
+
+        // Symmetric with the grant guard: only a super_admin may delete a
+        // super_admin account.
+        if ($user->role === 'super_admin' && $request->user()?->role !== 'super_admin') {
+            return response()->json(['message' => 'Only a super administrator can delete a super_admin account.'], 403);
+        }
+
+        // The platform must always retain at least one privileged account.
+        if (in_array($user->role, ['admin', 'super_admin'], true)
+            && ! User::where('id', '!=', $user->id)->whereIn('role', ['admin', 'super_admin'])->exists()) {
+            return response()->json(['message' => 'The last administrator account cannot be deleted.'], 403);
         }
 
         $old = $user->only([

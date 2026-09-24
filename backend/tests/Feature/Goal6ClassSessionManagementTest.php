@@ -256,6 +256,58 @@ class Goal6ClassSessionManagementTest extends TestCase
         $bobRes->assertStatus(403);
     }
 
+    public function test_completed_enrollment_keeps_session_discoverability(): void
+    {
+        // show/join/canStudentJoin admit active+completed; the list
+        // endpoints must use the same scope or graduates lose discovery
+        // while retaining direct access.
+        CourseEnrollment::where('user_id', $this->studentEnrolled->id)
+            ->where('course_id', $this->course1->id)
+            ->update(['status' => 'completed']);
+
+        $upcoming = ClassSession::create([
+            'course_id' => $this->course1->id,
+            'tutor_id' => $this->tutor1->id,
+            'title' => 'Graduate Upcoming Session',
+            'platform' => 'zoom',
+            'meeting_url' => 'https://zoom.us/j/333333333',
+            'scheduled_date' => now()->addDays(2)->toDateString(),
+            'start_time' => '15:00',
+            'end_time' => '16:30',
+            'status' => 'scheduled',
+            'created_by' => $this->admin->id,
+        ]);
+
+        $past = ClassSession::create([
+            'course_id' => $this->course1->id,
+            'tutor_id' => $this->tutor1->id,
+            'title' => 'Graduate Past Session',
+            'platform' => 'zoom',
+            'meeting_url' => 'https://zoom.us/j/444444444',
+            'scheduled_date' => now()->subDays(2)->toDateString(),
+            'start_time' => '15:00',
+            'end_time' => '16:30',
+            'status' => 'completed',
+            'created_by' => $this->admin->id,
+        ]);
+
+        $indexIds = collect(
+            $this->actingAs($this->studentEnrolled, 'sanctum')->getJson('/api/student/class-sessions')->assertStatus(200)->json()
+        )->pluck('id')->toArray();
+        $this->assertContains($upcoming->id, $indexIds);
+        $this->assertContains($past->id, $indexIds);
+
+        $upcomingIds = collect(
+            $this->actingAs($this->studentEnrolled, 'sanctum')->getJson('/api/student/class-sessions/upcoming')->assertStatus(200)->json()
+        )->pluck('id')->toArray();
+        $this->assertContains($upcoming->id, $upcomingIds);
+
+        $previousIds = collect(
+            $this->actingAs($this->studentEnrolled, 'sanctum')->getJson('/api/student/class-sessions/previous')->assertStatus(200)->json()
+        )->pluck('id')->toArray();
+        $this->assertContains($past->id, $previousIds);
+    }
+
     public function test_student_joining_session_records_attendance_and_returns_meeting_url(): void
     {
         $session = ClassSession::create([

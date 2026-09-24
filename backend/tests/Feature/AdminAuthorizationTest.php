@@ -280,4 +280,88 @@ class AdminAuthorizationTest extends TestCase
         // for when such routes are added
         $this->assertTrue(true);
     }
+
+    public function test_admin_cannot_delete_super_admin_account(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $superAdmin = User::factory()->create(['role' => 'super_admin']);
+
+        // A plain admin must not remove a super_admin account.
+        $this->actingAs($admin, 'sanctum')
+            ->deleteJson("/api/admin/users/{$superAdmin->id}")
+            ->assertForbidden()
+            ->assertJsonFragment(['message' => 'Only a super administrator can delete a super_admin account.']);
+
+        $this->assertNotNull(User::find($superAdmin->id));
+
+        // A super_admin may still remove a non-last admin.
+        $this->actingAs($superAdmin, 'sanctum')
+            ->deleteJson("/api/admin/users/{$admin->id}")
+            ->assertOk();
+
+        $this->assertNull(User::find($admin->id));
+    }
+
+    public function test_admin_cannot_revoke_super_admin_role(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $superAdminA = User::factory()->create(['role' => 'super_admin']);
+        $superAdminB = User::factory()->create(['role' => 'super_admin']);
+
+        // Revoking super_admin requires a super_admin actor.
+        $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/admin/users/{$superAdminA->id}/role", ['role' => 'admin'])
+            ->assertForbidden();
+
+        $this->assertEquals('super_admin', $superAdminA->fresh()->role);
+
+        // Between super_admins the change is allowed while one remains.
+        $this->actingAs($superAdminB, 'sanctum')
+            ->putJson("/api/admin/users/{$superAdminA->id}/role", ['role' => 'admin'])
+            ->assertOk();
+
+        $this->assertEquals('admin', $superAdminA->fresh()->role);
+    }
+
+    public function test_admin_cannot_change_own_role(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/admin/users/{$admin->id}/role", ['role' => 'student'])
+            ->assertForbidden();
+
+        $this->assertEquals('admin', $admin->fresh()->role);
+    }
+
+    public function test_tutor_permission_endpoints_reject_non_tutor_accounts(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $student = User::factory()->create(['role' => 'student']);
+        $tutor = User::factory()->create(['role' => 'tutor']);
+
+        // Permission rows are tutor-scoped: students are rejected …
+        $this->actingAs($admin, 'sanctum')
+            ->getJson("/api/admin/tutors/{$student->id}/permissions")
+            ->assertStatus(422);
+
+        $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/admin/tutors/{$student->id}/permissions", [
+                'permissions' => ['view_students' => false],
+            ])
+            ->assertStatus(422);
+
+        $this->assertNull($student->fresh()->permissions);
+
+        // … while tutor accounts keep working.
+        $this->actingAs($admin, 'sanctum')
+            ->getJson("/api/admin/tutors/{$tutor->id}/permissions")
+            ->assertOk();
+
+        $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/admin/tutors/{$tutor->id}/permissions", [
+                'permissions' => ['view_students' => false],
+            ])
+            ->assertOk();
+    }
 }

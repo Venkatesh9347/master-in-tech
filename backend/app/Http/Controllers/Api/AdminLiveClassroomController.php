@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class AdminLiveClassroomController extends Controller
 {
@@ -82,6 +83,16 @@ class AdminLiveClassroomController extends Controller
 
         $batch = Batch::findOrFail($validated['batch_id']);
 
+        // L4 (mirrors class sessions): the tutor_id must reference a user
+        // whose role is tutor — otherwise a non-tutor account gains host
+        // powers through LiveClassroomSession::isHost().
+        $tutor = User::where('id', $validated['tutor_id'])->first();
+        if (! $tutor || $tutor->role !== 'tutor') {
+            throw ValidationException::withMessages([
+                'tutor_id' => ['The selected tutor must be a user with the tutor role.'],
+            ]);
+        }
+
         $session = LiveClassroomSession::create([
             'room_id' => 'mit-room-' . (string) Str::uuid(),
             'batch_id' => $batch->id,
@@ -149,6 +160,15 @@ class AdminLiveClassroomController extends Controller
         if (isset($validated['batch_id']) && $validated['batch_id'] != $session->batch_id) {
             $batch = Batch::findOrFail($validated['batch_id']);
             $validated['course_id'] = $batch->course_id;
+        }
+
+        if (isset($validated['tutor_id'])) {
+            $tutor = User::where('id', $validated['tutor_id'])->first();
+            if (! $tutor || $tutor->role !== 'tutor') {
+                throw ValidationException::withMessages([
+                    'tutor_id' => ['The selected tutor must be a user with the tutor role.'],
+                ]);
+            }
         }
 
         $session->update($validated);

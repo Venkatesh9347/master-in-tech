@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import API from '../../services/api';
 import DynamicWatermark from './DynamicWatermark';
+import { useAuth } from '../../context/useAuth';
 import type { Lesson } from '../../types/lms';
 import type { VideoPlaybackAuthResponse, VideoPlaybackSessionData } from '../../types/video';
 
@@ -19,6 +20,7 @@ export default function SecureVideoPlayer({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const lastReportedTime = useRef<number>(0);
+  const { user } = useAuth();
 
   const [sessionData, setSessionData] = useState<VideoPlaybackSessionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,7 +186,12 @@ export default function SecureVideoPlayer({
     );
   }
 
-  const watermarkMobile = sessionData?.watermark?.mobile_number || '+91 9876543210';
+  // The backend always issues a per-viewer watermark identity. The local
+  // fallback mirrors its truthful shape (never a fabricated phone number)
+  // for the unreachable case where the session omits it.
+  const watermarkMobile =
+    sessionData?.watermark?.mobile_number ||
+    (user ? `${user.name} (#${user.id})` : 'Protected Viewer');
 
   return (
     <div className="flex flex-col space-y-4">
