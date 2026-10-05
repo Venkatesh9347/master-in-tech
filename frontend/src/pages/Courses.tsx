@@ -4,10 +4,15 @@ import API from '../services/api'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import CourseCard from '../components/courses/CourseCard'
+import Pagination from '../components/Pagination'
 import PublicAccessGateModal from '../components/PublicAccessGateModal'
+import { usePagedQuery } from '../hooks/usePagedQuery'
 import type { Course } from '../types/course'
 
 const difficultyOptions = ['All Levels', 'Basic', 'Intermediate', 'Advanced']
+
+/** B16: server-side page size for the public catalog (matches the API default). */
+const CATALOG_PER_PAGE = 12
 
 export default function Courses() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -15,51 +20,53 @@ export default function Courses() {
   const initialCategory = searchParams.get('category') || 'All'
   const initialLevel = searchParams.get('level') || searchParams.get('difficulty') || 'All Levels'
 
-  const [courses, setCourses] = useState<Course[]>([])
   const [dbCategories, setDbCategories] = useState<{ category: string; count: number }[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
 
   // Filters State
   const [search, setSearch] = useState(initialSearch)
   const [selectedCategory, setSelectedCategory] = useState(initialCategory)
   const [selectedDifficulty, setSelectedDifficulty] = useState(initialLevel)
-  const [sortBy, setSortBy] = useState('title_asc')
 
   // Lead Generation Enquiry Modal
   const [enquiryOpen, setEnquiryOpen] = useState(false)
   const [enquiryCourse, setEnquiryCourse] = useState<Course | null>(null)
 
+  // B16: the public catalog is server-driven. `/public/courses` paginates
+  // (default 12, max 24) and applies the same search/category/level filters
+  // server-side, so the page no longer downloads the entire catalog at once.
+  // usePagedQuery resets to page 1 whenever a filter changes and recovers from
+  // an out-of-range page.
+  const {
+    items: courses,
+    meta: pageMeta,
+    loading,
+    error,
+    page,
+    setPage,
+  } = usePagedQuery<Course>(
+    '/public/courses',
+    {
+      search: search || undefined,
+      category: selectedCategory !== 'All' ? selectedCategory : undefined,
+      difficulty:
+        selectedDifficulty !== 'All' && selectedDifficulty !== 'All Levels'
+          ? selectedDifficulty
+          : undefined,
+    },
+    { perPage: CATALOG_PER_PAGE, errorMessage: 'Failed to load courses from the platform.' },
+  )
+
+  // Category dropdown options come from the dedicated categories endpoint, so
+  // they are stable regardless of which catalog page is currently loaded.
   useEffect(() => {
-    Promise.all([
-      API.get('/courses'),
-      API.get('/course-categories').catch(() => ({ data: [] })),
-    ])
-      .then(([coursesRes, catRes]) => {
-        // Canonical backend contract (CourseController::index) is a raw JSON
-        // array. The CourseListResponse `{ data: Course[] }` wrapped shape is
-        // also accepted. Anything else (null, string, unexpected object)
-        // fails safely to an empty list instead of throwing.
-        const rawData: unknown = coursesRes?.data;
-        const wrappedData =
-          rawData !== null && typeof rawData === "object"
-            ? (rawData as { data?: unknown }).data
-            : undefined;
-        const courseData: Course[] = Array.isArray(rawData)
-          ? (rawData as Course[])
-          : Array.isArray(wrappedData)
-            ? (wrappedData as Course[])
-            : [];
-        setCourses(courseData.filter((c) => c !== null && typeof c === "object"))
-        if (Array.isArray(catRes?.data) && catRes.data.length > 0) {
-          setDbCategories(catRes.data)
+    API.get('/course-categories')
+      .then((res) => {
+        if (Array.isArray(res?.data) && res.data.length > 0) {
+          setDbCategories(res.data)
         }
-        setLoading(false)
       })
-      .catch((err) => {
-        console.error("[Courses] Failed to fetch courses:", err)
-        setError('Failed to load courses from the platform.')
-        setLoading(false)
+      .catch(() => {
+        /* Non-fatal: the dropdown falls back to whatever the page contains. */
       })
   }, [])
 
@@ -75,7 +82,9 @@ export default function Courses() {
     return ['All', ...Array.from(set).sort()]
   }, [dbCategories, courses])
 
-  // Sync category, level or search if URL changes
+  // Sync category, level, search or page if the URL changes.
+  // B16-J: this page already keeps filter state in the query string, so the
+  // page number is added to that same pattern rather than new global state.
   useEffect(() => {
     const urlCategory = searchParams.get('category')
     const urlSearch = searchParams.get('search')
@@ -83,13 +92,28 @@ export default function Courses() {
     if (urlCategory) setSelectedCategory(urlCategory)
     if (urlSearch !== null) setSearch(urlSearch)
     if (urlLevel) setSelectedDifficulty(urlLevel)
-  }, [searchParams])
+
+    const urlPage = Number(searchParams.get('page'))
+    if (Number.isFinite(urlPage) && urlPage > 1) setPage(urlPage)
+  }, [searchParams, setPage])
+
+  // Reflect the current page back into the query string so a page is
+  // shareable/bookmarkable. Page 1 stays out of the URL for readability, and a
+  // stale `?page=` must be dropped whenever the page falls back to 1 (a filter
+  // change, or a page that no longer exists), otherwise the URL would keep
+  // advertising a page the visitor is not on.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams)
+    if (page <= 1) next.delete('page')
+    else next.set('page', String(page))
+    if (next.toString() === searchParams.toString()) return
+    setSearchParams(next, { replace: true })
+  }, [page, searchParams, setSearchParams])
 
   const clearAllFilters = () => {
     setSearch('')
     setSelectedCategory('All')
     setSelectedDifficulty('All Levels')
-    setSortBy('title_asc')
     setSearchParams({})
   }
 
@@ -98,44 +122,12 @@ export default function Courses() {
     setEnquiryOpen(true)
   }
 
-  const filteredCourses = useMemo(() => {
-    return courses
-      .filter((course) => {
-        if (course === null || typeof course !== "object") return false;
-        // Tolerate malformed entries (missing fields) so one bad record can
-        // never blank the whole catalog.
-        const title = course.title ?? "";
-        const description = course.description ?? "";
-        const instructor = course.instructor ?? "";
-        const difficulty = course.difficulty ?? "";
-        const category = course.category ?? "";
-        const skills = course.skills_gained ?? [];
-        const matchesSearch =
-          search === '' ||
-          title.toLowerCase().includes(search.toLowerCase()) ||
-          description.toLowerCase().includes(search.toLowerCase()) ||
-          (skills && skills.some((s) => (s ?? "").toLowerCase().includes(search.toLowerCase()))) ||
-          instructor.toLowerCase().includes(search.toLowerCase())
-
-        const matchesCategory =
-          selectedCategory === 'All' ||
-          (category && category.toLowerCase() === selectedCategory.toLowerCase())
-
-        const matchesDifficulty =
-          selectedDifficulty === 'All' ||
-          selectedDifficulty === 'All Levels' ||
-          difficulty.toLowerCase() === selectedDifficulty.toLowerCase() ||
-          (selectedDifficulty.toLowerCase() === 'basic' && difficulty.toLowerCase() === 'beginner')
-
-        return matchesSearch && matchesCategory && matchesDifficulty
-      })
-      .sort((a, b) => {
-        if (sortBy === 'title_desc') {
-          return b.title.localeCompare(a.title)
-        }
-        return a.title.localeCompare(b.title)
-      })
-  }, [courses, search, selectedCategory, selectedDifficulty, sortBy])
+  // B16: filtering and ordering are performed server-side by
+  // `/public/courses`, so the page renders exactly the rows for the current
+  // page. The former client-side filter/sort memo is intentionally gone:
+  // re-applying it here would filter only the current page and silently hide
+  // matching courses.
+  const filteredCourses = courses
 
   const hasActiveFilters =
     search !== '' ||
@@ -232,7 +224,13 @@ export default function Courses() {
         {/* Results Metadata Bar */}
         <div className="flex items-center justify-between mb-6">
           <p className="text-xs text-slate-600 font-medium">
-            Showing <span className="font-bold text-slate-900">{filteredCourses.length}</span> courses
+            {/* B16: report the authoritative filtered total, not just the rows
+                on this page, so the catalog never implies only 12 courses exist. */}
+            Showing{' '}
+            <span className="font-bold text-slate-900">
+              {pageMeta ? pageMeta.from ?? 0 : 0}–{pageMeta ? pageMeta.to ?? 0 : 0}
+            </span>{' '}
+            of <span className="font-bold text-slate-900">{pageMeta ? pageMeta.total : 0}</span> courses
             {selectedCategory !== 'All' && <span> in <span className="font-bold text-blue-600">{selectedCategory}</span></span>}
           </p>
 
@@ -280,15 +278,22 @@ export default function Courses() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredCourses.map((course) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                onEnquireClick={handleOpenEnquiry}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredCourses.map((course) => (
+                <CourseCard
+                  key={course.id}
+                  course={course}
+                  onEnquireClick={handleOpenEnquiry}
+                />
+              ))}
+            </div>
+
+            {/* B16: page-number navigation reusing the shared Pagination
+                component; it is omitted by the component itself on a single
+                page or an empty result. */}
+            {pageMeta && <Pagination meta={pageMeta} onPageChange={setPage} label="Course catalog pages" />}
+          </>
         )}
       </main>
 

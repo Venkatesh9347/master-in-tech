@@ -245,6 +245,10 @@ export default function Home() {
         </div>
       )}
 
+      {/* B13: single main landmark for the page. The banner above is chrome-like
+          (announcement + CTA) and is intentionally left outside so <main> holds
+          only the page's primary content sections. */}
+      <main className="flex-grow">
       {/* 1. HERO SECTION (CMS Controlled) */}
       {isEnabled('hero') && (
         <section className="bg-slate-900 text-white pt-16 pb-20 border-b border-slate-800 relative overflow-hidden">
@@ -325,10 +329,10 @@ export default function Home() {
                   </div>
 
                   <div className="font-mono text-xs text-slate-300 space-y-1 bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
-                    <p className="text-slate-500">// 1. Progression: Basic → Intermediate → Advanced</p>
+                    <p className="text-slate-400">// 1. Progression: Basic → Intermediate → Advanced</p>
                     <p><span className="text-blue-400">const</span> track = <span className="text-amber-300">'Full Stack & AI'</span>;</p>
                     <p><span className="text-blue-400">await</span> classroom.<span className="text-sky-300">completeLesson</span>(lessonId);</p>
-                    <p><span className="text-blue-400">const</span> progress = <span className="text-emerald-400">100</span>; <span className="text-slate-500">// Verified</span></p>
+                    <p><span className="text-blue-400">const</span> progress = <span className="text-emerald-400">100</span>; <span className="text-slate-400">// Verified</span></p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2.5 pt-1">
@@ -366,7 +370,7 @@ export default function Home() {
                   📚
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900">Structured Learning</h4>
+                  <h2 className="text-xs font-bold text-slate-900">Structured Learning</h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">Foundations to advanced tracks</p>
                 </div>
               </div>
@@ -376,7 +380,7 @@ export default function Home() {
                   🛠️
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900">Practical Projects</h4>
+                  <h2 className="text-xs font-bold text-slate-900">Practical Projects</h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">Hands-on capstones & code</p>
                 </div>
               </div>
@@ -386,7 +390,7 @@ export default function Home() {
                   📊
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900">Progress Tracking</h4>
+                  <h2 className="text-xs font-bold text-slate-900">Progress Tracking</h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">Checkpoints, quizzes & notes</p>
                 </div>
               </div>
@@ -396,7 +400,7 @@ export default function Home() {
                   🎓
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-900">Verified Certificates</h4>
+                  <h2 className="text-xs font-bold text-slate-900">Verified Certificates</h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">Official completion proof</p>
                 </div>
               </div>
@@ -568,7 +572,7 @@ export default function Home() {
                   </div>
 
                   <div className="pt-3 border-t border-slate-800">
-                    <h4 className="font-bold text-white text-xs">{t.student_name}</h4>
+                    <h3 className="font-bold text-white text-xs">{t.student_name}</h3>
                     <p className="text-[11px] text-purple-400">{t.student_role_or_company}</p>
                   </div>
                 </div>
@@ -659,6 +663,8 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      </main>
 
       {/* Public Enquiry Modal */}
       <PublicAccessGateModal

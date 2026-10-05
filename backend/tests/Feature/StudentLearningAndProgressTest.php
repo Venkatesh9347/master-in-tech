@@ -853,4 +853,45 @@ class StudentLearningAndProgressTest extends TestCase
             ->assertOk()
             ->assertJsonPath('completed', true);
     }
+
+    // 27. Zero reviews means a null average, never a fabricated score
+    public function test_27_empty_catalog_reports_null_average_rating(): void
+    {
+        [$course] = $this->createCourseWithCurriculum();
+
+        $this->getJson("/api/courses/{$course->id}/reviews")
+            ->assertOk()
+            ->assertJsonPath('review_count', 0)
+            ->assertExactJson([
+                'average_rating' => null,
+                'review_count' => 0,
+                'reviews' => [],
+            ]);
+    }
+
+    // 28. Review create reports 201, review update reports 200
+    public function test_28_review_update_reports_200_not_201(): void
+    {
+        [$course] = $this->createCourseWithCurriculum();
+        $student = User::factory()->create(['role' => 'student']);
+
+        CourseEnrollment::create(['user_id' => $student->id, 'course_id' => $course->id, 'status' => 'active', 'enrolled_at' => now()]);
+
+        Sanctum::actingAs($student);
+
+        $this->postJson("/api/courses/{$course->id}/reviews", [
+            'rating' => 5,
+            'review_text' => 'Excellent!',
+        ])->assertCreated();
+
+        $this->postJson("/api/courses/{$course->id}/reviews", [
+            'rating' => 4,
+            'review_text' => 'Still great.',
+        ])->assertOk()
+            ->assertJsonPath('message', 'Review updated successfully.');
+
+        $this->assertEquals(1, \App\Models\CourseReview::where('user_id', $student->id)
+            ->where('course_id', $course->id)
+            ->count());
+    }
 }

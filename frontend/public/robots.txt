@@ -1,0 +1,15 @@
+# MasterInTech — public site crawler policy.
+#
+# Served as a static asset from the Vite `public/` directory, which the build
+# copies to `dist/robots.txt`. The production nginx config resolves
+# `try_files $uri $uri/ /index.html`, so without this file `/robots.txt`
+# falls through to the SPA rewrite and returns index.html as text/html.
+#
+# Conservative and non-restrictive: the public catalog, course detail pages,
+# institutional pages and certificate verification are all intended to be
+# indexed. No origin is hard-coded here on purpose — deployment uses generic
+# origins per DEPLOYMENT.md, so a `Sitemap:` line is added at deploy time
+# rather than pinned to a hostname in the repository.
+
+User-agent: *
+Disallow:

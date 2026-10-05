@@ -623,4 +623,16 @@ class CrmModuleTest extends TestCase
                 'code' => 'SESSION_REVOKED',
             ]);
     }
+
+    public function test_leads_listing_caps_requested_page_size(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        Sanctum::actingAs($admin);
+
+        // An unbounded per_page must be capped instead of honored as-is.
+        $res = $this->getJson('/api/admin/crm/leads?per_page=1000000');
+
+        $res->assertStatus(200)
+            ->assertJsonPath('per_page', 100);
+    }
 }

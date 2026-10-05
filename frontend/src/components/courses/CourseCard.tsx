@@ -146,7 +146,7 @@ function CourseCardComponent({
         {/* Instructor */}
         <div className="mt-auto pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-slate-400">Instructor:</span>
+            <span className="text-[11px] text-slate-600">Instructor:</span>
             <span className="font-semibold text-slate-700 truncate max-w-[140px]">
               {course.instructor || 'Senior Faculty'}
             </span>

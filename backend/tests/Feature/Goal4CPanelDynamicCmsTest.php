@@ -139,7 +139,7 @@ class Goal4CPanelDynamicCmsTest extends TestCase
         // Verify visible publicly
         $pubRes1 = $this->getJson('/api/public/courses');
         $pubRes1->assertOk();
-        $this->assertTrue(collect($pubRes1->json())->contains('id', $courseId));
+        $this->assertTrue(collect($pubRes1->json('data'))->contains('id', $courseId));
 
         // 2. Admin unpublishes course
         $unpubRes = $this->actingAs($admin, 'sanctum')->putJson("/api/courses/{$courseId}", [
@@ -150,7 +150,7 @@ class Goal4CPanelDynamicCmsTest extends TestCase
 
         // Verify NO LONGER visible publicly
         $pubRes2 = $this->getJson('/api/public/courses');
-        $this->assertFalse(collect($pubRes2->json())->contains('id', $courseId));
+        $this->assertFalse(collect($pubRes2->json('data'))->contains('id', $courseId));
 
         // 3. Admin republishes course
         $this->actingAs($admin, 'sanctum')->putJson("/api/courses/{$courseId}", [
@@ -160,7 +160,7 @@ class Goal4CPanelDynamicCmsTest extends TestCase
 
         // Verify reappears publicly
         $pubRes3 = $this->getJson('/api/public/courses');
-        $this->assertTrue(collect($pubRes3->json())->contains('id', $courseId));
+        $this->assertTrue(collect($pubRes3->json('data'))->contains('id', $courseId));
     }
 
     public function test_admin_home_cms_section_management(): void

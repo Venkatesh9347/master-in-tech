@@ -105,8 +105,12 @@ export default function TutorLayout() {
           })}
         </nav>
 
-        {/* Nested Outlet for Tutor Sub-pages */}
-        <Outlet />
+        {/* B13: the tutor shell owns the single <main> landmark for every tutor
+            page, matching AdminLayout and CompanyLayout. */}
+        <main className="flex-grow">
+          {/* Nested Outlet for Tutor Sub-pages */}
+          <Outlet />
+        </main>
       </div>
     </div>
   )

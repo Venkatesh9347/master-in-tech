@@ -18,6 +18,12 @@ use Illuminate\Http\Request;
 
 class PublicApiController extends Controller
 {
+    /** B16: default page size for the public catalog. */
+    private const PUBLIC_CATALOG_PER_PAGE = 12;
+
+    /** B16: hard ceiling for the public catalog, so `per_page` cannot be abused. */
+    private const PUBLIC_CATALOG_MAX_PER_PAGE = 24;
+
     /**
      * Consolidated Public Home Page Payload.
      */
@@ -121,10 +127,28 @@ class PublicApiController extends Controller
             });
         }
 
-        $limit = $request->input('limit', 50);
-        $courses = $query->orderBy('priority', 'asc')->take($limit)->get();
+        // B16: bounded server-side pagination. Filters above are applied BEFORE
+        // paginate(), so `total` reflects the filtered set and each page only
+        // ever contains matching rows.
+        //
+        // `limit` is retained as a backward-compatible alias for `per_page`;
+        // both are clamped by perPage() so an oversized value can never return
+        // the whole catalog in one response.
+        $perPage = $this->perPage(
+            $request->merge(['per_page' => $request->input('per_page', $request->input('limit'))]),
+            self::PUBLIC_CATALOG_PER_PAGE,
+            self::PUBLIC_CATALOG_MAX_PER_PAGE,
+        );
 
-        return response()->json($courses);
+        // `priority` alone is NOT unique (107 published courses share ~23
+        // priority values), so without a tiebreaker rows can shift between
+        // pages and appear duplicated or missing. `id` is the stable
+        // secondary sort, preserving the existing priority-first ordering.
+        return $query
+            ->orderBy('priority', 'asc')
+            ->orderBy('id', 'asc')
+            ->paginate($perPage)
+            ->withQueryString();
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SendWebhookDeliveryJob;
+use App\Models\AuditLog;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
 use App\Services\WebhookDispatcherService;
@@ -47,6 +48,9 @@ class AdminWebhookController extends Controller
             'is_active' => $validated['is_active'] ?? true,
         ]);
 
+        // Safe projection only: the signing secret is never written to the audit trail.
+        AuditLog::log('created_webhook_subscription', $subscription, null, $this->subscriptionPayload($subscription));
+
         return response()->json(['subscription' => $this->subscriptionPayload($subscription)], 201);
     }
 
@@ -65,17 +69,27 @@ class AdminWebhookController extends Controller
     {
         $validated = $request->validate($this->subscriptionRules(true));
 
+        $old = $this->subscriptionPayload($subscription);
+
         $subscription->fill([
             'target_url' => $validated['target_url'] ?? $subscription->target_url,
             'events' => isset($validated['events']) ? array_values(array_unique($validated['events'])) : $subscription->events,
             'is_active' => $validated['is_active'] ?? $subscription->is_active,
         ]);
 
-        if (isset($validated['secret'])) {
+        $secretRotated = isset($validated['secret']);
+        if ($secretRotated) {
             $subscription->secret = $validated['secret'];
         }
 
         $subscription->save();
+
+        $new = $this->subscriptionPayload($subscription->fresh() ?? $subscription);
+        // Secret values never enter the audit trail; record rotation as a flag.
+        if ($secretRotated) {
+            $new['secret_rotated'] = true;
+        }
+        AuditLog::log('updated_webhook_subscription', $subscription, $old, $new);
 
         return response()->json(['subscription' => $this->subscriptionPayload($subscription->fresh() ?? $subscription)]);
     }
@@ -85,7 +99,10 @@ class AdminWebhookController extends Controller
      */
     public function destroySubscription(WebhookSubscription $subscription): JsonResponse
     {
+        $old = $this->subscriptionPayload($subscription);
         $subscription->delete();
+
+        AuditLog::log('deleted_webhook_subscription', null, $old, null);
 
         return response()->json(['message' => 'Subscription deleted.']);
     }
@@ -136,6 +153,12 @@ class AdminWebhookController extends Controller
         ]);
 
         SendWebhookDeliveryJob::dispatch($delivery->id);
+
+        // Deliveries carry no secrets; record the manual retry for forensics.
+        AuditLog::log('retried_webhook_delivery', $delivery, null, [
+            'webhook_subscription_id' => $delivery->webhook_subscription_id,
+            'event' => $delivery->event,
+        ]);
 
         return response()->json(['delivery' => $this->deliveryPayload($delivery->fresh() ?? $delivery)]);
     }

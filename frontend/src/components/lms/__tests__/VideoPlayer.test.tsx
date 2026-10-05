@@ -70,7 +70,7 @@ describe("VideoPlayer embeds", () => {
     expect(onProgress).toHaveBeenLastCalledWith(100, 100);
   });
 
-  it("renders Vimeo embeds without metering and keeps HLS on the secure player", () => {
+  it("renders Vimeo embeds without metering and keeps HLS on the secure player", async () => {
     const onProgress = vi.fn();
     const { rerender } = render(
       <VideoPlayer
@@ -91,6 +91,17 @@ describe("VideoPlayer embeds", () => {
         onProgress={onProgress}
       />
     );
-    expect(screen.getByText("SECURE")).toBeTruthy();
+    // B19: the secure player is lazy-loaded (it carries hls.js), so it resolves
+    // asynchronously behind a Suspense fallback rather than synchronously.
+    expect(await screen.findByText("SECURE")).toBeTruthy();
+  });
+
+  it("still resolves to the secure player for the HLS branch after the dynamic import", async () => {
+    // B19 moved SecureVideoPlayer behind a dynamic import so hls.js leaves the
+    // StudentLessons route chunk. The protected-video branch must still resolve
+    // to that component — the routing behaviour must be unchanged.
+    render(<VideoPlayer lesson={{ ...youtubeLesson(), metadata: {} }} />);
+
+    expect(await screen.findByText("SECURE")).toBeTruthy();
   });
 });

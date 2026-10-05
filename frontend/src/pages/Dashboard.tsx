@@ -83,7 +83,7 @@ interface CourseOverviewItem {
   duration: string
   difficulty: string
   description?: string
-  average_rating: number
+  average_rating: number | null
   internal_price?: number
   thumbnail?: string | null
   banner?: string | null

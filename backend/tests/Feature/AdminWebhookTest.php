@@ -140,6 +140,46 @@ class AdminWebhookTest extends TestCase
         $this->assertSame(0, WebhookSubscription::count());
     }
 
+    public function test_subscription_mutations_emit_audit_events_without_secrets(): void
+    {
+        $create = $this->actingAs($this->admin, 'sanctum')
+            ->postJson('/api/admin/webhook-subscriptions', $this->subscriptionPayload());
+        $create->assertCreated();
+        $id = $create->json('subscription.id');
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'created_webhook_subscription',
+            'auditable_id' => $id,
+            'user_id' => $this->admin->id,
+        ]);
+
+        $update = $this->actingAs($this->admin, 'sanctum')
+            ->putJson("/api/admin/webhook-subscriptions/{$id}", [
+                'is_active' => false,
+                'secret' => str_repeat('n', 32),
+            ]);
+        $update->assertOk();
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'updated_webhook_subscription',
+            'auditable_id' => $id,
+        ]);
+
+        // Secret values must never appear in the audit trail.
+        foreach (\App\Models\AuditLog::where('action', 'updated_webhook_subscription')->get() as $log) {
+            $this->assertStringNotContainsString(str_repeat('n', 32), json_encode($log->new_values));
+            $this->assertTrue((bool) ($log->new_values['secret_rotated'] ?? false));
+        }
+
+        $this->actingAs($this->admin, 'sanctum')
+            ->deleteJson("/api/admin/webhook-subscriptions/{$id}")
+            ->assertOk();
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'deleted_webhook_subscription',
+        ]);
+    }
+
     public function test_admin_can_list_deliveries_and_retry_failed(): void
     {
         Http::fake(['*' => Http::response(null, 500)]);
@@ -176,6 +216,11 @@ class AdminWebhookTest extends TestCase
         $fresh = $delivery->fresh();
         $this->assertSame(1, (int) $fresh->attempts);
         $this->assertNotNull($fresh->next_retry_at);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'retried_webhook_delivery',
+            'auditable_id' => $delivery->id,
+        ]);
     }
 
     public function test_retry_rejects_delivered_and_unauthorized(): void

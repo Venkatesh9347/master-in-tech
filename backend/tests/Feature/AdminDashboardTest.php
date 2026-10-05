@@ -103,4 +103,33 @@ class AdminDashboardTest extends TestCase
     {
         $this->getJson('/api/admin/dashboard')->assertStatus(401);
     }
+
+    public function test_courses_overview_reports_null_average_without_reviews(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $tutor = User::factory()->create(['role' => 'tutor']);
+
+        Course::create([
+            'title' => 'Unreviewed Overview Course',
+            'slug' => 'unreviewed-overview-course',
+            'description' => 'No reviews yet',
+            'instructor' => $tutor->name,
+            'instructor_id' => $tutor->id,
+            'duration' => '6 weeks',
+            'difficulty' => 'Beginner',
+            'is_published' => true,
+        ]);
+
+        Sanctum::actingAs($admin);
+
+        // Zero reviews must report null, never a fabricated score.
+        $res = $this->getJson('/api/admin/dashboard');
+        $res->assertStatus(200);
+
+        $overview = collect($res->json('courses_overview'))
+            ->firstWhere('title', 'Unreviewed Overview Course');
+
+        $this->assertNotNull($overview);
+        $this->assertNull($overview['average_rating']);
+    }
 }

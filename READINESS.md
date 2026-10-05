@@ -9,7 +9,9 @@
 
 ## 1. Verified in-repo items (FIXED)
 
-Automated evidence (latest verified working-tree baseline): **backend** `php artisan test` → **1035 tests / 5772 assertions, 0 failures, 0 errors**; **frontend** `vitest run` → **91 tests / 13 files, 91 passed**, `npx tsc -b` → clean (exit 0), `npm run lint` → 0 errors (7 pre-existing warnings in unrelated test files), `npm run build` → succeeds. Exact-SHA CI for the current HEAD has not been independently observed from this environment; remote workflow results must be checked before any release.
+Automated evidence (latest verified working-tree baseline): **backend** `php artisan test` → **1079 tests / 5967 assertions, 0 failures, 0 errors**; **frontend** `vitest run` → **117 tests / 18 files, 117 passed**, `npx tsc -b` → clean (exit 0), `npm run lint` → 0 errors (12 pre-existing warnings in `src/`), `npm run build` → succeeds. Exact-SHA CI for the current HEAD has not been independently observed from this environment; remote workflow results must be checked before any release.
+
+Scope of the counts above: they are **whole-working-tree totals**, not the delta of any single commit or change set. Test files accumulate across many commits, so these figures must not be read as "what one change added". The backend figure is the PHPUnit-reported runtime count (1079); it exceeds a naive static count of test *methods* because a `#[DataProvider]` test expands one method into several runtime cases. The frontend figure is the 117 `it()`/`test()` cases Vitest reports across the 18 files matching `src/**/*.test.{ts,tsx}`.
 
 | Area | Finding | Fix (file) |
 |------|---------|-----------|
@@ -142,12 +144,83 @@ These require real infrastructure and credential provisioning — deliberately *
 cd backend
 composer install
 php artisan migrate:fresh --seed
-php vendor/bin/phpunit            # expect 1035 tests / 5772 assertions, 0 failures, 0 errors
+php vendor/bin/phpunit            # expect 1079 tests / 5967 assertions, 0 failures, 0 errors
 
 # frontend
 cd ../frontend
 npm install
 npx tsc --noEmit                  # expect exit 0
-npx vitest run                    # expect 91 tests / 13 files, 91 passed
+npx vitest run                    # expect 117 tests / 18 files, 117 passed
 npm run dev
 ```
+
+The counts in this block are whole-tree totals, not a per-commit delta (see the scope note in §1).
+
+---
+
+## 7. Pre-infrastructure closure (AUDIT-02 onward, documentation only)
+
+Product decisions recorded so follow-up work does not re-litigate or
+speculatively implement them. No code was changed for this section,
+except F-03, whose remediation has since landed and is recorded below.
+
+### F-I — admin course-provisioning UI: NOT REQUIRED
+No route, test, or requirements document establishes an admin course
+create/update/delete UI. Course provisioning is covered by the tutor
+authoring workflow (`TutorCourses` → `POST /tutor/courses`, ownership
+scoped) plus the existing admin API (`POST/PUT/DELETE /api/courses`,
+admin-gated, tested). Do not invent an admin course desk without an
+explicit product requirement.
+
+### F-03 — tutor/admin rating fallbacks: proven defect class, REMEDIATED in this working tree
+The fabricated rating fallbacks described here have been removed; `average_rating`
+is now genuinely `null` where no reviews exist. Backend and frontend were changed
+together, as this section specified:
+
+| Location | Was | Now |
+|---|---|---|
+| `TutorController.php:47` (`stats` aggregate) | `?? 5.0` | `null` when no reviews |
+| `TutorController.php:226` (`courseAnalytics`) | `: 5.0` | `: null` |
+| `AdminDashboardController.php:109` (course overview) | `: 4.9` | `: null` |
+| `TutorDashboard.tsx` (type + seeded state) | `number`; `average_rating: 5.0` | `number \| null`; `average_rating: null` |
+| `TutorCourseAnalytics.tsx` (metric card + feedback header) | `number`; rendered a star rating unconditionally | `number \| null`; renders an explicit "No ratings yet" neutral state |
+
+`Dashboard.tsx` carries the matching `number | null` type widening. `CourseReviewController`
+follows the same rule (`null` instead of a fabricated `5.0`), which remains the reference
+pattern this change brought the tutor/admin paths into parity with; its `store` action
+likewise reports the real `201`/`200` outcome rather than a constant `201`.
+
+This visibly alters tutor/admin metrics — unreviewed courses previously displayed a
+perfect score and now display no rating. That display change is the intended outcome,
+not a regression. Coverage: `TutorAndRoleSecurityTest` (tutor stats + per-course
+analytics, with and without reviews), `AdminDashboardTest` (course overview),
+`StudentLearningAndProgressTest` (empty catalog), and `TutorCourseAnalytics.test.tsx`
+(null-state and rated rendering).
+
+### Video strategy — pilot: local disk + FFmpeg + HLS
+The pilot runs the local filesystem video pipeline (`VIDEO_SECURITY_DRIVER=local_hls`,
+`VIDEO_STORAGE_DISK=local`, FFmpeg/FFprobe on PATH, AES-128 HLS with
+tokenized playback + watermarking). S3-compatible object storage is a
+later scalability migration: `S3HlsDriver` exists but the transcode job
+aborts on non-local disks, and the Mux driver is an unprovisioned stub.
+Do not select Mux or S3-backed transcoding without pipeline work.
+
+### DNS rebinding — accepted residual
+`WebhookDispatcherService::isAllowedTargetUrl` blocks literal
+loopback/private/link-local/reserved targets and never follows
+redirects; hostname→internal-IP rebinding after validation is
+explicitly out of scope by design (code comment). Accepted: admin-only
+subscription surface + short-lived signed deliveries bound this residual.
+
+### VITE_APP_NAME — unused, left in place
+`VITE_APP_NAME` appears only in `backend/.env.example:271` (plus the
+`backend-incomplete/` mirror). No backend `env('VITE_*')` read and no
+frontend reference exist. Disposition: report-only; the line is left
+untouched so unknown external tooling does not break.
+
+### Mailpit vs Gmail SMTP — two dev paths, one production rule
+`docker-compose.yml` provides Mailpit (`MAIL_HOST=mailpit`, port 1025)
+for containerized development; the local `.env` uses real Gmail SMTP.
+Both are development configurations. Production requires a real SMTP
+credential plus a verified `MAIL_FROM_ADDRESS`; nothing in code assumes
+either dev path.

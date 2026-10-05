@@ -1,0 +1,62 @@
+# MasterInTech - repository root ignore rules
+#
+# Scope: generated / local / test artifacts ONLY.
+# Application source, Markdown reports, audit evidence, screenshots and the
+# reusable Playwright harness under frontend/e2e-10x/ are deliberately NOT
+# ignored. Rules here are additive; the deeper .gitignore files in backend/,
+# backend-incomplete/ and frontend/ continue to apply to their own directories.
+
+# ---------------------------------------------------------------------------
+# Environment / secrets
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# ---------------------------------------------------------------------------
+# Node generated dependencies / build output
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+
+# ---------------------------------------------------------------------------
+# Playwright generated output (regenerable - never source)
+# ---------------------------------------------------------------------------
+playwright-report/
+test-results/
+frontend/e2e-10x/artifacts/
+frontend/e2e-10x/test-results/
+frontend/e2e-10x/playwright-report/
+
+# ---------------------------------------------------------------------------
+# Playwright MCP local session evidence (console/page dumps)
+# ---------------------------------------------------------------------------
+.playwright-mcp/
+
+# ---------------------------------------------------------------------------
+# Local QA harness (frontend/e2e-10x) — reusable local-only Playwright specs
+# and diagnostic scripts. Not application source and not part of the committed
+# test suite; excluded from `npm run lint` in frontend/eslint.config.js so the
+# normal lint gate reflects src/ only.
+# ---------------------------------------------------------------------------
+frontend/e2e-10x/
+
+# ---------------------------------------------------------------------------
+# Generated media / test traces
+# ---------------------------------------------------------------------------
+*.webm
+*.zip
+
+# ---------------------------------------------------------------------------
+# Local logs
+# ---------------------------------------------------------------------------
+*.log
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

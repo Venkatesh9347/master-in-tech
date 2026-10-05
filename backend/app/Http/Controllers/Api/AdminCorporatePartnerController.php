@@ -29,7 +29,7 @@ class AdminCorporatePartnerController extends Controller
         }
 
         $companies = $query->orderBy('created_at', 'desc')
-            ->paginate($request->input('per_page', 25));
+            ->paginate($this->perPage($request, 25));
 
         return response()->json($companies);
     }
@@ -197,7 +197,7 @@ class AdminCorporatePartnerController extends Controller
         $jobs = PlacementOpportunity::with(['company:id,name,logo,industry,location'])
             ->where('status', PlacementOpportunity::STATUS_PENDING_APPROVAL)
             ->orderBy('created_at', 'asc')
-            ->paginate($request->input('per_page', 20));
+            ->paginate($this->perPage($request, 20));
 
         return response()->json($jobs);
     }

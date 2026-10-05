@@ -364,4 +364,31 @@ class AdminAuthorizationTest extends TestCase
             ])
             ->assertOk();
     }
+
+    public function test_tutor_permission_update_accepts_every_documented_key(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin']);
+        $tutor = User::factory()->create(['role' => 'tutor']);
+
+        // All nine canonical permission keys must validate (guards the
+        // deduplicated rule set against accidental key loss).
+        $response = $this->actingAs($admin, 'sanctum')
+            ->putJson("/api/admin/tutors/{$tutor->id}/permissions", [
+                'permissions' => [
+                    'view_assigned_courses' => true,
+                    'view_students' => true,
+                    'upload_materials' => true,
+                    'manage_materials' => false,
+                    'create_quizzes' => true,
+                    'edit_quizzes' => false,
+                    'delete_quizzes' => false,
+                    'publish_quizzes' => true,
+                    'view_quiz_results' => true,
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('tutor.permissions.manage_materials', false)
+            ->assertJsonPath('tutor.permissions.publish_quizzes', true);
+    }
 }

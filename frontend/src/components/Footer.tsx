@@ -91,7 +91,7 @@ export default function Footer() {
                   href={settings.social_twitter}
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Twitter"
+                  aria-label="𝕏 Twitter"
                   className="w-9 h-9 rounded-xl bg-slate-900 hover:bg-blue-600 text-slate-300 hover:text-white flex items-center justify-center text-sm font-bold transition shadow-xs"
                 >
                   𝕏
@@ -198,7 +198,7 @@ export default function Footer() {
 
             {settings.contact_phone && (
               <div className="mt-4 pt-3 border-t border-slate-900">
-                <p className="text-[11px] text-slate-500 font-bold uppercase">Admissions Hotline:</p>
+                <p className="text-[11px] text-slate-400 font-bold uppercase">Admissions Hotline:</p>
                 <p className="text-xs text-white font-mono mt-0.5">{settings.contact_phone}</p>
               </div>
             )}
@@ -206,7 +206,7 @@ export default function Footer() {
         </div>
 
         {/* Bottom copyright line */}
-        <div className="mt-12 pt-8 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
+        <div className="mt-12 pt-8 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4">
           <p>{copyrightText}</p>
           <div className="flex gap-6">
             <Link to="/about" className="hover:text-slate-400 transition">About</Link>

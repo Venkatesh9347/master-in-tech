@@ -121,8 +121,8 @@ jobs:
   db-smoke-mysql:
     name: DB smoke (MySQL 8.4)
     runs-on: ubuntu-latest
-    # Informational: MySQL-only results must not block the primary pipeline.
-    continue-on-error: true
+    # Blocking: MySQL is a supported production target, so a migration or test
+    # failure here must fail the pipeline rather than pass silently.
     needs: backend
     defaults:
       run:
@@ -182,8 +182,8 @@ jobs:
   db-smoke-postgres:
     name: DB smoke (PostgreSQL 16)
     runs-on: ubuntu-latest
-    # Informational: PostgreSQL-only results must not block the primary pipeline.
-    continue-on-error: true
+    # Blocking: PostgreSQL is a supported production target, so a migration or
+    # test failure here must fail the pipeline rather than pass silently.
     needs: backend
     defaults:
       run:

@@ -153,7 +153,7 @@ export default function AdminCertificates() {
   }, [errorMsg]);
 
   return (
-    <main className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
@@ -389,6 +389,6 @@ export default function AdminCertificates() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

@@ -34,7 +34,9 @@ class CourseReviewController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $avgRating = $reviews->count() > 0 ? round($reviews->avg('rating'), 1) : 5.0;
+        // Honest metrics only (parity with CourseController): no reviews
+        // means a null average, never a fabricated perfect score.
+        $avgRating = $reviews->count() > 0 ? round($reviews->avg('rating'), 1) : null;
 
         return response()->json([
             'average_rating' => $avgRating,
@@ -87,9 +89,13 @@ class CourseReviewController extends Controller
             ]
         );
 
+        // updateOrCreate either inserts (201) or updates (200): report the
+        // actual outcome instead of a constant 201.
+        $created = $review->wasRecentlyCreated;
+
         return response()->json([
-            'message' => 'Review submitted successfully.',
+            'message' => $created ? 'Review submitted successfully.' : 'Review updated successfully.',
             'review' => $review->load('user:id,name'),
-        ], 201);
+        ], $created ? 201 : 200);
     }
 }

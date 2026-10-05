@@ -224,7 +224,8 @@ export default function Checkout() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
-      <div className="mx-auto max-w-2xl px-4 py-10">
+      {/* B13: single main landmark (this page had none). */}
+      <main className="mx-auto max-w-2xl px-4 py-10">
         <h1 className="mb-6 text-3xl font-bold text-gray-900">Checkout</h1>
 
         {error && (
@@ -278,7 +279,7 @@ export default function Checkout() {
           Signed in as {user?.name || user?.email}. Whether the payment really succeeded is
           verified by the server before you get access — the browser never decides that on its own.
         </p>
-      </div>
+      </main>
       <Footer />
     </div>
   );

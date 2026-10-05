@@ -434,7 +434,7 @@ class CourseCatalogSeeder extends Seeder
                     'Evaluate AI ethics, bias, transparency, and safety considerations',
                 ],
                 'skills_gained' => ['AI Concepts', 'ML Paradigms', 'Neural Network Basics', 'AI Ethics', 'Generative AI Basics'],
-                'thumbnail' => 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=1200&q=80',
+                'thumbnail' => 'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80',
                 'modules' => [
                     [
                         'title' => 'Module 1: Core AI Concepts & Learning Models',
@@ -1136,7 +1136,7 @@ class CourseCatalogSeeder extends Seeder
                     'Build conversational chat interfaces and AI copilot widgets in React',
                 ],
                 'skills_gained' => ['Full Stack AI', 'LLM Integration', 'Streaming APIs (SSE)', 'Vector Search (pgvector)', 'React AI UI Patterns'],
-                'thumbnail' => 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=1200&q=80',
+                'thumbnail' => 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80',
                 'modules' => [
                     [
                         'title' => 'Module 1: AI Integration in Modern Web Stacks',
@@ -2738,7 +2738,7 @@ class CourseCatalogSeeder extends Seeder
                     'Establish automated RAG evaluation benchmarks with RAGAS and TruLens',
                 ],
                 'skills_gained' => ['LLM Fine-Tuning (LoRA/QLoRA)', 'vLLM Model Serving', 'RAGAS Evaluation', 'Synthetic Datasets', 'Model Quantization'],
-                'thumbnail' => 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=1200&q=80',
+                'thumbnail' => 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=1200&q=80',
                 'modules' => [
                     [
                         'title' => 'Module 1: Fine-Tuning & High-Throughput Inference',
@@ -2768,7 +2768,7 @@ class CourseCatalogSeeder extends Seeder
                     'Deploy LLM guardrails (NeMo Guardrails, Llama Guard) to prevent prompt injection',
                 ],
                 'skills_gained' => ['Semantic Caching', 'LLM Guardrails', 'Pydantic Structured Output', 'Cost Optimization', 'Model Observability'],
-                'thumbnail' => 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=1200&q=80',
+                'thumbnail' => 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=1200&q=80',
                 'modules' => [
                     [
                         'title' => 'Module 1: Enterprise LLM Infrastructure & Guardrails',
@@ -2798,7 +2798,7 @@ class CourseCatalogSeeder extends Seeder
                     'Integrate external tools, web search, database querying, and code execution sandboxes',
                 ],
                 'skills_gained' => ['LangGraph', 'CrewAI Multi-Agents', 'Tool Calling / Function Calling', 'Agentic Memory', 'Self-Reflection Loops'],
-                'thumbnail' => 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=1200&q=80',
+                'thumbnail' => 'https://images.unsplash.com/photo-1555949963-aa79dcee981c?auto=format&fit=crop&w=1200&q=80',
                 'modules' => [
                     [
                         'title' => 'Module 1: Multi-Agent Orchestration & State Graphs',
@@ -2858,7 +2858,7 @@ class CourseCatalogSeeder extends Seeder
                     'Optimize GPU inference clusters for low-latency real-time scoring',
                 ],
                 'skills_gained' => ['Recommendation Systems', 'Billion-Scale Vector Search', 'Two-Tower Models', 'GPU Cluster Sizing', 'Real-Time AI Inference'],
-                'thumbnail' => 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=1200&q=80',
+                'thumbnail' => 'https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?auto=format&fit=crop&w=1200&q=80',
                 'modules' => [
                     [
                         'title' => 'Module 1: Large-Scale AI System Architectures',

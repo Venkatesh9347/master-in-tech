@@ -133,6 +133,43 @@ class PaymentWebhookTest extends TestCase
         $response->assertJson(['status' => 'ignored']);
     }
 
+    public function test_webhook_ignores_currency_mismatch_without_mutation(): void
+    {
+        PaymentTransaction::create([
+            'provider' => 'razorpay',
+            'order_id' => 'order_test_fx',
+            'payment_id' => 'pay_test_fx',
+            'idempotency_key' => 'webhook-key-fx',
+            'amount_paise' => 10000,
+            'currency' => 'INR',
+            'status' => 'created',
+        ]);
+
+        // Valid HMAC, but the gateway entity reports USD for an INR order.
+        $rawPayload = json_encode([
+            'event' => 'payment.captured',
+            'payload' => [
+                'payment' => ['entity' => [
+                    'id' => 'pay_test_fx',
+                    'order_id' => 'order_test_fx',
+                    'amount' => 10000,
+                    'currency' => 'USD',
+                    'status' => 'captured',
+                ]],
+            ],
+        ]);
+
+        $response = $this->postRaw('/api/payments/razorpay/webhook', $rawPayload, $this->sign($rawPayload));
+
+        $response->assertStatus(200);
+        $response->assertJson(['status' => 'ignored']);
+        $this->assertDatabaseHas('payment_transactions', [
+            'payment_id' => 'pay_test_fx',
+            'status' => 'created',
+        ]);
+        $this->assertDatabaseMissing('course_enrollments', []);
+    }
+
     public function test_webhook_does_not_mark_paid_on_payment_id_alone_without_verification(): void
     {
         // A captured event that references a known payment id but NO order_id

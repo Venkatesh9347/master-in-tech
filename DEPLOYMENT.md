@@ -266,13 +266,14 @@ php artisan queue:work --sleep=1 --tries=3        # foreground
 
 ## 12. Scheduler / cron
 
-Three scheduled maintenance commands exist (see `routes/console.php`):
+Four scheduled commands exist (see `routes/console.php`):
 
 | Command | Schedule | Purpose |
 |---|---|---|
 | `mit:prune-stale-sessions` | daily 03:00 | Delete expired video playback sessions and login OTPs |
 | `mit:migrate-legacy-materials --apply` | daily 03:15 | Move legacy public class-material files to private storage after byte-identical verification |
 | `mit:prune-orphan-video-dirs --apply` | daily 03:45 | Delete orphaned per-asset HLS directories with no `VideoAsset` row |
+| `mit:process-due-crm-followups` | every minute | Emit `followup.due` domain events for pending due CRM follow-ups (idempotent stable event IDs) |
 
 ```bash
 # Option A - keep a single supervising process alive:
@@ -290,8 +291,9 @@ fallback), so only one runner executes the work.
 
 Behavior notes:
 
-- All three commands are **idempotent**: re-running a tick that already
-  converged is a no-op summary.
+- All four commands are **idempotent**: re-running a tick that already
+  converged is a no-op summary. The minutely follow-up command only emits
+  events for still-pending due follow-ups and never mutates their status.
 - The two storage commands are **dry-run by default** (`--apply` performs
   deletions, and only after verification: byte-identical SHA-256 copies for
   materials; row-absence + root containment + 24h grace for video dirs).

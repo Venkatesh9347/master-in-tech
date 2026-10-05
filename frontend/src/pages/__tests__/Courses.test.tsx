@@ -58,7 +58,7 @@ describe("Courses page", () => {
 
   it("renders courses from valid API array response", async () => {
     mocks.apiInstance.get.mockImplementation((url: string) => {
-      if (url === "/courses") return Promise.resolve({ data: [courseA, courseB] });
+      if (url.startsWith("/public/courses")) return Promise.resolve({ data: [courseA, courseB] });
       if (url === "/course-categories") return Promise.resolve({ data: [] });
       return Promise.resolve({ data: [] });
     });
@@ -76,7 +76,7 @@ describe("Courses page", () => {
 
   it("renders empty state when API returns empty array", async () => {
     mocks.apiInstance.get.mockImplementation((url: string) => {
-      if (url === "/courses") return Promise.resolve({ data: [] });
+      if (url.startsWith("/public/courses")) return Promise.resolve({ data: [] });
       if (url === "/course-categories") return Promise.resolve({ data: [] });
       return Promise.resolve({ data: [] });
     });
@@ -92,7 +92,7 @@ describe("Courses page", () => {
 
   it("handles wrapped data shape { data: [...] } safely", async () => {
     mocks.apiInstance.get.mockImplementation((url: string) => {
-      if (url === "/courses") return Promise.resolve({ data: { data: [courseA] } });
+      if (url.startsWith("/public/courses")) return Promise.resolve({ data: { data: [courseA] } });
       if (url === "/course-categories") return Promise.resolve({ data: [] });
       return Promise.resolve({ data: [] });
     });
@@ -108,7 +108,7 @@ describe("Courses page", () => {
 
   it("shows error on API failure", async () => {
     mocks.apiInstance.get.mockImplementation((url: string) => {
-      if (url === "/courses") return Promise.reject(new Error("network"));
+      if (url.startsWith("/public/courses")) return Promise.reject(new Error("network"));
       return Promise.resolve({ data: [] });
     });
 
@@ -124,7 +124,7 @@ describe("Courses page", () => {
   it("fails safely on malformed responses (null / string / unexpected object)", async () => {
     for (const malformed of [{ data: null }, { data: "oops" }, { data: { unexpected: true } }, {}]) {
       mocks.apiInstance.get.mockImplementation((url: string) => {
-        if (url === "/courses") return Promise.resolve(malformed);
+        if (url.startsWith("/public/courses")) return Promise.resolve(malformed);
         if (url === "/course-categories") return Promise.resolve({ data: [] });
         return Promise.resolve({ data: [] });
       });
@@ -143,7 +143,7 @@ describe("Courses page", () => {
   it("tolerates course entries with missing fields", async () => {
     const sparse = { id: 9, title: "Sparse Course" } as any;
     mocks.apiInstance.get.mockImplementation((url: string) => {
-      if (url === "/courses") return Promise.resolve({ data: [sparse, courseA] });
+      if (url.startsWith("/public/courses")) return Promise.resolve({ data: [sparse, courseA] });
       if (url === "/course-categories") return Promise.resolve({ data: [] });
       return Promise.resolve({ data: [] });
     });
@@ -161,7 +161,7 @@ describe("Courses page", () => {
   it("does not require Authorization for public course request (exempt)", async () => {
     // The isExemptUrl logic is tested in api.test; here we just ensure the component makes the call
     mocks.apiInstance.get.mockImplementation((url: string) => {
-      if (url === "/courses") return Promise.resolve({ data: [courseA] });
+      if (url.startsWith("/public/courses")) return Promise.resolve({ data: [courseA] });
       if (url === "/course-categories") return Promise.resolve({ data: [] });
       return Promise.resolve({ data: [] });
     });
@@ -172,7 +172,11 @@ describe("Courses page", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(mocks.apiInstance.get).toHaveBeenCalledWith("/courses"));
-    // Even if localStorage has a stale token, the request should not include it for /courses (verified in api.test)
+    await waitFor(() =>
+      expect(mocks.apiInstance.get).toHaveBeenCalledWith(
+        expect.stringContaining("/public/courses"),
+      ),
+    );
+    // Even if localStorage has a stale token, the request should not include it for the public catalog (verified in api.test)
   });
 });

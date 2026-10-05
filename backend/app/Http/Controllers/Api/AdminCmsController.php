@@ -647,7 +647,7 @@ class AdminCmsController extends Controller
             });
         }
 
-        $perPage = $request->input('per_page', 36);
+        $perPage = $this->perPage($request, 36);
         $assets = $query->orderBy('created_at', 'desc')->paginate($perPage);
         return response()->json($assets);
     }

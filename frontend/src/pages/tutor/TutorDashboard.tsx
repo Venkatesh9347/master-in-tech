@@ -9,7 +9,7 @@ interface TutorStats {
   total_courses: number
   total_students: number
   pending_submissions: number
-  average_rating: number
+  average_rating: number | null
 }
 
 interface StudentEnrollmentItem {
@@ -123,7 +123,7 @@ export default function TutorDashboard() {
       total_courses: 0,
       total_students: 0,
       pending_submissions: 0,
-      average_rating: 5.0,
+      average_rating: null,
     }
   })
   const [materialsCount, setMaterialsCount] = useState<number>(() => {

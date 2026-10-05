@@ -1,6 +1,16 @@
-import { useEffect, useRef } from 'react';
-import SecureVideoPlayer from './SecureVideoPlayer';
+import { Suspense, lazy, useEffect, useRef } from 'react';
 import type { Lesson } from '../../types/lms';
+
+/**
+ * B19: `hls.js` (618 kB minified) is only needed for the protected/self-hosted
+ * playback branch below. Importing it eagerly pulled the whole library into the
+ * StudentLessons route chunk, which became the largest in the build (630 kB)
+ * even though most lesson views never play an HLS stream.
+ *
+ * Lazy-loading keeps the library out of the route chunk and out of the initial
+ * download; it is fetched the first time a protected video is actually shown.
+ */
+const SecureVideoPlayer = lazy(() => import('./SecureVideoPlayer'));
 
 interface VideoPlayerProps {
   lesson: Lesson;
@@ -9,6 +19,19 @@ interface VideoPlayerProps {
 }
 
 const YOUTUBE_ORIGIN = 'https://www.youtube-nocookie.com';
+
+/** Matches the aspect-video box used for the player, so layout does not shift. */
+function PlayerFallback() {
+  return (
+    <div
+      className="w-full aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-lg ring-1 ring-slate-800 flex items-center justify-center"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="text-xs font-semibold text-slate-400">Loading secure player…</span>
+    </div>
+  );
+}
 
 /**
  * Metered YouTube embed (IFrame Player API over postMessage, no extra
@@ -167,11 +190,13 @@ export default function VideoPlayer({ lesson, courseId, onProgress }: VideoPlaye
           </div>
         )
       ) : (
-        <SecureVideoPlayer
-          lesson={lesson}
-          courseId={courseId || lesson.course_id}
-          onProgress={onProgress}
-        />
+        <Suspense fallback={<PlayerFallback />}>
+          <SecureVideoPlayer
+            lesson={lesson}
+            courseId={courseId || lesson.course_id}
+            onProgress={onProgress}
+          />
+        </Suspense>
       )}
 
       {/* Lesson Details & Curriculum Notes */}

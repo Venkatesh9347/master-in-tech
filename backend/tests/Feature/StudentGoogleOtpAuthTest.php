@@ -93,6 +93,33 @@ class StudentGoogleOtpAuthTest extends TestCase
         ]);
     }
 
+    public function test_deactivated_google_account_matches_unregistered_response(): void
+    {
+        User::factory()->create([
+            'name' => 'Deactivated Dana',
+            'email' => 'deactivated.dana@example.com',
+            'role' => 'student',
+            'status' => 'disabled',
+        ]);
+
+        $deactivated = $this->postJson('/api/auth/google', [
+            'credential' => 'test_mock_google_token_:deactivated.dana@example.com:Deactivated Dana:google_sub_deact',
+        ]);
+
+        $unregistered = $this->postJson('/api/auth/google', [
+            'credential' => 'test_mock_google_token_:ghost.someone@example.com:Ghost Someone:google_sub_ghost',
+        ]);
+
+        $deactivated->assertStatus(422);
+        $unregistered->assertStatus(422);
+
+        // Indistinguishable account-state responses: no registration oracle.
+        $this->assertSame(
+            $unregistered->json('errors.credential.0'),
+            $deactivated->json('errors.credential.0')
+        );
+    }
+
     public function test_successful_otp_verification_issues_sanctum_token_and_immediately_destroys_otp(): void
     {
         User::factory()->create([

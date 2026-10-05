@@ -28,3 +28,13 @@ node_modules
 .idea
 .vscode
 Thumbs.db
+
+# Generated QA / test artifacts (keep the build context small; never bake these in)
+.playwright-mcp
+frontend/e2e-10x/artifacts
+frontend/e2e-10x/test-results
+frontend/e2e-10x/playwright-report
+playwright-report
+test-results
+*.webm
+*.zip

@@ -148,7 +148,7 @@ class AdminCrmController extends Controller
 
         $leads = $query->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
-            ->paginate($request->input('per_page', 50));
+            ->paginate($this->perPage($request, 50));
 
         return response()->json($leads);
     }

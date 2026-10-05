@@ -162,7 +162,7 @@ class PlacementPortalController extends Controller
 
         $opportunities = $query->orderBy('is_featured', 'desc')
             ->orderBy('created_at', 'desc')
-            ->paginate($request->input('per_page', 20));
+            ->paginate($this->perPage($request, 20));
 
         return response()->json($opportunities);
     }

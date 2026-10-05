@@ -61,7 +61,7 @@ class AdminPlacementController extends Controller
         }
 
         $opportunities = $query->orderBy('created_at', 'desc')
-            ->paginate($request->input('per_page', 50));
+            ->paginate($this->perPage($request, 50));
 
         return response()->json($opportunities);
     }
@@ -198,7 +198,7 @@ class AdminPlacementController extends Controller
         }
 
         $applications = $query->orderBy('applied_at', 'desc')
-            ->paginate($request->input('per_page', 50));
+            ->paginate($this->perPage($request, 50));
 
         return response()->json($applications);
     }

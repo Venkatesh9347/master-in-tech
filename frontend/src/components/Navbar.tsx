@@ -266,7 +266,7 @@ export default function Navbar() {
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center space-x-6">
+          <nav className="hidden lg:flex items-center space-x-6">
             {navLinks.map((link) => {
               if (link.isPhone || link.to.startsWith('tel:')) {
                 return (
@@ -298,7 +298,7 @@ export default function Navbar() {
           </nav>
 
           {/* Desktop Right Actions */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-3">
             {user ? (
               <div className="flex items-center gap-3">
                 {/* Notifications Dropdown */}
@@ -532,7 +532,7 @@ export default function Navbar() {
           </div>
 
           {/* Mobile Menu Button */}
-          <div className="flex md:hidden items-center gap-2">
+          <div className="flex lg:hidden items-center gap-2">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -553,7 +553,7 @@ export default function Navbar() {
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-slate-900 border-b border-slate-800 px-4 pt-2 pb-4 space-y-2">
+        <div className="lg:hidden bg-slate-900 border-b border-slate-800 px-4 pt-2 pb-4 space-y-2">
           {navLinks.map((link) => {
             if (link.isPhone || link.to.startsWith('tel:')) {
               return (

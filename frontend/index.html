@@ -4,7 +4,28 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <!-- B10: static defaults for non-executing crawlers. Per-route titles and
+         descriptions are applied at runtime by src/hooks/usePageMeta.ts, which
+         cannot be read by a crawler that does not execute JavaScript. -->
+    <meta
+      name="description"
+      content="MasterInTech teaches in-demand tech skills through mentor-led bootcamps, structured industry curriculums, hands-on capstones and verifiable career credentials."
+    />
+    <title>MasterInTech — Technology Education</title>
+
+    <meta property="og:site_name" content="MasterInTech" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="MasterInTech — Technology Education" />
+    <meta
+      property="og:description"
+      content="MasterInTech teaches in-demand tech skills through mentor-led bootcamps, structured industry curriculums, hands-on capstones and verifiable career credentials."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="MasterInTech — Technology Education" />
+    <meta
+      name="twitter:description"
+      content="MasterInTech teaches in-demand tech skills through mentor-led bootcamps, structured industry curriculums, hands-on capstones and verifiable career credentials."
+    />
   </head>
   <body>
     <div id="root"></div>

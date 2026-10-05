@@ -80,21 +80,13 @@ class AdminTutorPermissionController extends Controller
         $validated = $request->validate([
             'permissions' => 'required|array',
             'permissions.view_assigned_courses' => 'sometimes|boolean',
-            'permissions.view_assigned_courses' => 'sometimes|boolean',
             'permissions.view_students' => 'sometimes|boolean',
             'permissions.upload_materials' => 'sometimes|boolean',
-            'permissions.upload_materials' => 'sometimes|boolean',
-            'permissions.manage_materials' => 'sometimes|boolean',
             'permissions.manage_materials' => 'sometimes|boolean',
             'permissions.create_quizzes' => 'sometimes|boolean',
-            'permissions.create_quizzes' => 'sometimes|boolean',
-            'permissions.edit_quizzes' => 'sometimes|boolean',
             'permissions.edit_quizzes' => 'sometimes|boolean',
             'permissions.delete_quizzes' => 'sometimes|boolean',
-            'permissions.delete_quizzes' => 'sometimes|boolean',
             'permissions.publish_quizzes' => 'sometimes|boolean',
-            'permissions.publish_quizzes' => 'sometimes|boolean',
-            'permissions.view_quiz_results' => 'sometimes|boolean',
             'permissions.view_quiz_results' => 'sometimes|boolean',
         ]);
 

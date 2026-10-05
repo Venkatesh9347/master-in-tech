@@ -153,15 +153,12 @@ Route::post('/forgot-password', function (Request $request) {
         $request->only('email')
     );
 
-    if ($status === Password::RESET_LINK_SENT) {
-        return response()->json([
-            'message' => 'Password reset link sent successfully.',
-        ]);
-    }
-
+    // NEW-SEC-03 (parity with login): the response is identical whether or
+    // not the address exists, so the endpoint cannot confirm account
+    // existence to an unauthenticated caller. Enforcement is unchanged.
     return response()->json([
-        'message' => __($status),
-    ], 422);
+        'message' => 'Password reset link sent successfully.',
+    ]);
 })->middleware('throttle:auth-forgot');
 
 Route::post('/reset-password', function (Request $request) {

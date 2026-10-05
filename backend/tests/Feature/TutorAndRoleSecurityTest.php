@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Assignment;
 use App\Models\AssignmentSubmission;
 use App\Models\Course;
+use App\Models\CourseReview;
 use App\Models\Lesson;
 use App\Models\Section;
 use App\Models\User;
@@ -773,5 +774,107 @@ class TutorAndRoleSecurityTest extends TestCase
             'user_id' => $student->id,
             'course_id' => $course->id,
         ])->assertStatus(403);
+    }
+
+    public function test_tutor_stats_reports_null_average_without_reviews(): void
+    {
+        $tutor = User::factory()->create(['role' => 'tutor']);
+
+        Course::create([
+            'title' => 'Unreviewed Course',
+            'slug' => 'unreviewed-course',
+            'description' => 'No reviews yet',
+            'instructor' => $tutor->name,
+            'instructor_id' => $tutor->id,
+            'duration' => '4 weeks',
+            'difficulty' => 'Beginner',
+        ]);
+
+        // Zero reviews must report null, never a fabricated perfect score.
+        $this->actingAs($tutor, 'sanctum')
+            ->getJson('/api/tutor/stats')
+            ->assertStatus(200)
+            ->assertExactJson([
+                'total_courses' => 1,
+                'total_students' => 0,
+                'pending_submissions' => 0,
+                'average_rating' => null,
+            ]);
+    }
+
+    public function test_tutor_stats_reports_computed_average_with_reviews(): void
+    {
+        $tutor = User::factory()->create(['role' => 'tutor']);
+        $student = User::factory()->create(['role' => 'student']);
+
+        $course = Course::create([
+            'title' => 'Reviewed Course',
+            'slug' => 'reviewed-course',
+            'description' => 'Has reviews',
+            'instructor' => $tutor->name,
+            'instructor_id' => $tutor->id,
+            'duration' => '4 weeks',
+            'difficulty' => 'Beginner',
+        ]);
+
+        CourseReview::create([
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'rating' => 4,
+        ]);
+
+        $this->actingAs($tutor, 'sanctum')
+            ->getJson('/api/tutor/stats')
+            ->assertStatus(200)
+            ->assertJsonPath('average_rating', 4);
+    }
+
+    public function test_tutor_analytics_reports_null_average_without_reviews(): void
+    {
+        $tutor = User::factory()->create(['role' => 'tutor']);
+
+        $course = Course::create([
+            'title' => 'Unreviewed Analytics Course',
+            'slug' => 'unreviewed-analytics-course',
+            'description' => 'No reviews yet',
+            'instructor' => $tutor->name,
+            'instructor_id' => $tutor->id,
+            'duration' => '4 weeks',
+            'difficulty' => 'Beginner',
+        ]);
+
+        $this->actingAs($tutor, 'sanctum')
+            ->getJson("/api/tutor/courses/{$course->id}/analytics")
+            ->assertStatus(200)
+            ->assertJsonPath('average_rating', null)
+            ->assertJsonPath('reviews_count', 0);
+    }
+
+    public function test_tutor_analytics_reports_computed_average_with_reviews(): void
+    {
+        $tutor = User::factory()->create(['role' => 'tutor']);
+        $student = User::factory()->create(['role' => 'student']);
+
+        $course = Course::create([
+            'title' => 'Reviewed Analytics Course',
+            'slug' => 'reviewed-analytics-course',
+            'description' => 'Has reviews',
+            'instructor' => $tutor->name,
+            'instructor_id' => $tutor->id,
+            'duration' => '4 weeks',
+            'difficulty' => 'Beginner',
+        ]);
+
+        CourseReview::create([
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'rating' => 5,
+        ]);
+
+        $this->actingAs($tutor, 'sanctum')
+            ->getJson("/api/tutor/courses/{$course->id}/analytics")
+            ->assertStatus(200)
+            ->assertJsonPath('average_rating', 5)
+            ->assertJsonPath('reviews_count', 1);
     }
 }

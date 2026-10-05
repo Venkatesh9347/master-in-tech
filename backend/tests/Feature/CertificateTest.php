@@ -253,4 +253,73 @@ class CertificateTest extends TestCase
         // The unpredictable segment must be sufficiently long to resist brute-force.
         $this->assertGreaterThanOrEqual(12, strlen($randomPart));
     }
+
+    public function test_certificate_not_issued_from_unpublished_lesson_completions(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+
+        $course = Course::create([
+            'title' => 'Churned Curriculum',
+            'slug' => 'churned-curriculum',
+            'description' => 'Publication churn',
+            'instructor' => 'Master Faculty',
+            'duration' => '4 weeks',
+            'difficulty' => 'Beginner',
+        ]);
+
+        CourseEnrollment::create([
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'status' => 'active',
+            'progress_percentage' => 100,
+        ]);
+
+        $section = Section::create([
+            'course_id' => $course->id,
+            'title' => 'Module 1',
+            'sort_order' => 0,
+            'is_published' => true,
+        ]);
+
+        Lesson::create([
+            'course_id' => $course->id,
+            'section_id' => $section->id,
+            'title' => 'Live Lesson',
+            'type' => 'video',
+            'sort_order' => 0,
+            'is_published' => true,
+        ]);
+
+        $unpublished = Lesson::create([
+            'course_id' => $course->id,
+            'section_id' => $section->id,
+            'title' => 'Retired Lesson',
+            'type' => 'video',
+            'sort_order' => 1,
+            'is_published' => false,
+        ]);
+
+        // Only the retired (unpublished) lesson is marked completed: the
+        // published count must ignore it.
+        LessonProgress::create([
+            'user_id' => $student->id,
+            'course_id' => $course->id,
+            'lesson_id' => $unpublished->id,
+            'section_id' => $section->id,
+            'completed' => true,
+            'completed_at' => now(),
+        ]);
+
+        // total = 1 published, completed(published) = 0 → must refuse.
+        $res = $this->actingAs($student, 'sanctum')
+            ->postJson("/api/courses/{$course->id}/certificate");
+
+        $res->assertStatus(422)
+            ->assertJsonPath('completed', 0)
+            ->assertJsonPath('total', 1);
+
+        $this->assertEquals(0, Certificate::where('user_id', $student->id)
+            ->where('course_id', $course->id)
+            ->count());
+    }
 }

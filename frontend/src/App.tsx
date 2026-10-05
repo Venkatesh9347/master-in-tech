@@ -1,8 +1,10 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { usePageMeta, routeMetaFor } from "./hooks/usePageMeta";
 
 // Eager Route Guards & Context Providers
 import AdminRoute from "./components/AdminRoute";
+import AppErrorBoundary from "./components/AppErrorBoundary";
 import CounsellorRoute from "./components/CounsellorRoute";
 import TutorRoute from "./components/TutorRoute";
 import StudentRoute from "./components/StudentRoute";
@@ -111,12 +113,27 @@ function PageLoadingFallback() {
   );
 }
 
+/**
+ * B10 — drives document metadata from the active route.
+ *
+ * Mounted once inside the router rather than inside each page, so route titles
+ * are declared in one table instead of being duplicated across ~60 components.
+ * It renders nothing.
+ */
+function RouteMeta() {
+  const { pathname } = useLocation();
+  usePageMeta(pathname, routeMetaFor(pathname));
+  return null;
+}
+
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Suspense fallback={<PageLoadingFallback />}>
-          <Routes>
+    <AppErrorBoundary label="app-root">
+      <BrowserRouter>
+        <RouteMeta />
+        <AuthProvider>
+          <Suspense fallback={<PageLoadingFallback />}>
+            <Routes>
             {/* Public Routes */}
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
@@ -254,10 +271,11 @@ function App() {
 
             {/* 404 Catch-All */}
             <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </AuthProvider>
-    </BrowserRouter>
+            </Routes>
+          </Suspense>
+        </AuthProvider>
+      </BrowserRouter>
+    </AppErrorBoundary>
   );
 }
 

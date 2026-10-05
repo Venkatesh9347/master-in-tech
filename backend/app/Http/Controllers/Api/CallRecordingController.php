@@ -37,7 +37,7 @@ class CallRecordingController extends Controller
         }
 
         return response()->json(
-            $query->orderBy('created_at', 'desc')->paginate($request->input('per_page', 50))
+            $query->orderBy('created_at', 'desc')->paginate($this->perPage($request, 50))
         );
     }
 

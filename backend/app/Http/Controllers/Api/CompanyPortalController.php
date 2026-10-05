@@ -159,7 +159,7 @@ class CompanyPortalController extends Controller
         }
 
         $jobs = $query->orderBy('created_at', 'desc')
-            ->paginate($request->input('per_page', 20));
+            ->paginate($this->perPage($request, 20));
 
         return response()->json($jobs);
     }
@@ -331,7 +331,7 @@ class CompanyPortalController extends Controller
         }
 
         $applications = $query->orderBy('applied_at', 'desc')
-            ->paginate($request->input('per_page', 25));
+            ->paginate($this->perPage($request, 25));
 
         return response()->json($applications);
     }
@@ -386,7 +386,7 @@ class CompanyPortalController extends Controller
         }
 
         $interviews = $query->orderBy('interview_date', 'desc')
-            ->paginate($request->input('per_page', 25));
+            ->paginate($this->perPage($request, 25));
 
         return response()->json($interviews);
     }

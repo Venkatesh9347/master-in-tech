@@ -40,15 +40,20 @@ class GoogleAuthService
             $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
         }
 
+        // NEW-SEC-03 (parity with password login and mobile OTP): account
+        // state is indistinguishable to the caller. A valid Google
+        // credential is required to reach this point, but the response must
+        // not confirm whether the address is registered, deactivated, or
+        // otherwise ineligible — only whether to proceed or contact support.
         if (! $user) {
             throw ValidationException::withMessages([
-                'credential' => ['Your account is not registered for student access. Please contact MasterInTech.'],
+                'credential' => ['Google authentication failed. Please contact MasterInTech support.'],
             ]);
         }
 
         if (isset($user->status) && in_array($user->status, ['disabled', 'inactive', 'suspended'], true)) {
             throw ValidationException::withMessages([
-                'credential' => ['Your student account has been deactivated. Please contact MasterInTech support.'],
+                'credential' => ['Google authentication failed. Please contact MasterInTech support.'],
             ]);
         }
 

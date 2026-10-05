@@ -37,7 +37,9 @@ class Batch3ApiPolishTest extends TestCase
         $response = $this->getJson('/api/public/courses');
 
         $response->assertOk();
-        $this->assertTrue(collect($response->json())->contains('id', $published->id));
+        // B16: the public catalog now answers with a Laravel paginator envelope,
+        // so the published course is asserted against `data`.
+        $this->assertTrue(collect($response->json('data'))->contains('id', $published->id));
     }
 
     public function test_deprecated_public_course_detail_remains_operational_by_slug_and_id(): void
@@ -57,7 +59,7 @@ class Batch3ApiPolishTest extends TestCase
 
         $legacy = $this->getJson('/api/public/courses');
         $legacy->assertOk();
-        $this->assertFalse(collect($legacy->json())->contains('title', $unpublished->title));
+        $this->assertFalse(collect($legacy->json('data'))->contains('title', $unpublished->title));
 
         $legacyDetail = $this->getJson("/api/public/courses/{$unpublished->id}");
         $legacyDetail->assertNotFound();
@@ -103,7 +105,7 @@ class Batch3ApiPolishTest extends TestCase
     {
         $this->createCourse(['title' => 'Superset Course']);
 
-        $legacy = $this->getJson('/api/public/courses')->assertOk()->json();
+        $legacy = $this->getJson('/api/public/courses')->assertOk()->json('data');
         $catalog = $this->getJson('/api/courses')->assertOk()->json();
 
         $legacyIds = collect($legacy)->pluck('id')->all();

@@ -166,7 +166,7 @@ class AdminMockInterviewController extends Controller
             $query->where('is_active', $request->status === 'active');
         }
 
-        $interviewers = $query->orderBy('created_at', 'desc')->paginate($request->input('per_page', 50));
+        $interviewers = $query->orderBy('created_at', 'desc')->paginate($this->perPage($request, 50));
 
         return response()->json($interviewers);
     }
@@ -291,7 +291,7 @@ class AdminMockInterviewController extends Controller
 
         $slots = $query->orderBy('slot_date', 'asc')
             ->orderBy('start_time', 'asc')
-            ->paginate($request->input('per_page', 50));
+            ->paginate($this->perPage($request, 50));
 
         return response()->json($slots);
     }
@@ -427,7 +427,7 @@ class AdminMockInterviewController extends Controller
             $query->whereDate('scheduled_at', $request->date);
         }
 
-        $bookings = $query->orderBy('scheduled_at', 'desc')->paginate($request->input('per_page', 50));
+        $bookings = $query->orderBy('scheduled_at', 'desc')->paginate($this->perPage($request, 50));
 
         return response()->json($bookings);
     }
@@ -607,7 +607,7 @@ class AdminMockInterviewController extends Controller
             });
         }
 
-        $evaluations = $query->orderBy('evaluated_at', 'desc')->paginate($request->input('per_page', 50));
+        $evaluations = $query->orderBy('evaluated_at', 'desc')->paginate($this->perPage($request, 50));
 
         return response()->json($evaluations);
     }

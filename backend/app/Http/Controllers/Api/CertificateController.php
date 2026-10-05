@@ -95,9 +95,16 @@ class CertificateController extends Controller
             }
 
             $totalLessons = Lesson::where('course_id', $course->id)->where('is_published', true)->count();
-            $completedLessons = LessonProgress::where('user_id', $user->id)
-                ->where('course_id', $course->id)
-                ->where('completed', true)
+            // Count only completions of currently-published lessons, matching
+            // the published-only recount used across progress math: rows left
+            // behind by later-unpublished lessons must never unlock issuance.
+            // Columns are table-qualified: the lessons join would otherwise
+            // make course_id ambiguous.
+            $completedLessons = LessonProgress::where('lesson_progress.user_id', $user->id)
+                ->where('lesson_progress.course_id', $course->id)
+                ->where('lesson_progress.completed', true)
+                ->join('lessons', 'lessons.id', '=', 'lesson_progress.lesson_id')
+                ->where('lessons.is_published', true)
                 ->count();
 
             // HIGH-1: A course with no published lessons has nothing to complete.

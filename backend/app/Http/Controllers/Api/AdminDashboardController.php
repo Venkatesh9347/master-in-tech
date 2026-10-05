@@ -106,7 +106,7 @@ class AdminDashboardController extends Controller
                     'lessons_count' => $c->lessons_count,
                     'duration' => $c->duration,
                     'difficulty' => $c->difficulty,
-                    'average_rating' => $c->reviews_avg_rating ? round((float) $c->reviews_avg_rating, 1) : 4.9,
+                    'average_rating' => $c->reviews_avg_rating ? round((float) $c->reviews_avg_rating, 1) : null,
                     'internal_price' => (float) $c->price, // Admin only
                 ];
             });

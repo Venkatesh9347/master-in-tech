@@ -222,6 +222,34 @@ class PaymentConfirmTest extends TestCase
         $this->assertDatabaseMissing('course_enrollments', ['course_id' => $course->id]);
     }
 
+    public function test_confirm_endpoint_reports_provider_unreachable_for_unknown_payment_entity(): void
+    {
+        $student = User::factory()->create(['role' => 'student']);
+        $course = $this->createCourse(['price' => 100.00]);
+
+        $orderRes = $this->actingAs($student, 'sanctum')->postJson('/api/payments/order', [
+            'course_id' => $course->id,
+        ]);
+
+        $order = $orderRes->json('order');
+
+        // A syntactically foreign payment id resolves to no provider entity
+        // (the provider-down/unknown outcome) without any gateway access.
+        $response = $this->actingAs($student, 'sanctum')->postJson('/api/payments/confirm', [
+            'order_id' => $order['order_id'],
+            'payment_id' => 'pay_foreign_unresolvable_9',
+            'signature' => 'present-but-irrelevant-for-stub',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJson(['error' => 'provider_unreachable']);
+        $this->assertDatabaseHas('payment_transactions', [
+            'order_id' => $order['order_id'],
+            'status' => 'stub_created',
+        ]);
+        $this->assertDatabaseMissing('course_enrollments', ['course_id' => $course->id]);
+    }
+
     public function test_razorpay_confirm_requires_a_valid_payment_signature(): void
     {
         config(['payment.default_provider' => 'razorpay']);

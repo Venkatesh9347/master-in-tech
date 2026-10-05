@@ -98,11 +98,24 @@ export function usePagedQuery<T>(
 
     // The state sync above re-runs this effect; skip the duplicate fetch
     // for the key+page+nonce combination already served.
+    //
+    // `served` is recorded only once a request has actually settled and applied
+    // its result (see the `finally` below), never at dispatch time. Recording it
+    // on dispatch strands `loading` under React StrictMode, which remounts
+    // effects: the first run would mark the combination served, its cleanup
+    // would cancel the in-flight request, and the remount would then early-return
+    // here without ever issuing - or finishing - a fetch, leaving the consumer
+    // stuck on its loading skeleton forever.
+    const combination = { key: paramsKey, page: effectivePage, nonce: reloadNonce }
     const served = servedRef.current
-    if (served && served.key === paramsKey && served.page === effectivePage && served.nonce === reloadNonce) {
+    if (
+      served &&
+      served.key === combination.key &&
+      served.page === combination.page &&
+      served.nonce === combination.nonce
+    ) {
       return
     }
-    servedRef.current = { key: paramsKey, page: effectivePage, nonce: reloadNonce }
 
     const query = new URLSearchParams(JSON.parse(paramsKey) as Record<string, string>)
     query.set('page', String(effectivePage))
@@ -137,6 +150,7 @@ export function usePagedQuery<T>(
       })
       .finally(() => {
         if (!cancelled && requestIdRef.current === requestId) {
+          servedRef.current = combination
           setLoading(false)
         }
       })

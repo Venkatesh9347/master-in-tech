@@ -144,8 +144,13 @@ export default function AdminLayout() {
           })}
         </nav>
 
-        {/* Outlet for Nested Admin Pages */}
-        <Outlet />
+        {/* B13: the admin shell owns the single <main> landmark for every admin
+            page. Child pages must not add their own <main> or it would nest, so
+            the two that previously declared one now render a plain <div>. */}
+        <main className="flex-grow">
+          {/* Outlet for Nested Admin Pages */}
+          <Outlet />
+        </main>
       </div>
     </div>
   )
