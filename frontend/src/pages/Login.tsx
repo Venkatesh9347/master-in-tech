@@ -118,6 +118,11 @@ export default function Login() {
       navigate('/admin/crm', { replace: true });
     } else if (loggedInUser.role === 'company' || loggedInUser.role === 'recruiter') {
       navigate('/company', { replace: true });
+    } else if (loggedInUser.role === 'placement_advisor') {
+      // Must be checked before the student fallback. Without this branch a
+      // placement_advisor was sent to /student, StudentRoute rejected them and
+      // redirected to /login, and the two ping-ponged indefinitely.
+      navigate('/placement', { replace: true });
     } else {
       navigate('/student', { replace: true });
     }

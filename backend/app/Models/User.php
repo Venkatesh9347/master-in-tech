@@ -35,6 +35,71 @@ class User extends Authenticatable
     }
 
     /**
+     * The authoritative role vocabulary.
+     *
+     * Must stay in sync with the `roles` lookup table seeded by
+     * 2026_10_04_000001_add_role_constraint_to_users_table (which supplies the
+     * vocabulary and the users.role foreign key) plus
+     * 2026_10_04_000002_add_placement_advisor_to_roles_table (adds
+     * placement_advisor for databases that already ran the first migration).
+     *
+     * Verified against the live `roles` table by
+     * tests/Feature/RoleVocabularyIntegrityTest.
+     */
+    public const ROLES = [
+        'student',
+        'tutor',
+        'faculty',
+        'instructor',
+        'counsellor',
+        'telecaller',
+        'course_advisor',
+        'placement_advisor',
+        'company',
+        'recruiter',
+        'admin',
+        'super_admin',
+    ];
+
+    /**
+     * Roles an administrator may assign through the admin user API.
+     *
+     * This is intentionally the full vocabulary minus nothing: every role in
+     * `ROLES` is a supported business role, and the admin API is the only
+     * provisioning path (public registration is disabled and company
+     * onboarding deliberately creates no user account). Restricting this list
+     * is what made faculty, instructor, company and recruiter unreachable.
+     *
+     * Privilege is NOT controlled by presence in this list. Escalation guards
+     * live in AdminUserController and are enforced after validation:
+     *   - granting or revoking super_admin requires a super_admin actor
+     *   - nobody may change their own role
+     *   - the last privileged account cannot be demoted
+     *   - company/recruiter require a linked approved-free corporate profile
+     *   - role changes are forceFill'd (no mass assignment) and audited
+     *
+     * @see self::ROLES
+     */
+    public const ASSIGNABLE_ROLES = self::ROLES;
+
+    /**
+     * Roles that require a corporate profile. Assigning one of these without a
+     * linked company produces an account that EnsureUserIsCompany rejects with
+     * 403, so the relationship is validated instead of allowed to fail later.
+     */
+    public const CORPORATE_ROLES = ['company', 'recruiter'];
+
+    /**
+     * Roles with placement operational authority (approval boundary between
+     * corporate-submitted vacancies and the student-visible placement portal).
+     *
+     * Deliberately excludes admin/super_admin from being *defined* here: those
+     * are administrative and reach these endpoints through EnsureUserIsAdmin.
+     * This list is the placement operational tier only.
+     */
+    public const PLACEMENT_ROLES = ['placement_advisor'];
+
+    /**
      * Default permissions matrix for tutors/faculty.
      */
     public static function defaultTutorPermissions(): array
@@ -296,6 +361,32 @@ class User extends Authenticatable
     public function isSuperAdmin(): bool
     {
         return $this->role === 'super_admin';
+    }
+
+    public function isPlacementAdvisor(): bool
+    {
+        return $this->role === 'placement_advisor';
+    }
+
+    /**
+     * Placement operational authority.
+     *
+     * Grants the placement review/publish boundary only. It is intentionally
+     * NOT admin: callers must not use this to reach user administration, CMS,
+     * role assignment, security settings or unrestricted CRM.
+     */
+    public function canOperatePlacement(): bool
+    {
+        return $this->isPlacementAdvisor();
+    }
+
+    /**
+     * True when the user holds any placement role (operational or administrative).
+     * Used for read surfaces that both tiers legitimately share.
+     */
+    public function hasPlacementAccess(): bool
+    {
+        return $this->isPlacementAdvisor() || $this->isAdmin();
     }
 
     public function isCompany(): bool

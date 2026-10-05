@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tutor' => \App\Http\Middleware\EnsureUserIsTutorOrAdmin::class,
             'crm' => \App\Http\Middleware\EnsureUserCanAccessCrm::class,
             'company' => \App\Http\Middleware\EnsureUserIsCompany::class,
+            'placement' => \App\Http\Middleware\EnsureUserIsPlacementStaff::class,
             'single.session' => \App\Http\Middleware\ValidateSingleActiveSession::class,
         ]);
     })

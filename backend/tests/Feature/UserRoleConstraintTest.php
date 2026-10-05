@@ -21,10 +21,15 @@ class UserRoleConstraintTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** The vocabulary the constraint must accept. */
+    /** The vocabulary the constraint must accept.
+     *
+     * 2026_10_04_000002 adds placement_advisor. This assertion was updated
+     * rather than loosened: the vocabulary is the subject under test, and the
+     * specification changed it deliberately.
+     */
     private const ROLES = [
         'student', 'tutor', 'faculty', 'instructor', 'counsellor', 'telecaller',
-        'course_advisor', 'company', 'recruiter', 'admin', 'super_admin',
+        'course_advisor', 'placement_advisor', 'company', 'recruiter', 'admin', 'super_admin',
     ];
 
     public function test_roles_lookup_table_is_seeded_with_the_full_vocabulary(): void

@@ -9,6 +9,7 @@ import CounsellorRoute from "./components/CounsellorRoute";
 import TutorRoute from "./components/TutorRoute";
 import StudentRoute from "./components/StudentRoute";
 import CompanyRoute from "./components/CompanyRoute";
+import PlacementRoute from "./components/PlacementRoute";
 import TutorLayout from "./components/tutor/TutorLayout";
 import AdminLayout from "./components/admin/AdminLayout";
 import CompanyLayout from "./components/company/CompanyLayout";
@@ -75,6 +76,7 @@ const AdminTutorPermissions = lazy(() => import("./pages/admin/AdminTutorPermiss
 const AdminEnquiries = lazy(() => import("./pages/admin/AdminEnquiries"));
 const AdminCrm = lazy(() => import("./pages/admin/AdminCrm"));
 const AdminPlacements = lazy(() => import("./pages/admin/AdminPlacements"));
+const PlacementDashboard = lazy(() => import("./pages/placement/PlacementDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminEnrollments = lazy(() => import("./pages/admin/AdminEnrollments"));
 const AdminBatches = lazy(() => import("./pages/admin/AdminBatches"));
@@ -173,6 +175,25 @@ function App() {
                 <Route path="profile" element={<CompanyProfile />} />
               </Route>
             </Route>
+
+            {/* Dedicated Placement Advisor Portal.
+                The guard is navigation UX only; the admin placements API is
+                authorized server-side by EnsureUserIsPlacementStaff. */}
+            <Route element={<PlacementRoute />}>
+              <Route path="/placement" element={<PlacementDashboard />} />
+              <Route path="/placement/*" element={<PlacementDashboard />} />
+            </Route>
+
+            {/* Role-specific CRM entrances (C4).
+                These give each frontline CRM role its own destination and
+                information architecture while reusing the one AdminCrm page and
+                the existing /admin/crm API. They deliberately do NOT change
+                backend authorization: the CRM capability matrix has a single
+                scoped tier for counsellor/telecaller/course_advisor, which is
+                what the controllers actually enforce today. */}
+            <Route path="/crm/telecaller" element={<AdminCrm />} />
+            <Route path="/crm/counsellor" element={<AdminCrm />} />
+            <Route path="/crm/course-advisor" element={<AdminCrm />} />
 
             {/* Student Protected Routes */}
             <Route element={<StudentRoute />}>

@@ -15,6 +15,8 @@ export default function CompanyRoute() {
       navigate("/admin", { replace: true });
     } else if (user.role === "tutor" || user.role === "faculty") {
       navigate("/tutor", { replace: true });
+    } else if (user.role === "placement_advisor") {
+      navigate("/placement", { replace: true });
     } else if (user.role !== "company" && user.role !== "recruiter") {
       navigate("/student", { replace: true });
     }
@@ -34,6 +36,7 @@ export default function CompanyRoute() {
   if (!user) return null;
   if (user.role === "admin" || user.role === "super_admin") return null;
   if (user.role === "tutor" || user.role === "faculty") return null;
+  if (user.role === "placement_advisor") return null;
   if (user.role !== "company" && user.role !== "recruiter") return null;
 
   return <Outlet />;

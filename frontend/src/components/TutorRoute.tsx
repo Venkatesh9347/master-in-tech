@@ -13,6 +13,8 @@ export default function TutorRoute() {
       navigate("/login", { replace: true, state: { from: location } });
     } else if (user.role === "admin" || user.role === "super_admin") {
       navigate("/admin", { replace: true });
+    } else if (user.role === "placement_advisor") {
+      navigate("/placement", { replace: true });
     } else if (user.role !== "tutor" && user.role !== "faculty") {
       navigate("/student", { replace: true });
     }
@@ -31,6 +33,7 @@ export default function TutorRoute() {
 
   if (!user) return null;
   if (user.role === "admin" || user.role === "super_admin") return null;
+  if (user.role === "placement_advisor") return null;
   if (user.role !== "tutor" && user.role !== "faculty") return null;
 
   return <Outlet />;

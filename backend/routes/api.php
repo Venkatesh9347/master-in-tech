@@ -599,7 +599,26 @@ Route::middleware(['auth:sanctum', 'single.session', 'crm'])->group(function () 
     });
 });
 
-Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function () {
+// Placement Operations Desk.
+//
+// Placement Advisor holds placement OPERATIONAL authority (vacancy review, the
+// publish boundary, corporate partners, applications, stats and placement
+// settings). This is deliberately a separate guard from EnsureUserIsAdmin,
+// which covers 179 routes spanning user administration, CMS, billing, role
+// assignment and security settings: adding placement_advisor to that guard
+// would silently promote it to full platform administration.
+//
+// admin/super_admin also satisfy this guard so existing administrator
+// behaviour on these endpoints is unchanged.
+//
+// Mock-interview administration stays admin-only and re-asserts that explicitly
+// with ->middleware('admin') inside this group, because nested middleware
+// composes rather than replaces.
+Route::middleware(['auth:sanctum', 'single.session', 'placement'])->group(function () {
+    // Singular /admin/placement/settings alias. Placement settings are a
+    // placement operation, so placement_advisor can manage them.
+    Route::get('/admin/placement/settings', [AdminPlacementController::class, 'getSettings']);
+    Route::put('/admin/placement/settings', [AdminPlacementController::class, 'updateSettings']);
 
     // Admin Placement Management Desk & Candidate Applications
     Route::prefix('admin/placements')->group(function () {
@@ -613,8 +632,8 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
         Route::delete('/opportunities/{opportunity}', [AdminPlacementController::class, 'destroyOpportunity']);
         Route::get('/applications', [AdminPlacementController::class, 'applications']);
         Route::put('/applications/{application}/status', [AdminPlacementController::class, 'updateApplicationStatus']);
-        Route::get('/dashboard-control', [AdminMockInterviewController::class, 'eligibilityList']);
-        Route::post('/dashboard-control/status', [AdminMockInterviewController::class, 'updateDashboardStatus']);
+        Route::get('/dashboard-control', [AdminMockInterviewController::class, 'eligibilityList'])->middleware('admin');
+        Route::post('/dashboard-control/status', [AdminMockInterviewController::class, 'updateDashboardStatus'])->middleware('admin');
 
         // Corporate Partners Desk
         Route::prefix('partners')->group(function () {
@@ -633,8 +652,12 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
             Route::post('/{job}/reject', [AdminCorporatePartnerController::class, 'rejectJob']);
         });
 
-        // Mandatory Mock Interviews & Professional Interviewers Desk
-        Route::prefix('mock-interviews')->group(function () {
+        // Mandatory Mock Interviews & Professional Interviewers Desk.
+        // Mock-interview administration is NOT a Phase 1 placement capability
+        // (the specification's placement-advisor list does not include it), so
+        // it remains admin-only. Nested middleware composes: placement_advisor
+        // clears 'placement' above and is then stopped by this 'admin'.
+        Route::prefix('mock-interviews')->middleware('admin')->group(function () {
             Route::get('/stats', [AdminMockInterviewController::class, 'stats']);
             Route::get('/eligibility', [AdminMockInterviewController::class, 'eligibilityList']);
             Route::post('/eligibility-override', [AdminMockInterviewController::class, 'overrideEligibility']);
@@ -659,6 +682,11 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
         });
     });
 
+    });
+
+// Remaining platform administration (unrelated to the Placement Desk):
+// mock-interview administration, enrollments, payments, certificates, ...
+Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function () {
     // Standalone /admin/mock-interviews alias
     Route::prefix('admin/mock-interviews')->group(function () {
         Route::get('/stats', [AdminMockInterviewController::class, 'stats']);
@@ -683,10 +711,6 @@ Route::middleware(['auth:sanctum', 'single.session', 'admin'])->group(function (
         Route::post('/bookings/{interview}/evaluate', [AdminMockInterviewController::class, 'evaluateBooking']);
         Route::get('/evaluations', [AdminMockInterviewController::class, 'evaluations']);
     });
-
-    // Singular /admin/placement/settings alias
-    Route::get('/admin/placement/settings', [AdminPlacementController::class, 'getSettings']);
-    Route::put('/admin/placement/settings', [AdminPlacementController::class, 'updateSettings']);
 
     // Admin Student Enrollments & Course Assignment Management
     Route::get('/admin/enrollments/stats', [AdminEnrollmentController::class, 'stats']);

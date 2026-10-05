@@ -14,6 +14,7 @@ use App\Services\Enrollment\EnrollmentAccess;
 use App\Services\Enrollment\EnrollmentPaymentGate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 
 class AdminUserController extends Controller
 {
@@ -98,7 +99,8 @@ class AdminUserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
             'password' => 'nullable|string|min:6',
-            'role' => 'required|string|in:student,tutor,counsellor,telecaller,course_advisor,admin,super_admin',
+            'role' => ['required', 'string', Rule::in(User::ASSIGNABLE_ROLES)],
+            'company_id' => 'nullable|exists:companies,id',
             'student_id' => 'nullable|string|max:50|unique:users,student_id',
             'status' => 'nullable|string|in:active,pending,disabled',
             'phone' => 'nullable|string|max:30',
@@ -111,6 +113,11 @@ class AdminUserController extends Controller
         ]);
 
         $this->denyUnlessSuperAdminGrantAllowed($request, $validated['role']);
+
+        $this->assertCorporateRoleHasProfile(
+            $validated['role'],
+            isset($validated['company_id']) ? (int) $validated['company_id'] : null
+        );
 
         $password = ! empty($validated['password'])
             ? Hash::make($validated['password'])
@@ -126,6 +133,7 @@ class AdminUserController extends Controller
             'headline' => $validated['headline'] ?? null,
             'expertise' => $validated['expertise'] ?? null,
             'bio' => $validated['bio'] ?? null,
+            'company_id' => $validated['company_id'] ?? null,
         ]);
 
         // HIGH-7: role is deliberately NOT mass-assignable; set it explicitly
@@ -206,7 +214,8 @@ class AdminUserController extends Controller
             'email' => "sometimes|required|string|email|max:255|unique:users,email,{$user->id}",
             'student_id' => "nullable|string|max:50|unique:users,student_id,{$user->id}",
             'status' => 'nullable|string|in:active,pending,disabled',
-            'role' => 'sometimes|required|string|in:student,tutor,counsellor,telecaller,course_advisor,admin,super_admin',
+            'role' => ['sometimes', 'required', 'string', Rule::in(User::ASSIGNABLE_ROLES)],
+            'company_id' => 'nullable|exists:companies,id',
             'phone' => 'nullable|string|max:30',
             'headline' => 'nullable|string|max:255',
             'expertise' => 'nullable|string|max:255',
@@ -250,10 +259,18 @@ class AdminUserController extends Controller
     public function updateRole(Request $request, User $user)
     {
         $validated = $request->validate([
-            'role' => 'required|in:student,tutor,counsellor,telecaller,course_advisor,admin,super_admin',
+            'role' => ['required', Rule::in(User::ASSIGNABLE_ROLES)],
+            // Allows linking a corporate profile in the same call that grants
+            // the corporate role, so the account is never created unusable.
+            'company_id' => 'nullable|exists:companies,id',
         ]);
 
         $this->denyUnlessSuperAdminGrantAllowed($request, $validated['role']);
+
+        $this->assertCorporateRoleHasProfile(
+            $validated['role'],
+            $validated['company_id'] ?? $user->company_id
+        );
 
         $targetIsSuperAdmin = $user->role === 'super_admin';
         $targetStaysSuperAdmin = $validated['role'] === 'super_admin';
@@ -282,6 +299,11 @@ class AdminUserController extends Controller
 
         // HIGH-7: explicit policy-controlled role update bypasses mass assignment.
         $user->forceFill(['role' => $validated['role']])->save();
+
+        // Persist a corporate profile supplied alongside the role grant.
+        if (array_key_exists('company_id', $validated)) {
+            $user->forceFill(['company_id' => $validated['company_id']])->save();
+        }
 
         AuditLog::log('updated_user_role', $user, [
             'id' => $user->id,
@@ -340,6 +362,27 @@ class AdminUserController extends Controller
     {
         if ($targetRole === 'super_admin' && ($request->user()?->role !== 'super_admin')) {
             abort(403, 'Only a super administrator can grant the super_admin role.');
+        }
+    }
+
+    /**
+     * Corporate roles require a linked corporate profile.
+     *
+     * Company onboarding (CompanyPortalController::register) deliberately
+     * creates only a Company row in `pending` status and tells the applicant
+     * that the placement cell will issue portal credentials. Provisioning the
+     * user account is therefore an administrative act, and an account without
+     * company_id is unusable: EnsureUserIsCompany rejects it with 403
+     * ("No corporate profile associated with this account").
+     *
+     * Rejecting the assignment here keeps the role reachable while preventing a
+     * dead account from being created.
+     */
+    private function assertCorporateRoleHasProfile(string $targetRole, ?int $companyId): void
+    {
+        if (in_array($targetRole, User::CORPORATE_ROLES, true) && ! $companyId) {
+            abort(422, 'A company_id is required when assigning the '.$targetRole
+                .' role, otherwise the account cannot access the corporate portal.');
         }
     }
 

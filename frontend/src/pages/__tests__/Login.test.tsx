@@ -151,4 +151,34 @@ describe("Login deterministic navigation", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/admin/enquiries", expect.objectContaining({ replace: true }))
     );
   });
+
+  // -------------------------------------------------------------------
+  // placement_advisor must land on its own desk.
+  //
+  // The role used to fall through to the student fallback, so /student
+  // rejected it and redirected to /login, producing an infinite loop.
+  // -------------------------------------------------------------------
+
+  it("redirects placement_advisor to /placement", async () => {
+    authState.user = { id: 12, name: "Placement", email: "placement@example.com", role: "placement_advisor" };
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Login />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/placement", expect.objectContaining({ replace: true })));
+    expect(mockNavigate).not.toHaveBeenCalledWith("/student", expect.anything());
+    expect(mockNavigate).not.toHaveBeenCalledWith("/login", expect.anything());
+  });
+
+  it("does not honour a /admin deep link for placement_advisor", async () => {
+    authState.user = { id: 13, name: "Placement", email: "placement@example.com", role: "placement_advisor" };
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/login", state: { from: { pathname: "/admin" } } }]}>
+        <Login />
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/placement", expect.objectContaining({ replace: true })));
+    expect(mockNavigate).not.toHaveBeenCalledWith("/admin", expect.anything());
+  });
 });

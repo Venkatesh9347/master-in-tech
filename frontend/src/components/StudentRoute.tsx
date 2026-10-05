@@ -16,6 +16,10 @@ export default function StudentRoute() {
       navigate("/tutor", { replace: true });
     } else if (user.role === "company" || user.role === "recruiter") {
       navigate("/company", { replace: true });
+    } else if (user.role === "placement_advisor") {
+      // Previously this fell through to /login, which sent them straight back
+      // to /student: an infinite redirect loop.
+      navigate("/placement", { replace: true });
     } else if (user.role !== "student") {
       navigate("/login", { replace: true });
     }
@@ -36,6 +40,7 @@ export default function StudentRoute() {
   if (user.role === "admin" || user.role === "super_admin") return null;
   if (user.role === "tutor" || user.role === "faculty") return null;
   if (user.role === "company" || user.role === "recruiter") return null;
+  if (user.role === "placement_advisor") return null;
   if (user.role !== "student") return null;
 
   return <Outlet />;
