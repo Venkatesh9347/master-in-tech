@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { destinationForRole } from "../utils/roleDestinations";
 
 /**
  * Placement Operations Desk guard.
@@ -31,7 +32,7 @@ export default function PlacementRoute() {
       user.role === "telecaller" ||
       user.role === "course_advisor"
     ) {
-      navigate("/admin/crm", { replace: true });
+      navigate(destinationForRole(user.role), { replace: true });
     } else if (user.role === "company" || user.role === "recruiter") {
       navigate("/company", { replace: true });
     } else if (user.role !== "placement_advisor") {

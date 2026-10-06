@@ -7,6 +7,7 @@ import GoogleAuthButton from '../components/auth/GoogleAuthButton';
 import OtpVerificationModal from '../components/auth/OtpVerificationModal';
 import PublicAccessGateModal from '../components/PublicAccessGateModal';
 import type { User, GoogleAuthPendingSession } from '../context/auth-context';
+import { destinationForRole, isCrmDeskRole } from '../utils/roleDestinations';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -84,10 +85,8 @@ export default function Login() {
 
   const handlePostAuthRedirect = useCallback((loggedInUser: User) => {
     const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname;
-    // Frontline CRM staff share the backend's scoped-CRM access
-    // (counsellor/telecaller/course_advisor): their home is /admin/crm.
     const isCrmStaff = (role?: string) =>
-      role === 'counsellor' || role === 'telecaller' || role === 'course_advisor';
+      isCrmDeskRole(role);
     const isCrmPath = (path?: string) =>
       path === '/admin/crm' || path?.startsWith('/admin/crm/') ||
       path === '/admin/enquiries' || path?.startsWith('/admin/enquiries/');
@@ -110,22 +109,7 @@ export default function Login() {
       }
     }
 
-    if (loggedInUser.role === 'admin' || loggedInUser.role === 'super_admin') {
-      navigate('/admin', { replace: true });
-    } else if (loggedInUser.role === 'tutor' || loggedInUser.role === 'faculty') {
-      navigate('/tutor', { replace: true });
-    } else if (isCrmStaff(loggedInUser.role)) {
-      navigate('/admin/crm', { replace: true });
-    } else if (loggedInUser.role === 'company' || loggedInUser.role === 'recruiter') {
-      navigate('/company', { replace: true });
-    } else if (loggedInUser.role === 'placement_advisor') {
-      // Must be checked before the student fallback. Without this branch a
-      // placement_advisor was sent to /student, StudentRoute rejected them and
-      // redirected to /login, and the two ping-ponged indefinitely.
-      navigate('/placement', { replace: true });
-    } else {
-      navigate('/student', { replace: true });
-    }
+    navigate(destinationForRole(loggedInUser.role), { replace: true });
   }, [navigate, location.state]);
 
   // Deterministic state-driven redirect: when auth state becomes authenticated, navigate based on role.

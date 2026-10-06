@@ -124,10 +124,14 @@ describe("Login deterministic navigation", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  // Phases 6/7/8 gave each frontline CRM role its own desk. These used to assert the
+  // shared /admin/crm landing; the requirement is now a distinct destination per
+  // role, so the expectation moves with it. The no-loop guarantee is unchanged and
+  // is still asserted below.
   it.each([
-    ["counsellor", "/admin/crm"],
-    ["telecaller", "/admin/crm"],
-    ["course_advisor", "/admin/crm"],
+    ["counsellor", "/crm/counsellor"],
+    ["telecaller", "/crm/telecaller"],
+    ["course_advisor", "/crm/course-advisor"],
   ] as const)("redirects already-authenticated %s to %s (no redirect loop)", async (role, path) => {
     authState.user = { id: 10, name: "Staff", email: "staff@example.com", role } as any;
     render(

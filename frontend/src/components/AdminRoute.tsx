@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { destinationForRole } from "../utils/roleDestinations";
 
 export default function AdminRoute() {
   const { user, loading } = useAuth();
@@ -13,15 +14,11 @@ export default function AdminRoute() {
       navigate("/login", { replace: true, state: { from: location } });
     } else if (user.role === "tutor" || user.role === "faculty") {
       navigate("/tutor", { replace: true });
-    } else if (user.role === "counsellor" || user.role === "telecaller" || user.role === "course_advisor") {
-      navigate("/admin/crm", { replace: true });
-    } else if (user.role === "placement_advisor") {
-      // Placement Advisor has placement operational authority, not platform
-      // administration. Send them to their own desk instead of /student, which
-      // StudentRoute would reject and bounce back to /login.
-      navigate("/placement", { replace: true });
     } else if (user.role !== "admin" && user.role !== "super_admin") {
-      navigate("/student", { replace: true });
+      // Every other role lands on the destination its own role owns: /company
+      // for company/recruiter, /placement for placement_advisor, or the
+      // dedicated CRM desk for telecaller/counsellor/course_advisor.
+      navigate(destinationForRole(user.role), { replace: true });
     }
   }, [user, loading, navigate, location]);
 
@@ -37,9 +34,6 @@ export default function AdminRoute() {
   }
 
   if (!user) return null;
-  if (user.role === "tutor" || user.role === "faculty") return null;
-  if (user.role === "counsellor" || user.role === "telecaller" || user.role === "course_advisor") return null;
-  if (user.role === "placement_advisor") return null;
   if (user.role !== "admin" && user.role !== "super_admin") return null;
 
   return <Outlet />;

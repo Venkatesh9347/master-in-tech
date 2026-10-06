@@ -201,7 +201,10 @@ describe("RouteGuards", () => {
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/student", expect.objectContaining({ replace: true })));
   });
 
-  it("AdminRoute redirects telecaller to /admin/crm", async () => {
+  // Phases 6/7/8 moved each frontline CRM role onto its own desk. This guard now
+  // sends them there rather than to the shared /admin/crm page. Still a redirect
+  // away from /admin — the authorization outcome is unchanged.
+  it("AdminRoute redirects telecaller to their own desk, never to /admin", async () => {
     renderWithAuth(
       <Routes>
         <Route element={<AdminRoute />}>
@@ -211,7 +214,10 @@ describe("RouteGuards", () => {
       { user: telecallerUser, loading: false },
       "/admin"
     );
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/admin/crm", expect.objectContaining({ replace: true })));
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("/crm/telecaller", expect.objectContaining({ replace: true }))
+    );
+    expect(mockNavigate).not.toHaveBeenCalledWith("/admin", expect.anything());
   });
 
   // -------------------------------------------------------------------

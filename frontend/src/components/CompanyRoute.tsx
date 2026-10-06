@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { destinationForRole } from "../utils/roleDestinations";
 
 export default function CompanyRoute() {
   const { user, loading } = useAuth();
@@ -18,7 +19,7 @@ export default function CompanyRoute() {
     } else if (user.role === "placement_advisor") {
       navigate("/placement", { replace: true });
     } else if (user.role !== "company" && user.role !== "recruiter") {
-      navigate("/student", { replace: true });
+      navigate(destinationForRole(user.role), { replace: true });
     }
   }, [user, loading, navigate, location]);
 

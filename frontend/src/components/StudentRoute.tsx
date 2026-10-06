@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
+import { destinationForRole } from "../utils/roleDestinations";
 
 export default function StudentRoute() {
   const { user, loading } = useAuth();
@@ -21,7 +22,9 @@ export default function StudentRoute() {
       // to /student: an infinite redirect loop.
       navigate("/placement", { replace: true });
     } else if (user.role !== "student") {
-      navigate("/login", { replace: true });
+      // Any other authenticated role goes to the desk it actually owns. This
+      // used to send CRM staff to /login, which bounced straight back here.
+      navigate(destinationForRole(user.role), { replace: true });
     }
   }, [user, loading, navigate]);
 

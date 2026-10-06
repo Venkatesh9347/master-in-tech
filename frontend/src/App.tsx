@@ -77,6 +77,7 @@ const AdminEnquiries = lazy(() => import("./pages/admin/AdminEnquiries"));
 const AdminCrm = lazy(() => import("./pages/admin/AdminCrm"));
 const AdminPlacements = lazy(() => import("./pages/admin/AdminPlacements"));
 const PlacementDashboard = lazy(() => import("./pages/placement/PlacementDashboard"));
+const CrmRoleDashboard = lazy(() => import("./pages/crm/CrmRoleDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminEnrollments = lazy(() => import("./pages/admin/AdminEnrollments"));
 const AdminBatches = lazy(() => import("./pages/admin/AdminBatches"));
@@ -184,16 +185,25 @@ function App() {
               <Route path="/placement/*" element={<PlacementDashboard />} />
             </Route>
 
-            {/* Role-specific CRM entrances (C4).
-                These give each frontline CRM role its own destination and
-                information architecture while reusing the one AdminCrm page and
-                the existing /admin/crm API. They deliberately do NOT change
-                backend authorization: the CRM capability matrix has a single
-                scoped tier for counsellor/telecaller/course_advisor, which is
-                what the controllers actually enforce today. */}
-            <Route path="/crm/telecaller" element={<AdminCrm />} />
-            <Route path="/crm/counsellor" element={<AdminCrm />} />
-            <Route path="/crm/course-advisor" element={<AdminCrm />} />
+            {/* Role-specific CRM desks (Phases 6, 7, 8).
+                Each frontline CRM role gets its own dashboard and information
+                architecture. PRESENTATION ONLY: the backend authorization model
+                is unchanged — all three roles still share the single enforced
+                scoped CRM tier (Enquiry::visibleTo / hasScopedCrmAccess), which
+                the API enforces independently of anything rendered here. The CRM
+                three-way split remains TARGET / NOT YET ENFORCED. */}
+            <Route
+              path="/crm/telecaller"
+              element={<CrmRoleDashboard config="telecaller" />}
+            />
+            <Route
+              path="/crm/counsellor"
+              element={<CrmRoleDashboard config="counsellor" />}
+            />
+            <Route
+              path="/crm/course-advisor"
+              element={<CrmRoleDashboard config="course_advisor" />}
+            />
 
             {/* Student Protected Routes */}
             <Route element={<StudentRoute />}>
