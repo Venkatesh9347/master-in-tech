@@ -632,6 +632,12 @@ Route::middleware(['auth:sanctum', 'single.session', 'placement'])->group(functi
         Route::delete('/opportunities/{opportunity}', [AdminPlacementController::class, 'destroyOpportunity']);
         Route::get('/applications', [AdminPlacementController::class, 'applications']);
         Route::put('/applications/{application}/status', [AdminPlacementController::class, 'updateApplicationStatus']);
+
+        // Phase 4 remaining capabilities. READ ONLY, and inside the existing
+        // 'placement' authorization group — not EnsureUserIsAdmin, so
+        // placement_advisor gains no administrative authority.
+        Route::get('/interviews', [AdminPlacementController::class, 'interviewPipeline']);
+        Route::get('/audit-events', [AdminPlacementController::class, 'auditEvents']);
         Route::get('/dashboard-control', [AdminMockInterviewController::class, 'eligibilityList'])->middleware('admin');
         Route::post('/dashboard-control/status', [AdminMockInterviewController::class, 'updateDashboardStatus'])->middleware('admin');
 

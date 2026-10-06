@@ -169,6 +169,253 @@ class AdminPlacementController extends Controller
     }
 
     /**
+     * Audit events that belong to placement / corporate recruitment oversight.
+     *
+     * Derived from an exhaustive scan of every AuditLog::log() call site in the
+     * application — these are the real event names that exist, not invented ones.
+     * Grouped by the business area each one describes:
+     *
+     *   corporate partner lifecycle : CompanyPortalController, AdminCorporatePartnerController
+     *   company vacancy lifecycle  : CompanyPortalController, AdminCorporatePartnerController
+     *   placement opportunities   : AdminPlacementController
+     *   placement applications     : PlacementPortalController, AdminPlacementController,
+     *                                CompanyPortalController
+     *   placement configuration    : PlacementSettingService
+     *   student placement access   : MockInterviewService (StudentPlacementEligibility)
+     *
+     * Deliberately EXCLUDED, because they are not placement oversight:
+     *   - user administration and role assignment (created_user, updated_user,
+     *     deleted_user, updated_user_role, updated_tutor_permissions, ...)
+     *   - CRM and call recordings (*crm*, converted_crm_lead_to_student,
+     *     recorded_lead_payment, accessed_call_recording, ...)
+     *   - mock-interview administration (created/updated/deleted_mock_interviewer,
+     *     _mock_interview_slot, booked/rescheduled/cancelled_mock_interview,
+     *     submitted_mock_interview_evaluation, reassigned_mock_interview_interviewer,
+     *     deactivated_mock_interviewer, updated_mock_interview_status)
+     *     — those endpoints are admin-only, so exposing their audit trail here
+     *       would leak an administration surface that placement_advisor is
+     *       deliberately denied.
+     *   - payments, refunds, certificates, CMS, batches, live classes, webhooks
+     *
+     * @var list<string>
+     */
+    public const PLACEMENT_AUDIT_ACTIONS = [
+        // corporate partner lifecycle
+        'company_partnership_requested',
+        'approved_corporate_partner',
+        'rejected_corporate_partner',
+        'suspended_corporate_partner',
+        'reactivated_corporate_partner',
+        // company vacancy lifecycle
+        'company_job_created',
+        'approved_company_job',
+        'rejected_company_job',
+        // placement opportunities
+        'created_placement_opportunity',
+        'updated_placement_opportunity',
+        'deleted_placement_opportunity',
+        // placement applications and the corporate recruitment pipeline
+        'submitted_placement_application',
+        'updated_placement_application_status',
+        'company_updated_application_status',
+        'company_scheduled_interview',
+        // placement configuration
+        'updated_placement_settings',
+        // student placement access
+        'placement_dashboard_disabled',
+        'placement_dashboard_suspended',
+        'overrode_student_placement_eligibility',
+    ];
+
+    /**
+     * Keys stripped from audit payloads before they are returned.
+     *
+     * Defence in depth: the allowlist above already guarantees placement context,
+     * but this guarantees that no credential-shaped value can ever reach a
+     * placement_advisor even if a future placement event logs one.
+     *
+     * @var list<string>
+     */
+    private const AUDIT_REDACTED_KEY_PATTERN = '/(password|passwd|token|secret|api[_-]?key|authorization|bearer|credential|session_id|remember_token)/i';
+
+    /**
+     * Recursively remove credential-shaped keys from an audit payload.
+     *
+     * @param  mixed  $value
+     * @return mixed
+     */
+    private function redactAuditPayload($value)
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        $clean = [];
+
+        foreach ($value as $key => $item) {
+            if (is_string($key) && preg_match(self::AUDIT_REDACTED_KEY_PATTERN, $key)) {
+                continue;
+            }
+
+            $clean[$key] = is_array($item) || is_object($item)
+                ? $this->redactAuditPayload((array) $item)
+                : $item;
+        }
+
+        return $clean;
+    }
+
+    /**
+     * Placement-scoped audit event stream (READ ONLY).
+     *
+     * Phase 4 capability #20 — "view placement audit events". Serves only the
+     * allowlisted placement actions above; the rest of the audit_logs table is
+     * never queried. ip_address and user_agent are withheld as
+     * security-sensitive metadata, and payloads are passed through the redactor.
+     *
+     * This is additive: the existing admin audit surface is untouched.
+     */
+    public function auditEvents(Request $request)
+    {
+        $query = AuditLog::query()
+            ->whereIn('action', self::PLACEMENT_AUDIT_ACTIONS)
+            // Secondary narrowing only. `action` is the primary allowlist and is
+            // always applied, so a NULL auditable_type cannot widen exposure —
+            // it is required because `updated_placement_settings` legitimately
+            // audits a null model (PlacementSettingService L71 passes null).
+            // The type clause additionally prevents a future unrelated model
+            // from reusing an allowlisted action name and leaking through.
+            ->where(function ($q) {
+                $q->whereIn('auditable_type', [
+                    \App\Models\PlacementOpportunity::class,
+                    \App\Models\PlacementApplication::class,
+                    \App\Models\PlacementInterview::class,
+                    \App\Models\Company::class,
+                    \App\Models\StudentPlacementEligibility::class,
+                ])->orWhereNull('auditable_type');
+            })
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+
+        if ($request->filled('action')) {
+            $requested = (string) $request->action;
+
+            if (! in_array($requested, self::PLACEMENT_AUDIT_ACTIONS, true)) {
+                abort(422, 'Unknown placement audit action.');
+            }
+
+            $query->where('action', $requested);
+        }
+
+        if ($request->filled('auditable_type')) {
+            $query->where('auditable_type', (string) $request->auditable_type);
+        }
+
+        if ($request->filled('auditable_id')) {
+            $query->where('auditable_id', (int) $request->auditable_id);
+        }
+
+        $events = $query->paginate(min((int) ($request->input('per_page', 30)), 100));
+
+        // Project to an explicit, minimal column set and sanitise the payloads.
+        $events->through(function (AuditLog $event) {
+            return [
+                'id' => $event->id,
+                'action' => $event->action,
+                'actor_id' => $event->user_id,
+                'actor_name' => $event->user_name,
+                'auditable_type' => $event->auditable_type ? class_basename($event->auditable_type) : null,
+                'auditable_id' => $event->auditable_id,
+                'old_values' => $this->redactAuditPayload($event->old_values),
+                'new_values' => $this->redactAuditPayload($event->new_values),
+                'created_at' => optional($event->created_at)->toIso8601String(),
+            ];
+        });
+
+        return response()->json($events);
+    }
+
+    /**
+     * Placement interview pipeline (READ ONLY).
+     *
+     * Phase 4 capability #17 — "view interview pipeline". Reuses
+     * PlacementInterview and its existing relationships; no new model, table or
+     * migration. Strictly read-only: no create, reschedule, cancel or delete
+     * path is exposed here — company-side scheduling remains the only write
+     * path and stays behind EnsureUserIsCompany.
+     *
+     * Withheld deliberately:
+     *   meeting_link       — join URLs can embed credentials
+     *   admin_notes        — internal administrative notes
+     *   interviewer_notes  — company-internal interviewer notes
+     *   instructions       — company-internal instructions
+     *   candidate email / phone / resume_url — not needed for pipeline oversight
+     */
+    public function interviewPipeline(Request $request)
+    {
+        $query = \App\Models\PlacementInterview::query()
+            ->with([
+                'opportunity:id,title,company_name,location,status',
+                'company:id,name,status',
+                'candidate:id,name',
+                'application:id,placement_opportunity_id,user_id,status,student_name',
+            ])
+            ->orderByDesc('interview_date')
+            ->orderByDesc('id');
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', (string) $request->status);
+        }
+
+        if ($request->filled('placement_opportunity_id') && $request->placement_opportunity_id !== 'all') {
+            $query->where('placement_opportunity_id', (int) $request->placement_opportunity_id);
+        }
+
+        if ($request->filled('company_id') && $request->company_id !== 'all') {
+            $query->where('company_id', (int) $request->company_id);
+        }
+
+        $interviews = $query->paginate(min((int) ($request->input('per_page', 30)), 100));
+
+        $interviews->through(function ($interview) {
+            return [
+                'id' => $interview->id,
+                'interview_date' => optional($interview->interview_date)->toIso8601String(),
+                'interview_type' => $interview->interview_type,
+                'location' => $interview->location,
+                'status' => $interview->status,
+                'technical_score' => $interview->technical_score,
+                'communication_score' => $interview->communication_score,
+                'overall_score' => $interview->overall_score,
+                'recommendation' => $interview->recommendation,
+                'feedback' => $interview->feedback,
+                'opportunity' => $interview->opportunity ? [
+                    'id' => $interview->opportunity->id,
+                    'title' => $interview->opportunity->title,
+                    'company_name' => $interview->opportunity->company_name,
+                    'status' => $interview->opportunity->status,
+                ] : null,
+                'company' => $interview->company ? [
+                    'id' => $interview->company->id,
+                    'name' => $interview->company->name,
+                    'status' => $interview->company->status,
+                ] : null,
+                'candidate' => $interview->candidate ? [
+                    'id' => $interview->candidate->id,
+                    'name' => $interview->candidate->name,
+                ] : null,
+                'application' => $interview->application ? [
+                    'id' => $interview->application->id,
+                    'status' => $interview->application->status,
+                    'student_name' => $interview->application->student_name,
+                ] : null,
+            ];
+        });
+
+        return response()->json($interviews);
+    }
+
+    /**
      * List all student applications with filters.
      */
     public function applications(Request $request)
