@@ -53,7 +53,7 @@ export default function CertificateVerify() {
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Navbar />
 
-      <main className="flex-grow py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full">
+      <main className="mit-enter-rise flex-grow py-16 px-4 sm:px-6 lg:px-8 max-w-4xl mx-auto w-full">
         <div className="text-center mb-10">
           <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
             Credential Authenticity
@@ -97,7 +97,7 @@ export default function CertificateVerify() {
 
         {/* Error / Not Found */}
         {error && !loading && (
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center text-red-700">
+          <div className="mit-enter-rise bg-red-50 border border-red-200 rounded-2xl p-6 text-center text-red-700">
             <p className="font-bold text-base mb-1">❌ Unverified Credential</p>
             <p className="text-sm">{error}</p>
           </div>
@@ -105,7 +105,7 @@ export default function CertificateVerify() {
 
         {/* Valid Certificate Details */}
         {result && result.valid && !loading && (
-          <div className="bg-white p-8 rounded-3xl ring-1 ring-slate-200 shadow-lg border-t-8 border-green-500 animate-in fade-in duration-300">
+          <div className="mit-enter-scale bg-white p-8 rounded-3xl ring-1 ring-slate-200 shadow-lg border-t-8 border-green-500 animate-in fade-in duration-300">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-12 h-12 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-2xl font-bold">
                 ✓

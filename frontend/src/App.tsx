@@ -10,6 +10,8 @@ import TutorRoute from "./components/TutorRoute";
 import StudentRoute from "./components/StudentRoute";
 import CompanyRoute from "./components/CompanyRoute";
 import PlacementRoute from "./components/PlacementRoute";
+import RouteTransition from "./components/motion/RouteTransition";
+import { RadialLoader } from "./components/motion";
 import TutorLayout from "./components/tutor/TutorLayout";
 import AdminLayout from "./components/admin/AdminLayout";
 import CompanyLayout from "./components/company/CompanyLayout";
@@ -103,17 +105,9 @@ const AdminWebhooks = lazy(() => import("./pages/admin/AdminWebhooks"));
 
 // Lightweight Suspense Fallback Loader
 function PageLoadingFallback() {
-  return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-4">
-      <div className="relative flex items-center justify-center">
-        <div className="w-12 h-12 rounded-full border-2 border-blue-500/20 border-t-blue-500 animate-spin" />
-        <span className="absolute text-sm font-bold text-blue-400">⚡</span>
-      </div>
-      <p className="text-xs font-semibold tracking-wider text-slate-400 uppercase">
-        Loading MasterInTech...
-      </p>
-    </div>
-  );
+  // Uses the shared radial loader so route transitions, lazy chunks and the
+  // authentication screens all speak the same visual language.
+  return <RadialLoader label="Loading MasterInTech" />;
 }
 
 /**
@@ -136,6 +130,7 @@ function App() {
         <RouteMeta />
         <AuthProvider>
           <Suspense fallback={<PageLoadingFallback />}>
+            <RouteTransition>
             <Routes>
             {/* Public Routes */}
             <Route path="/" element={<Home />} />
@@ -303,6 +298,7 @@ function App() {
             {/* 404 Catch-All */}
             <Route path="*" element={<NotFound />} />
             </Routes>
+            </RouteTransition>
           </Suspense>
         </AuthProvider>
       </BrowserRouter>

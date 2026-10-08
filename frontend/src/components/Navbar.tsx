@@ -245,7 +245,7 @@ export default function Navbar() {
   }
 
   return (
-    <header className="bg-slate-900 border-b border-slate-800/90 sticky top-0 z-50 shadow-sm">
+    <header className="mit-enter-fade bg-slate-900 border-b border-slate-800/90 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 justify-between items-center">
           {/* Brand Logo */}

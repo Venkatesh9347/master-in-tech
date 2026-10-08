@@ -70,7 +70,7 @@ function CourseCardComponent({
   };
 
   return (
-    <div className="group rounded-xl bg-white border border-slate-200 shadow-xs hover:shadow-md hover:border-slate-300 transition-all duration-200 flex flex-col justify-between overflow-hidden relative">
+    <div className="mit-hover-lift group rounded-xl bg-white border border-slate-200 shadow-xs hover:shadow-md hover:border-slate-300 transition-all duration-200 flex flex-col justify-between overflow-hidden relative">
       {/* Toast message if brochure is unavailable */}
       {toastMsg && (
         <div className="absolute top-2 left-2 right-2 z-30 p-2 bg-slate-950/95 text-amber-300 border border-amber-500/50 rounded-lg text-[11px] font-bold text-center shadow-xl backdrop-blur-xs flex items-center justify-center gap-1.5 animate-pulse">

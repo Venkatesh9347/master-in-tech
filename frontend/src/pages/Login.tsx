@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
-import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import AuthShell from '../components/motion/AuthShell';
 import GoogleAuthButton from '../components/auth/GoogleAuthButton';
 import OtpVerificationModal from '../components/auth/OtpVerificationModal';
 import PublicAccessGateModal from '../components/PublicAccessGateModal';
@@ -167,23 +167,12 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <Navbar />
-
-      <main className="flex-grow flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="w-full max-w-md">
-          <div className="bg-white rounded-3xl p-8 sm:p-10 shadow-xl border border-slate-100">
-            <div className="text-center mb-8">
-              <span className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 text-2xl font-bold mb-3 shadow-inner">
-                🎓
-              </span>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                Student Sign In
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-500 mt-2">
-                Access your assigned curriculum, classroom, and capstones
-              </p>
-            </div>
+    <>
+      <AuthShell
+        title="Student Sign In"
+        subtitle="Access your assigned curriculum, classroom, and capstones"
+        segments={56}
+      >
 
             {sessionExpiredNotice && (
               <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs sm:text-sm font-medium flex items-start justify-between gap-3 shadow-xs">
@@ -383,9 +372,7 @@ export default function Login() {
                 Submit Course Enquiry →
               </button>
             </div>
-          </div>
-        </div>
-      </main>
+      </AuthShell>
 
       {/* Mandatory MasterInTech 30-Second OTP Verification Modal */}
       <OtpVerificationModal
@@ -403,6 +390,6 @@ export default function Login() {
       />
 
       <Footer />
-    </div>
+    </>
   );
 }

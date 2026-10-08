@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import API from '../services/api'
@@ -7,6 +7,7 @@ import Footer from '../components/Footer'
 import CourseCard from '../components/courses/CourseCard'
 import EventCard from '../components/events/EventCard'
 import PublicAccessGateModal from '../components/PublicAccessGateModal'
+import { useAutoReveal } from '../components/motion'
 import type { Course } from '../types/course'
 import type { Event } from '../types/event'
 
@@ -55,6 +56,11 @@ interface FaqItem {
 }
 
 export default function Home() {
+  // One shared observer reveals every homepage section as it scrolls into view.
+  // Sections sit inside CMS feature-flag conditionals, so they are discovered
+  // rather than individually wrapped.
+  const mainRef = useRef<HTMLElement | null>(null)
+  useAutoReveal(mainRef, 'section')
   const { user } = useAuth()
   const navigate = useNavigate()
 
@@ -248,29 +254,52 @@ export default function Home() {
       {/* B13: single main landmark for the page. The banner above is chrome-like
           (announcement + CTA) and is intentionally left outside so <main> holds
           only the page's primary content sections. */}
-      <main className="flex-grow">
+      <main ref={mainRef} className="flex-grow">
       {/* 1. HERO SECTION (CMS Controlled) */}
       {isEnabled('hero') && (
-        <section className="bg-slate-900 text-white pt-16 pb-20 border-b border-slate-800 relative overflow-hidden">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <section className="mit-stage bg-slate-900 text-white pt-16 pb-20 border-b border-slate-800 relative overflow-hidden">
+          {/* Ambient backdrop: decorative, aria-hidden, pointer-events-none.
+              Never affects readability of the hero copy. */}
+          <div
+            aria-hidden="true"
+            data-testid="mit-ambient-bg"
+            className="pointer-events-none absolute inset-0 -z-0"
+          >
+            <div
+              className="mit-ambient absolute -top-24 left-1/2 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full blur-3xl"
+              style={{
+                background: 'radial-gradient(circle, rgba(59,130,246,0.22) 0%, rgba(59,130,246,0) 70%)',
+                ['--animation-duration' as string]: '10s',
+              }}
+            />
+            <div
+              className="mit-ambient absolute -bottom-32 -right-16 h-[28rem] w-[28rem] rounded-full blur-3xl"
+              style={{
+                background: 'radial-gradient(circle, rgba(139,92,246,0.20) 0%, rgba(139,92,246,0) 70%)',
+                ['--animation-duration' as string]: '13s',
+              }}
+            />
+          </div>
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-              {/* Left Column */}
+              {/* Left Column — staggered entrance, delays stay small so the
+                  headline is readable almost immediately. */}
               <div className="lg:col-span-7 text-left space-y-6">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-blue-500/10 border border-blue-400/20 text-blue-400 text-xs font-bold tracking-wider uppercase">
+                <div className="mit-enter-rise inline-flex items-center gap-2 px-3 py-1 rounded-md bg-blue-500/10 border border-blue-400/20 text-blue-400 text-xs font-bold tracking-wider uppercase" style={{ animationDelay: '40ms' }}>
                   {heroSec.badge || 'BUILD SKILLS. BUILD YOUR CAREER.'}
                 </div>
 
-                <h1 className="text-3xl sm:text-5xl lg:text-5xl font-black tracking-tight leading-tight text-white">
+                <h1 className="mit-enter-rise text-3xl sm:text-5xl lg:text-5xl font-black tracking-tight leading-tight text-white" style={{ animationDelay: '110ms' }}>
                   {heroSec.title || 'Learn Technology From Fundamentals to Advanced.'}
                 </h1>
 
-                <p className="text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl font-normal">
+                <p className="mit-enter-rise text-sm sm:text-base text-slate-300 leading-relaxed max-w-2xl font-normal" style={{ animationDelay: '180ms' }}>
                   {heroSec.subtitle ||
                     'Master industry-relevant skills through structured courses, practical projects, quizzes, and guided learning across Full Stack, Artificial Intelligence, Cloud Computing, Database, Cyber Security, and Enterprise ERP.'}
                 </p>
 
                 {/* Search Bar */}
-                <form onSubmit={handleHeroSearch} className="max-w-lg">
+                <form onSubmit={handleHeroSearch} className="mit-enter-rise max-w-lg" style={{ animationDelay: '250ms' }}>
                   <div className="flex items-center bg-slate-800/90 border border-slate-700 rounded-xl p-1.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition">
                     <span className="pl-3 text-slate-400 text-sm">🔍</span>
                     <input
@@ -290,17 +319,17 @@ export default function Home() {
                 </form>
 
                 {/* CTAs */}
-                <div className="flex flex-wrap items-center gap-3 pt-2">
+                <div className="mit-enter-rise flex flex-wrap items-center gap-3 pt-2" style={{ animationDelay: '320ms' }}>
                   <Link
                     to={heroContent.primary_button_url || '/courses'}
-                    className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition shadow-sm"
+                    className="mit-control px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-sm"
                   >
                     {heroContent.primary_button_text || 'Explore Courses'}
                   </Link>
                   {user ? (
                     <Link
                       to="/student"
-                      className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition"
+                      className="mit-control px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold"
                     >
                       My Learning Dashboard
                     </Link>
@@ -308,7 +337,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setEnquiryOpen(true)}
-                      className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold transition"
+                      className="mit-control px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold"
                     >
                       {heroContent.secondary_button_text || 'Enquire Now'}
                     </button>

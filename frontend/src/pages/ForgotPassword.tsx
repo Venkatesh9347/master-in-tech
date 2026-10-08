@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import API from "../services/api";
+import AuthShell from "../components/motion/AuthShell";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -33,20 +34,20 @@ function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-md">
-        <h1 className="text-3xl font-bold text-center mb-6">
-          Forgot Password
-        </h1>
-
+    <AuthShell
+      title="Forgot Password"
+      subtitle="Enter the email on your account and we will send a reset link."
+      segments={56}
+    >
+          <div className="w-full">
         {message && (
-          <div className="mb-4 p-3 rounded bg-green-100 text-green-700">
+          <div className="mb-4 p-3 rounded bg-green-100 text-green-700 mit-enter-rise">
             {message}
           </div>
         )}
 
         {error && (
-          <div className="mb-4 p-3 rounded bg-red-100 text-red-700">
+          <div className="mb-4 p-3 rounded bg-red-100 text-red-700 mit-enter-rise">
             {error}
           </div>
         )}
@@ -61,20 +62,20 @@ function ForgotPassword() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="mit-input w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
           />
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-5 bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
+            className="mit-control w-full mt-5 bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? "Sending..." : "Reset Password"}
           </button>
         </form>
-      </div>
-    </div>
+          </div>
+      </AuthShell>
   );
 }
 

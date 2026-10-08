@@ -67,7 +67,7 @@ export default function Footer() {
   const badgeText = settings.graduates_badge_text || ''
 
   return (
-    <footer className="bg-slate-950 text-slate-400 border-t border-slate-900 pt-16 pb-12">
+    <footer className="mit-enter-rise bg-slate-950 text-slate-400 border-t border-slate-900 pt-16 pb-12">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-5">
           {/* Brand & About (Spans 2 columns on lg) */}

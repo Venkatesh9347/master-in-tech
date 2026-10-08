@@ -121,7 +121,7 @@ export default function AdminLayout() {
       {/* Admin Body */}
       <div className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         {/* Navigation Tabs Bar */}
-        <nav className="flex flex-wrap items-center gap-2 pb-4 mb-8 border-b border-slate-800">
+        <nav className="mit-enter-rise flex flex-wrap items-center gap-2 pb-4 mb-8 border-b border-slate-800">
           {navLinks.map((link) => {
             const isActive =
               location.pathname === link.to ||
@@ -131,7 +131,7 @@ export default function AdminLayout() {
                 key={link.to}
                 to={link.to}
                 ref={isActive ? activeTabRef : undefined}
-                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 ${
+                className={`mit-control px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
                   isActive
                     ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30 ring-1 ring-purple-400/50'
                     : 'bg-slate-950 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
@@ -147,7 +147,7 @@ export default function AdminLayout() {
         {/* B13: the admin shell owns the single <main> landmark for every admin
             page. Child pages must not add their own <main> or it would nest, so
             the two that previously declared one now render a plain <div>. */}
-        <main className="flex-grow">
+        <main className="mit-enter-rise flex-grow">
           {/* Outlet for Nested Admin Pages */}
           <Outlet />
         </main>

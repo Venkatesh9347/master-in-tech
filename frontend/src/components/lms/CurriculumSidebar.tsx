@@ -52,7 +52,7 @@ export default function CurriculumSidebar({
   };
 
   const content = (
-    <div className="flex flex-col h-full bg-white border-l border-slate-200">
+    <div className="mit-enter-slide flex flex-col h-full bg-white border-l border-slate-200">
       {/* Header */}
       <div className="p-4 border-b border-slate-200 flex items-center justify-between">
         <div>
@@ -73,7 +73,7 @@ export default function CurriculumSidebar({
       </div>
 
       {/* Sections Accordion */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-100 p-2">
+      <div className="mit-stagger flex-1 overflow-y-auto divide-y divide-slate-100 p-2">
         {sections.map((section, sIdx) => {
           const isOpen = openSections[section.id] ?? true;
           const sectionLessons = section.lessons || [];
@@ -82,7 +82,11 @@ export default function CurriculumSidebar({
           ).length;
 
           return (
-            <div key={section.id} className="py-2">
+            <div
+              key={section.id}
+              className="py-2"
+              style={{ '--mit-i': Math.min(sIdx, 12) } as React.CSSProperties}
+            >
               {/* Section Header */}
               <button
                 type="button"
@@ -122,7 +126,7 @@ export default function CurriculumSidebar({
                           onSelectLesson(lesson, section);
                           if (onCloseMobile) onCloseMobile();
                         }}
-                        className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left transition text-xs font-medium ${
+                        className={`mit-control w-full flex items-center justify-between p-2.5 rounded-xl text-left text-xs font-medium ${
                           isActive
                             ? 'bg-blue-50 text-blue-700 font-bold shadow-sm ring-1 ring-blue-200'
                             : 'text-slate-700 hover:bg-slate-50'

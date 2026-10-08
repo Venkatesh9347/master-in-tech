@@ -1,0 +1,465 @@
+/* ==========================================================================
+   MasterInTech — Motion System
+   --------------------------------------------------------------------------
+   One shared animation language for the whole product. Imported once from
+   index.css, so every page inherits it without per-page wiring.
+
+   DESIGN RULES ENFORCED HERE
+   - GPU-friendly only: transform + opacity + filter. No layout-animating
+     properties (width/height/top/left/margin) in any keyframe.
+   - Progressive enhancement. Motion is gated behind `html[data-motion="on"]`,
+     which is set by an inline script in index.html. If JavaScript never runs,
+     that attribute is absent, the hidden-state rules below never match, and
+     ALL content renders visible. Animation therefore enhances content and can
+     never determine whether content exists.
+   - `prefers-reduced-motion: reduce` neutralises continuous/decorative motion
+     and collapses transitions to near-zero, while keeping state changes legible.
+   - Nothing here uses a JS animation loop, scroll handler, or layout read.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Motion tokens
+   -------------------------------------------------------------------------- */
+:root {
+  /* Durations follow the programme's timing guidance. */
+  --mit-dur-micro: 140ms;   /* hover, focus, small state flips */
+  --mit-dur-control: 200ms; /* buttons, inputs */
+  --mit-dur-card: 320ms;    /* cards, panels */
+  --mit-dur-section: 560ms; /* scroll reveals */
+  --mit-dur-page: 300ms;    /* route transitions */
+
+  /* Easing: one expressive curve, one neutral curve. */
+  --mit-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --mit-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* Stagger step. Small, so nobody waits for a long cascade. */
+  --mit-stagger: 60ms;
+
+  /* Brand-aligned accents (slate/blue/purple already dominate the codebase). */
+  --mit-accent: #3b82f6;
+  --mit-accent-soft: #8b5cf6;
+  --mit-accent-deep: #1d4ed8;
+  --mit-glow: 0 0 0 1px rgb(59 130 246 / 0.35), 0 8px 30px -8px rgb(59 130 246 / 0.35);
+
+  /* Radial animation defaults, overridable per instance. */
+  --segment-count: 56;
+  --segment-index: 0;
+  --animation-duration: 6s;
+  --animation-delay: 0ms;
+  --segment-size: 7px;
+  --segment-length: 46px;
+  /* Distance from the ring's outer edge to a segment's outer end. Positive
+     pulls the band inward so segments surround the content instead of being
+     clipped by the viewport. */
+  --segment-inset: 30px;
+  --segment-color: rgb(34 211 238 / 0.9);
+  --segment-dim: #1b3a6b;
+  --segment-lit: #22d3ee;
+}
+
+/* --------------------------------------------------------------------------
+   2. Keyframes
+   -------------------------------------------------------------------------- */
+@keyframes mit-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes mit-rise {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes mit-slide-in {
+  from { opacity: 0; transform: translate3d(-12px, 0, 0); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes mit-scale-in {
+  from { opacity: 0; transform: scale3d(0.96, 0.96, 1); }
+  to   { opacity: 1; transform: scale3d(1, 1, 1); }
+}
+
+@keyframes mit-float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -10px, 0); }
+}
+
+@keyframes mit-pulse-glow {
+  0%, 100% { opacity: 0.45; transform: scale3d(1, 1, 1); }
+  50%      { opacity: 0.9;  transform: scale3d(1.04, 1.04, 1); }
+}
+
+@keyframes mit-gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes mit-shimmer {
+  from { transform: translate3d(-100%, 0, 0); }
+  to   { transform: translate3d(100%, 0, 0); }
+}
+
+@keyframes mit-skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+/* Orbit: used by decorative rings only. */
+@keyframes mit-orbit {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Radial segment pulse. Each segment supplies its own --animation-delay,
+   which is what produces the staggered ripple around the circle. */
+@keyframes mit-segment-pulse {
+  0%, 100% {
+    opacity: 0.18;
+    transform: scale3d(0.86, 0.86, 1);
+  }
+  45% {
+    opacity: 0.95;
+    transform: scale3d(1.12, 1.12, 1);
+  }
+}
+
+/* Kept for backwards compatibility with any existing usage. The radial ring now
+   uses mit-segment-wave on the segment's ::after overlay instead. */
+
+/* --------------------------------------------------------------------------
+   3. Entrance utilities (JS-gated: see rule above)
+   -------------------------------------------------------------------------- */
+html[data-motion='on'] .mit-enter-fade { animation: mit-fade-in var(--mit-dur-section) var(--mit-ease-out) both; }
+html[data-motion='on'] .mit-enter-rise  { animation: mit-rise var(--mit-dur-section) var(--mit-ease-out) both; }
+html[data-motion='on'] .mit-enter-slide { animation: mit-slide-in var(--mit-dur-section) var(--mit-ease-out) both; }
+html[data-motion='on'] .mit-enter-scale { animation: mit-scale-in var(--mit-dur-card) var(--mit-ease-out) both; }
+
+/* --------------------------------------------------------------------------
+   4. Stagger
+   Children animate in sequence using an inline --mit-i index set by the
+   StaggerItem component. Clamped so a long list never becomes a long wait.
+   -------------------------------------------------------------------------- */
+html[data-motion='on'] .mit-stagger > * {
+  animation: mit-rise var(--mit-dur-card) var(--mit-ease-out) both;
+  animation-delay: calc(min(var(--mit-i, 0), 12) * var(--mit-stagger));
+}
+
+/* --------------------------------------------------------------------------
+   5. Scroll reveal
+   `.mit-reveal` is visible by default. Only when the observer has marked an
+   element as pending AND motion is enabled does it hide, so a failed observer
+   leaves fully readable content rather than a blank page.
+   -------------------------------------------------------------------------- */
+html[data-motion='on'] .mit-reveal[data-mit-pending='true'] {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+}
+html[data-motion='on'] .mit-reveal[data-mit-shown='true'] {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity var(--mit-dur-section) var(--mit-ease-out),
+    transform var(--mit-dur-section) var(--mit-ease-out);
+  transition-delay: calc(min(var(--mit-i, 0), 12) * var(--mit-stagger));
+}
+
+/* --------------------------------------------------------------------------
+   6. Route transition — no white flash, no layout jump
+   The outgoing view fades/scales down very slightly; the incoming view fades
+   up. Both are short and non-blocking, and the container never changes height.
+   -------------------------------------------------------------------------- */
+html[data-motion='on'] .mit-route-enter {
+  animation: mit-rise var(--mit-dur-page) var(--mit-ease-out) both;
+}
+html[data-motion='on'] .mit-route-exit {
+  animation: mit-fade-in var(--mit-dur-micro) var(--mit-ease-in-out) reverse both;
+}
+
+/* --------------------------------------------------------------------------
+   7. Interaction
+   -------------------------------------------------------------------------- */
+.mit-hover-lift {
+  transition:
+    transform var(--mit-dur-card) var(--mit-ease-out),
+    box-shadow var(--mit-dur-card) var(--mit-ease-out),
+    border-color var(--mit-dur-card) var(--mit-ease-out);
+}
+.mit-hover-lift:hover {
+  transform: translate3d(0, -3px, 0);
+  box-shadow: 0 14px 30px -12px rgb(15 23 42 / 0.22);
+}
+
+.mit-hover-glow {
+  transition:
+    transform var(--mit-dur-control) var(--mit-ease-out),
+    box-shadow var(--mit-dur-control) var(--mit-ease-out),
+    border-color var(--mit-dur-control) var(--mit-ease-out);
+}
+.mit-hover-glow:hover {
+  transform: translate3d(0, -2px, 0);
+  border-color: rgb(59 130 246 / 0.6);
+  box-shadow: 0 0 0 1px rgb(59 130 246 / 0.25), 0 12px 28px -12px rgb(59 130 246 / 0.45);
+}
+
+/* Interactive controls. Focus rings are never removed. */
+.mit-control {
+  transition:
+    transform var(--mit-dur-control) var(--mit-ease-out),
+    box-shadow var(--mit-dur-control) var(--mit-ease-out),
+    background-color var(--mit-dur-control) var(--mit-ease-out),
+    border-color var(--mit-dur-control) var(--mit-ease-out),
+    color var(--mit-dur-control) var(--mit-ease-out);
+}
+.mit-control:hover:not(:disabled):not([aria-disabled='true']) {
+  transform: translate3d(0, -1px, 0);
+}
+.mit-control:active:not(:disabled):not([aria-disabled='true']) {
+  transform: translate3d(0, 0, 0) scale3d(0.985, 0.985, 1);
+}
+.mit-control:disabled,
+.mit-control[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+/* Input focus illumination. Outline is preserved for keyboard users. */
+.mit-input {
+  transition:
+    border-color var(--mit-dur-control) var(--mit-ease-out),
+    box-shadow var(--mit-dur-control) var(--mit-ease-out),
+    background-color var(--mit-dur-control) var(--mit-ease-out);
+}
+.mit-input:focus,
+.mit-input:focus-visible {
+  border-color: var(--mit-accent);
+  box-shadow: 0 0 0 3px rgb(59 130 246 / 0.22);
+}
+
+/* Validation affordance. Colour is never the only signal — messages are real
+   text in the DOM, so animation cannot hide them. */
+.mit-invalid {
+  border-color: rgb(225 29 72 / 0.7) !important;
+  animation: mit-slide-in var(--mit-dur-control) var(--mit-ease-out) both;
+}
+.mit-valid {
+  border-color: rgb(16 185 129 / 0.7) !important;
+}
+
+/* --------------------------------------------------------------------------
+   8. Ambient / decorative
+   Continuous motion is restricted to these decorative layers. Text, tables,
+   buttons and video controls are explicitly excluded.
+   -------------------------------------------------------------------------- */
+.mit-ambient {
+  animation: mit-pulse-glow var(--animation-duration, 7s) var(--mit-ease-in-out) infinite;
+  will-change: transform, opacity;
+}
+.mit-float {
+  animation: mit-float calc(var(--animation-duration, 7s)) var(--mit-ease-in-out) infinite;
+  will-change: transform;
+}
+.mit-orbit {
+  animation: mit-orbit calc(var(--animation-duration, 40s)) linear infinite;
+  will-change: transform;
+}
+
+.mit-gradient-text {
+  background-image: linear-gradient(100deg, #38bdf8, #818cf8, #c084fc, #38bdf8);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: mit-gradient-shift calc(var(--animation-duration, 8s)) linear infinite;
+}
+
+.mit-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.mit-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translate3d(-100%, 0, 0);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);
+  animation: mit-shimmer calc(var(--animation-duration, 2.4s)) var(--mit-ease-in-out) infinite;
+  pointer-events: none;
+}
+
+/* Loading skeleton. Static content never uses an infinite animation. */
+.mit-skeleton {
+  background-color: rgb(226 232 240 / 0.9);
+  border-radius: 0.5rem;
+  animation: mit-skeleton-pulse 1.8s var(--mit-ease-in-out) infinite;
+}
+
+/* --------------------------------------------------------------------------
+   9. Radial segmented animation
+   The reference language: independent segments arranged on a circle around
+   focal content. Segments are generated by the React component (one map over
+   --segment-count), never hand-duplicated.
+   -------------------------------------------------------------------------- */
+.mit-radial {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none; /* must never intercept clicks */
+  overflow: hidden;
+  /* Scale the whole rig down on small screens without touching JS. */
+  --mit-radial-scale: 1;
+}
+/* Ordered widest -> narrowest. All three match at the same time on a small
+   screen and share equal specificity, so source order decides: the narrowest
+   breakpoint must come last to win, otherwise a 390px phone inherits the
+   tablet scale and the ring overflows the viewport. */
+@media (max-width: 1024px) { .mit-radial { --mit-radial-scale: 0.92; } }
+@media (max-width: 768px)  { .mit-radial { --mit-radial-scale: 0.82; } }
+@media (max-width: 480px)  { .mit-radial { --mit-radial-scale: 0.62; } }
+
+.mit-radial-ring {
+  position: relative;
+  /* Raw size here; responsive scaling is done once by the transform below so the
+     segment inset and length scale together instead of being applied twice. */
+  width: var(--mit-radial-size, 620px);
+  height: var(--mit-radial-size, 620px);
+  transform: scale3d(var(--mit-radial-scale), var(--mit-radial-scale), 1);
+}
+
+.mit-radial-track {
+  position: absolute;
+  inset: 0;
+  /* Each track holds one segment parked at the top of the ring; rotating the
+     track about the ring's centre distributes it around the circle. */
+  display: grid;
+  place-items: start center;
+  padding-top: var(--segment-inset, 26px);
+}
+
+/* Segment sits on the ring as a uniform radial pill. Uniform radius is
+   deliberate: varying each segment's distance from the centre breaks the even
+   circle and reads as noise rather than depth. */
+.mit-radial-segment {
+  position: relative;
+  width: var(--segment-size);
+  height: var(--segment-length, 44px);
+  border-radius: 999px;
+  background: var(--segment-dim, #1b3a6b);
+  animation: var(--animation-duration, 6s) var(--mit-ease-in-out) infinite;
+  animation-name: mit-segment-breathe;
+  animation-delay: var(--animation-delay, 0ms);
+  will-change: transform, opacity;
+}
+
+/* The travelling highlight. Dim segments are always faintly visible; this
+   overlay carries the bright accent so the wave reads as one contiguous arc
+   sweeping around the ring rather than 60 independent flickers. */
+.mit-radial-segment::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--segment-lit, #22d3ee);
+  box-shadow: 0 0 14px rgb(34 211 238 / 0.55);
+  opacity: 0.05;
+  transform: scaleY(0.82);
+  animation: mit-segment-wave var(--animation-duration, 6s) var(--mit-ease-in-out) infinite;
+  animation-delay: var(--animation-delay, 0ms);
+  will-change: transform, opacity;
+}
+
+@keyframes mit-segment-breathe {
+  0%, 100% { opacity: 0.9; }
+  50%      { opacity: 1; }
+}
+
+@keyframes mit-segment-wave {
+  0%, 100% { opacity: 0.05; transform: scaleY(0.82); }
+  45%      { opacity: 1;    transform: scaleY(1); }
+}
+
+/* Faint structural ring behind the segments. */
+.mit-radial-halo {
+  position: absolute;
+  inset: 8%;
+  border-radius: 999px;
+  border: 1px solid rgb(148 163 184 / 0.16);
+  box-shadow: inset 0 0 90px rgb(59 130 246 / 0.10);
+}
+
+/* --------------------------------------------------------------------------
+   10. Dark stage
+   Used behind hero and authentication panels. Built from the existing
+   --color-surface-dark token so brand identity is preserved.
+   -------------------------------------------------------------------------- */
+.mit-stage {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgb(30 58 138 / 0.55) 0%, transparent 60%),
+    radial-gradient(90% 70% at 90% 10%, rgb(76 29 149 / 0.45) 0%, transparent 55%),
+    linear-gradient(180deg, #0b1120 0%, #0f172a 55%, #0b1120 100%);
+}
+
+.mit-panel {
+  background: rgb(15 23 42 / 0.72);
+  border: 1px solid rgb(148 163 184 / 0.18);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 30px 80px -40px rgb(0 0 0 / 0.9);
+}
+
+/* --------------------------------------------------------------------------
+   11. Reduced motion
+   Everything decorative stops. Entrances collapse to a short fade so state
+   changes stay understandable. Nothing becomes invisible.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Explicitly neutralise the continuous decorative layers. */
+  .mit-ambient,
+  .mit-float,
+  .mit-orbit,
+  .mit-gradient-text,
+  .mit-shimmer::after,
+  .mit-skeleton,
+  .mit-radial-segment {
+    animation: none !important;
+  }
+
+  /* The travelling highlight lives on the segment's ::after overlay, so it
+     needs its own opt-out. Without this the wave would still fire once. */
+  .mit-radial-segment::after {
+    animation: none !important;
+    opacity: 0.14 !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Segments remain visible as a static ring, so the composition still reads. */
+  .mit-radial-segment { opacity: 0.45; }
+
+  /* Reveal content immediately and never leave it hidden. */
+  html[data-motion='on'] .mit-reveal[data-mit-pending='true'] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .mit-hover-lift:hover,
+  .mit-hover-glow:hover,
+  .mit-control:hover:not(:disabled):not([aria-disabled='true']),
+  .mit-control:active:not(:disabled):not([aria-disabled='true']) {
+    transform: none !important;
+  }
+
+  .mit-radial-ring { transform: none !important; }
+}

@@ -29,6 +29,22 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- MasterInTech motion gate.
+         Sets data-motion="on" before first paint so entrance animations never
+         flash unstyled. If this script fails or JavaScript is disabled, the
+         attribute is absent, the hidden-state rules in src/styles/motion.css
+         never match, and every element renders fully visible. Animation
+         therefore enhances content and can never decide whether it exists. -->
+    <script>
+      (function () {
+        try {
+          var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          document.documentElement.setAttribute('data-motion', reduce ? 'reduced' : 'on');
+        } catch (e) {
+          /* left unset on purpose: static, fully readable fallback */
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,32 +1,30 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import AuthShell from '../components/motion/AuthShell';
 import PublicAccessGateModal from '../components/PublicAccessGateModal';
 
 export default function Register() {
   const [enquiryOpen, setEnquiryOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-blue-600 selection:text-white">
-      <Navbar />
-
-      <main className="flex-grow flex items-center justify-center py-16 px-4 sm:px-6 lg:px-8">
-        <div className="w-full max-w-lg">
-          <div className="bg-white rounded-3xl p-8 sm:p-10 shadow-xl border border-slate-100 text-center space-y-6">
+    <>
+      <AuthShell
+      title="Student Account Creation"
+      subtitle="Accounts are provisioned by our academic administration team after 1-on-1 career counselling."
+      segments={56}
+    >
+        <div className="space-y-6 text-center">
             {/* Icon Header */}
-            <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 text-3xl font-bold flex items-center justify-center mx-auto shadow-inner">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-3xl font-bold text-blue-600 shadow-inner">
               🎓
             </div>
 
             <div className="space-y-2">
-              <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60 text-[11px] font-extrabold uppercase tracking-wider">
-                Admissions & Enrollment
+              <span className="inline-block rounded-full border border-blue-200/60 bg-blue-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-700">
+                Admissions &amp; Enrollment
               </span>
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                Student Account Creation
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
+              <p className="mx-auto max-w-md text-xs leading-relaxed text-slate-600 sm:text-sm">
                 To guarantee curriculum fit and personalized mentorship, student accounts at MasterInTech are provisioned by our academic administration team following 1-on-1 career counselling.
               </p>
             </div>
@@ -70,8 +68,7 @@ export default function Register() {
               </Link>
             </div>
           </div>
-        </div>
-      </main>
+      </AuthShell>
 
       {/* Enquiry Modal */}
       <PublicAccessGateModal
@@ -80,6 +77,6 @@ export default function Register() {
       />
 
       <Footer />
-    </div>
+    </>
   );
 }

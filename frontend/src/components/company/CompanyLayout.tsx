@@ -89,7 +89,7 @@ export default function CompanyLayout() {
       </header>
 
       {/* Main Page Body */}
-      <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+      <main className="mit-enter-rise flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
         <Outlet />
       </main>
     </div>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import API from "../services/api";
+import AuthShell from "../components/motion/AuthShell";
 
 function ResetPassword() {
   const navigate = useNavigate();
@@ -44,18 +45,20 @@ function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-md">
-        <h1 className="text-3xl font-bold text-center mb-6">Reset Password</h1>
-
+    <AuthShell
+      title="Reset Password"
+      subtitle="Choose a new password for your MasterInTech account."
+      segments={56}
+    >
+          <div className="w-full">
         {message && (
-          <div className="mb-4 p-3 rounded bg-green-100 text-green-700">
+          <div className="mb-4 p-3 rounded bg-green-100 text-green-700 mit-enter-rise">
             {message} <button className="underline ml-1" onClick={() => navigate("/login")}>Log in</button>
           </div>
         )}
 
         {error && (
-          <div className="mb-4 p-3 rounded bg-red-100 text-red-700">{error}</div>
+          <div className="mb-4 p-3 rounded bg-red-100 text-red-700 mit-enter-rise">{error}</div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -65,7 +68,7 @@ function ResetPassword() {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="mit-input w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               minLength={8}
               required
             />
@@ -77,7 +80,7 @@ function ResetPassword() {
               type="password"
               value={passwordConfirmation}
               onChange={(event) => setPasswordConfirmation(event.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="mit-input w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               minLength={8}
               required
             />
@@ -86,13 +89,13 @@ function ResetPassword() {
           <button
             type="submit"
             disabled={loading || !token || !email}
-            className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
+            className="mit-control w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? "Resetting..." : "Reset Password"}
           </button>
         </form>
-      </div>
-    </div>
+          </div>
+      </AuthShell>
   );
 }
 

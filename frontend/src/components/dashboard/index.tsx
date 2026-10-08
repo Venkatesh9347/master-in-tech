@@ -97,12 +97,15 @@ export function StatCard({
   hint,
   tone = 'default',
   onClick,
+  index = 0,
 }: {
   label: string;
   value: number | string;
   hint?: string;
   tone?: 'default' | 'positive' | 'warning' | 'critical';
   onClick?: () => void;
+  /** Stagger position, used when rendered inside a .mit-stagger container. */
+  index?: number;
 }) {
   const valueTone =
     tone === 'positive'
@@ -120,8 +123,9 @@ export function StatCard({
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       data-testid="stat-card"
-      className={`rounded-xl border border-slate-200 bg-white p-4 text-left ${
-        onClick ? 'hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500' : ''
+      style={{ '--mit-i': index } as React.CSSProperties}
+      className={`mit-hover-glow rounded-xl border border-slate-200 bg-white p-4 text-left ${
+        onClick ? 'focus:outline-none focus:ring-2 focus:ring-purple-500' : ''
       }`}
     >
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
@@ -162,7 +166,7 @@ export function ErrorState({
         <button
           type="button"
           onClick={onRetry}
-          className="mt-2 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white"
+          className="mit-control mt-2 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white"
         >
           Try again
         </button>
@@ -231,7 +235,7 @@ export function DataTable<T>({
   return (
     <div
       data-testid="data-table"
-      className="overflow-x-auto rounded-xl border border-slate-200 bg-white"
+      className="mit-enter-rise overflow-x-auto rounded-xl border border-slate-200 bg-white"
     >
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <caption className="sr-only">{caption}</caption>
@@ -364,7 +368,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+            className="mit-control rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
           >
             {cancelLabel}
           </button>
@@ -372,7 +376,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
+            className={`mit-control rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
               destructive ? 'bg-rose-600' : 'bg-purple-600'
             }`}
           >
@@ -468,14 +472,14 @@ export function Sidebar({ items, label }: { items: SidebarItem[]; label: string 
     <nav
       aria-label={label}
       data-testid="dashboard-sidebar"
-      className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r"
+      className="mit-enter-fade flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-2 py-2 lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r"
     >
       {items.map((item) => (
         <a
           key={item.to}
           href={item.to}
           aria-current={item.isActive ? 'page' : undefined}
-          className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold ${
+          className={`mit-control whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold ${
             item.isActive
               ? 'bg-purple-600 text-white'
               : 'text-slate-700 hover:bg-slate-100'
@@ -511,7 +515,7 @@ export function DashboardShell({
   children: ReactNode;
 }) {
   return (
-    <div data-testid="dashboard-shell" className="min-h-screen bg-slate-50">
+    <div data-testid="dashboard-shell" className="mit-enter-rise min-h-screen bg-slate-50">
       {sidebarItems ? <Sidebar items={sidebarItems} label={`${roleLabel} navigation`} /> : null}
       <div className="min-w-0 flex-1">
         <TopBar roleLabel={roleLabel} userName={userName} actions={topBarActions} />

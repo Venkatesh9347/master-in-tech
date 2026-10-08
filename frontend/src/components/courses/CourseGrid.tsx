@@ -1,5 +1,7 @@
 import type { Course } from '../../types/course';
 import CourseCard from './CourseCard';
+import { StaggerContainer, StaggerItem } from '../motion';
+import { EmptyState } from '../dashboard';
 
 interface CourseGridProps {
   courses: Course[];
@@ -18,24 +20,28 @@ export default function CourseGrid({
   emptyMessage = 'No courses found.',
 }: CourseGridProps) {
   if (courses.length === 0) {
+    // Empty state gets an entrance, but stays a single readable message.
     return (
-      <div className="text-center py-12">
-        <p className="text-slate-600 text-lg">{emptyMessage}</p>
+      <div className="mit-enter-rise py-12">
+        <EmptyState title={emptyMessage} description="Try a different search or filter." />
       </div>
     );
   }
 
+  // Cards stagger in once, then hold still. Pagination/filter changes re-run
+  // the stagger because the list remounts, which reads as a page transition.
   return (
-    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      {courses.map((course) => (
-        <CourseCard
-          key={course.id}
-          course={course}
-          linkTo={linkPrefix ? `${linkPrefix}/${course.id}` : undefined}
-          buttonText={buttonText}
-          onButtonClick={onButtonClick}
-        />
+    <StaggerContainer className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      {courses.map((course, index) => (
+        <StaggerItem key={course.id} index={index}>
+          <CourseCard
+            course={course}
+            linkTo={linkPrefix ? `${linkPrefix}/${course.id}` : undefined}
+            buttonText={buttonText}
+            onButtonClick={onButtonClick}
+          />
+        </StaggerItem>
       ))}
-    </div>
+    </StaggerContainer>
   );
 }

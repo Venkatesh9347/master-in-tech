@@ -284,8 +284,8 @@ export default function CrmRoleDashboard({ config }: { config: CrmRole }) {
             <h2 id={`${config}-kpis`} className="sr-only">
               Key performance indicators
             </h2>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-              {kpis.map((kpi) => (
+            <div className="mit-stagger grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+              {kpis.map((kpi, index) => (
                 <StatCard
                   key={kpi.label}
                   label={kpi.label}
@@ -293,6 +293,7 @@ export default function CrmRoleDashboard({ config }: { config: CrmRole }) {
                   hint={kpi.hint}
                   tone={kpi.tone}
                   onClick={kpi.drill ? () => setStatusFilter(kpi.drill as string) : undefined}
+                  index={index}
                 />
               ))}
             </div>

@@ -82,7 +82,7 @@ export default function TutorLayout() {
       {/* Tutor Body Container */}
       <div className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-6">
         {/* Navigation Tabs Bar */}
-        <nav className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200/80">
+        <nav className="mit-enter-rise flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-200/80">
           {navLinks.map((link) => {
             const isActive =
               link.to === '/tutor'
@@ -92,7 +92,7 @@ export default function TutorLayout() {
               <Link
                 key={link.to}
                 to={link.to}
-                className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 shrink-0 ${
+                className={`mit-control px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shrink-0 ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
                     : 'bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 border border-slate-200/80'
@@ -107,7 +107,7 @@ export default function TutorLayout() {
 
         {/* B13: the tutor shell owns the single <main> landmark for every tutor
             page, matching AdminLayout and CompanyLayout. */}
-        <main className="flex-grow">
+        <main className="mit-enter-rise flex-grow">
           {/* Nested Outlet for Tutor Sub-pages */}
           <Outlet />
         </main>
